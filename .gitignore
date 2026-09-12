@@ -10,6 +10,9 @@ node_modules/
 npm-debug.log*
 *.tsbuildinfo
 
+# electron-builder 打包产物——几十上百 MB 的二进制，不该进仓库
+webui/dist/
+
 # CC-Monitor 运行时数据（不属于代码，不该进仓库）
 .cc-monitor/
 *.db
