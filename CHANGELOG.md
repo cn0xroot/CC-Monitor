@@ -7,6 +7,53 @@
 
 ## [未发布]
 
+## [1.2.0] - 2026-09-12
+
+### 新增
+- **待批准审批中心**：新增导航页"待批准"，把 Claude Code 默认模式下"是否允许执行"的
+  确认弹窗同步到 Web UI 上。同一条 `confirm` 类操作，既可以在触发它的终端里直接按
+  y/N，也可以在网页上点"允许一次 / 拒绝一次 / 一直允许"——两条路谁先给出结果就用谁的
+  （SQLite 里 `pending_approvals` 表配合 `WHERE status='pending'` 保证原子性，不会
+  两边都生效或者互相冲突）。"一直允许"是按 session 生效的，不是改全局规则：同一个
+  session 里这条规则以后不用再问，别的 session 哪怕跑一模一样的命令还是照常问。
+  确认超时从 20 秒延长到 90 秒，给网页那条路留出反应时间。
+- **终端会话状态灯**：每个终端会话现在会显示 working / blocked / idle 三种状态（关闭
+  的显示 dead），跟 [herdr](https://github.com/herdrdev/herdr) "每个 pane 标状态、不用
+  到处找卡住的那个"是类似的思路——不是另起一套检测机制，复用已有的数据源：有没有
+  待处理的审批请求（最该优先看的 blocked）、终端最近有没有真输出过、审计事件最近有
+  没有新记录，判定"在正常干活"还是"停在提示符前"。
+- **首页 Anthropic 账号信息**：展示用量/额度相关的更多细节——`limits[]` 明细
+  （session/weekly_all/weekly_scoped，各自的百分比、severity、resets_at，
+  weekly_scoped 还带具体是限定给哪个模型）、`spend`（超出套餐额度后是否开通了额外
+  付费额度，用了多少）。
+- **软件安装统计**：首页"文件操作统计"下面新增 pip / 系统包管理器 / npm / 其它 四类
+  安装操作次数统计，点击可以下钻看具体是哪些安装指令。复用 policy 规则引擎已经判过
+  的 `matched_rule` 分组，识别逻辑只有一份，不会跟拦截逻辑的判断标准不一致。
+- **远程访问安全开关**：首页新增"是否允许其它设备访问本服务"开关。默认仍然只绑
+  `127.0.0.1`，这个默认值不会被网页开关自动改掉——真要监听所有网卡，得管理员显式设
+  `CC_MONITOR_WEBUI_HOST=0.0.0.0` 再重启进程。网页开关管的是另一件事：即使显式绑成
+  了 `0.0.0.0`，HTTP 中间件和 WebSocket upgrade 也会先查这个开关，默认关（拒绝非本机
+  来源），开了才放行——给"确实想监听所有网卡"这个场景再加一道默认关闭的应用层闸门。
+- **Claude Tap 全部会话视图**：新增合并视图，把所有有 transcript 的会话最近的内容
+  按时间戳合并排序展示，不用再一个个会话切换着看。
+- **一键安装 / 一键启动脚本**：新增 `install.sh`（检查 Python/Node 环境，跑
+  `install.py`，装 webui 依赖，检查 bpftrace）和 `start.sh`（装依赖、启动 Web UI）。
+- **桌面版（Electron）脚手架**：新增 `webui/electron-main.js`，直接 `require`
+  现有的 `server.js`（Express + ws + node-pty + better-sqlite3）在 Electron 主进程里
+  跑起来，不用改一行服务端代码；桌面版固定用 9998 端口，跟网页版的 9999 互不冲突，
+  可以同时开着。目前只在 Linux 下验证了服务端能正常内嵌启动，Mac/Linux ARM64 打包
+  还在计划中，尚未发布可下载的桌面安装包。
+
+### 变更
+- **README 默认语言改成英文**：原来的中文 `README.md` 移到 `README.zh-CN.md`，原来的
+  `README.en.md` 内容合并进新的 `README.md`（英文），互相的语言切换链接同步更新。
+
+### 修复
+- `webui/lib/usage.js` 里 `https-proxy-agent` 是纯 ESM 包（`"type":"module"`，没有
+  `require` 导出条件），在这个环境的 Node 22 下用 `require()` 碰巧能跑，但换到
+  Electron 自带的旧版 Node 下会直接抛 `ERR_REQUIRE_ESM` 崩掉整个进程——这是在验证
+  桌面版脚手架时用真实测试跑出来的问题，改成异步动态 `import()` 后两边都兼容。
+
 ## [1.1.2] - 2026-09-12
 
 ### 修复

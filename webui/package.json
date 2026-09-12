@@ -7,7 +7,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "electron": "electron electron-main.js",
+    "electron:rebuild": "electron-rebuild -f -w node-pty,better-sqlite3",
+    "dist:linux": "npm run electron:rebuild && electron-builder --linux AppImage --x64 --arm64",
+    "dist:mac": "npm run electron:rebuild && electron-builder --mac --universal"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
@@ -18,5 +22,24 @@
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-webgl": "^0.16.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.cn0xroot.cc-monitor",
+    "productName": "CC-Monitor",
+    "files": ["**/*", "!test/**", "!cdp-*.js"],
+    "directories": { "output": "dist" },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Development"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "category": "public.app-category.developer-tools"
+    }
   }
 }

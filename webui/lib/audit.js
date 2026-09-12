@@ -176,6 +176,49 @@ function fileOpDetails(type, limit = 300) {
   }, []);
 }
 
+// 软件安装统计——不用另外写识别逻辑，直接复用 policy 规则引擎已经判过的 matched_rule
+// 分组就行（pip/系统包管理器/npm/其它这几类规则本来就在 default_rules.json 里维护着，
+// 识别逻辑只有一份，不会跟 policy 那边判断的标准不一致）。
+const INSTALL_RULE_GROUPS = {
+  pip: ["sudo_pip_install", "pip_install_venv_context", "pip_install_no_venv"],
+  system: ["system_package_install"],
+  npm: ["npm_global_install"],
+  other: ["package_install_other"],
+};
+
+function installStats() {
+  return withDb((db) => {
+    const countRules = (rules) => {
+      const placeholders = rules.map(() => "?").join(",");
+      return db
+        .prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND matched_rule IN (${placeholders})`)
+        .get(...rules).n;
+    };
+    return {
+      pip: countRules(INSTALL_RULE_GROUPS.pip),
+      system: countRules(INSTALL_RULE_GROUPS.system),
+      npm: countRules(INSTALL_RULE_GROUPS.npm),
+      other: countRules(INSTALL_RULE_GROUPS.other),
+    };
+  }, { pip: 0, system: 0, npm: 0, other: 0 });
+}
+
+// 首页软件安装统计卡片（pip/系统包/npm/其它）的下钻详情：具体是哪些安装指令。
+function installDetails(type, limit = 300) {
+  const rules = INSTALL_RULE_GROUPS[type];
+  if (!rules) return [];
+  return withDb((db) => {
+    const placeholders = rules.map(() => "?").join(",");
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN (${placeholders})
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(...rules, limit);
+  }, []);
+}
+
 // "审计事件总数"下钻：按 工具/来源 分组，并且列出每个分组具体是哪些 session 产生的。
 function eventTypeBreakdown(limit = 500) {
   return withDb((db) => {
@@ -222,6 +265,8 @@ module.exports = {
   getTranscriptPath,
   fileOpsStats,
   fileOpDetails,
+  installStats,
+  installDetails,
   eventTypeBreakdown,
   blockedDetails,
 };

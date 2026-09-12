@@ -15,13 +15,32 @@ const usage = require("./lib/usage");
 const archives = require("./lib/archives");
 const auditState = require("./lib/auditState");
 const browse = require("./lib/browse");
+const remoteAccess = require("./lib/remoteAccess");
+const approvals = require("./lib/approvals");
 
-// 只绑定 localhost：这是一个能直接开终端 spawn 进程的工具，绝不能不加认证就暴露到公网/局域网。
+// 默认只绑定 localhost：这是一个能直接开终端 spawn 进程的工具，绝不能不加认证就暴露到
+// 公网/局域网。这个默认值不会被 UI 上的"允许远程访问"开关自动改掉——真要监听所有网卡，
+// 得管理员自己显式设置 CC_MONITOR_WEBUI_HOST=0.0.0.0 再重启进程，安全边界始终是进程
+// 启动时就定死的监听地址，不是运行时能被网页动态改掉的一个标志位。
+// UI 开关（remoteAccess）管的是另一件事：即使显式绑成了 0.0.0.0，下面的中间件/
+// WebSocket upgrade 也会先查这个开关，默认关（拒绝非本机来源），开了才放行——
+// 相当于给"我确实想监听所有网卡"这个场景再加一道默认是关的应用层闸门。
 const HOST = process.env.CC_MONITOR_WEBUI_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.CC_MONITOR_WEBUI_PORT || "9999", 10);
 
 const app = express();
 app.use(express.json());
+
+// 访问控制闸门：不是本机来源、且"允许远程访问"开关没打开的请求，一律 403，碰不到
+// 下面任何一条路由/静态文件。放在最前面，对所有请求都生效。默认绑定 127.0.0.1 时
+// 这道检查其实永远不会拦到任何东西（只有本机才连得上 socket），只有管理员显式把
+// HOST 改成 0.0.0.0 之后，这里才是真正起作用的那道闸门。
+app.use((req, res, next) => {
+  const addr = req.socket.remoteAddress;
+  if (remoteAccess.isLocalAddress(addr) || remoteAccess.getState().allowRemote) return next();
+  res.status(403).type("text/plain").send("Forbidden: remote access to CC-Monitor is disabled. Enable it from the Home tab (from the local machine), or connect from 127.0.0.1.");
+});
+
 // 这个 UI 还在快速迭代，public/ 底下的文件随时会变；不加 no-store 的话浏览器可能
 // 拿着缓存的旧 app.js/index.html 不去问服务器，改了东西却"看起来没生效"，很难排查。
 const noCacheStatic = (dir) => express.static(dir, { etag: false, lastModified: false, setHeaders: (res) => res.setHeader("Cache-Control", "no-store") });
@@ -58,9 +77,24 @@ const sessions = new SessionManager();
 // 这个弱关联去猜：同一个工作目录里，活动时间最新的那个审计 session，大概率就是这个
 // PTY 里跑着的那个 claude 进程——不保证 100% 准确（同一个目录被开了好几次的话可能猜错），
 // 但足够在首页"进行中"这张下钻详情里顺带显示一下模型/事件数，不做成分开另查的功能。
+// 状态标记（working/blocked/idle），跟 herdr "每个 pane 标状态、不用到处找卡住的
+// 那个" 是同一个思路——不是另起一套检测机制，直接复用已经有的两个数据源：
+// 有没有待处理的审批请求（pending_approvals，谁先出现就是 blocked，最该优先看的）；
+// 终端最近有没有真输出过东西、或者审计事件最近有没有新记录（两个但凡一个命中就算
+// 在正常干活）；两个都没有就是 idle——大概率是停在提示符前等你打字，不是卡住了。
+const RECENT_ACTIVITY_MS = 30 * 1000;
+function computeSessionStatus(s, matchedAuditSessionId, matchedLastTs, pendingSessionIds) {
+  if (matchedAuditSessionId && pendingSessionIds.has(matchedAuditSessionId)) return "blocked";
+  const now = Date.now();
+  const recentOutput = s.lastOutputAt && now - s.lastOutputAt < RECENT_ACTIVITY_MS;
+  const recentEvent = matchedLastTs && now - new Date(matchedLastTs).getTime() < RECENT_ACTIVITY_MS;
+  return recentOutput || recentEvent ? "working" : "idle";
+}
+
 app.get("/api/sessions", (req, res) => {
   const live = sessions.list();
   const auditRows = audit.listSessions();
+  const pendingSessionIds = new Set(approvals.listPending().map((r) => r.session_id));
   const enriched = live.map((s) => {
     const candidates = auditRows.filter((r) => r.cwd === s.cwd);
     candidates.sort((a, b) => (a.last_ts < b.last_ts ? 1 : -1));
@@ -70,6 +104,7 @@ app.get("/api/sessions", (req, res) => {
       auditSessionId: match ? match.session_id : null,
       eventCount: match ? match.event_count : null,
       model: match && match.transcript_path ? transcript.getModel(match.transcript_path) : null,
+      status: s.alive ? computeSessionStatus(s, match ? match.session_id : null, match ? match.last_ts : null, pendingSessionIds) : "dead",
     };
   });
   res.json(enriched);
@@ -90,6 +125,33 @@ app.delete("/api/sessions/:id", (req, res) => {
 app.get("/api/browse-dir", (req, res) => {
   const result = browse.listDir(req.query.path);
   if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+// ---- REST API: 是否允许其它设备访问这个 Web UI ----
+// listeningHost 告诉前端这个进程实际绑定在哪个地址上——如果还是 127.0.0.1，
+// 下面 allowRemote 这个标志位改了也不会真正生效，得管理员显式设 CC_MONITOR_WEBUI_HOST
+// =0.0.0.0 重启进程才行；前端拿这个字段判断要不要提示"这个开关现在还没真正生效"。
+app.get("/api/remote-access-state", (req, res) => {
+  res.json({ ...remoteAccess.getState(), listeningHost: HOST });
+});
+
+app.post("/api/remote-access-state", (req, res) => {
+  const { allowRemote } = req.body || {};
+  res.json({ ...remoteAccess.setState(allowRemote), listeningHost: HOST });
+});
+
+// ---- REST API: 待批准的 confirm 类操作（跟触发它的终端里能直接按 y/N 是同一件事的
+// 另一条路，谁先给出结果就用谁的，见 cc_monitor/notify.py 的 confirm()） ----
+
+app.get("/api/pending-approvals", (req, res) => {
+  res.json(approvals.listPending());
+});
+
+app.post("/api/pending-approvals/:id/resolve", (req, res) => {
+  const { decision } = req.body || {};
+  const result = approvals.resolve(parseInt(req.params.id, 10), decision);
+  if (!result.ok) return res.status(400).json(result);
   res.json(result);
 });
 
@@ -138,6 +200,34 @@ app.get("/api/transcript", (req, res) => {
     transcriptPath,
     totalLines: transcript.countLines(transcriptPath),
   });
+});
+
+// Claude Tap"全部会话"合并视图：每个有 transcript 的 session 各取最近若干条，
+// 按时间戳合并排序、打上是哪个 session 的标签。不做增量轮询游标（每次都是重新读一遍
+// 每个 session 的尾部）——session 数量对个人监测工具来说通常是个位数到十几个，
+// 简单直接比维护一套多文件的增量游标划算得多。
+app.get("/api/transcript/all", (req, res) => {
+  const perSessionLimit = Math.min(parseInt(req.query.per_session_limit || "30", 10), 200);
+  const overallLimit = Math.min(parseInt(req.query.limit || "200", 10), 1000);
+
+  const sessions = audit.listSessions().filter((r) => r.transcript_path);
+  let merged = [];
+  for (const s of sessions) {
+    if (!fs.existsSync(s.transcript_path)) continue;
+    const { entries } = transcript.readTailEntries(s.transcript_path, perSessionLimit);
+    const model = transcript.getModel(s.transcript_path);
+    for (const e of entries) {
+      merged.push({
+        ...transcript.renderEntryHtml(e),
+        sessionId: s.session_id,
+        cwd: s.cwd,
+        model,
+      });
+    }
+  }
+  merged.sort((a, b) => (a.ts < b.ts ? 1 : -1)); // 新的在前，跟单会话视图的顺序一致
+  merged = merged.slice(0, overallLimit);
+  res.json({ entries: merged, sessionCount: sessions.length });
 });
 
 // ---- REST API: 账号级用量/额度（跟 ccstatusline 读同一份 Claude Code OAuth 凭证） ----
@@ -190,6 +280,7 @@ app.get("/api/overview", (req, res) => {
     ...s,
     liveSessionCount: sessions.list().filter((x) => x.alive).length,
     fileOps: audit.fileOpsStats(),
+    installOps: audit.installStats(),
   });
 });
 
@@ -242,6 +333,33 @@ app.get("/api/drilldown/file-op/:type", (req, res) => {
     return res.status(400).json({ error: "type 必须是 read/write/edit/delete 之一" });
   }
   const rows = audit.fileOpDetails(type).map((row) => {
+    let detail = {};
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      detail = {};
+    }
+    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      toolName: row.tool_name,
+      matchedRule: row.matched_rule,
+      label,
+      summaryHtml,
+    };
+  });
+  res.json(rows);
+});
+
+app.get("/api/drilldown/install-op/:type", (req, res) => {
+  const type = req.params.type;
+  if (!["pip", "system", "npm", "other"].includes(type)) {
+    return res.status(400).json({ error: "type 必须是 pip/system/npm/other 之一" });
+  }
+  const rows = audit.installDetails(type).map((row) => {
     let detail = {};
     try {
       detail = row.detail ? JSON.parse(row.detail) : {};
@@ -375,6 +493,14 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
+  // WebSocket 的 upgrade 走的是 http.Server 原生事件，不经过 Express 中间件链，
+  // 上面那道 app.use 闸门管不到这里——这条终端 PTY 通道恰恰是风险最高的一个
+  // （直接就是个 shell），必须单独在这里也拦一遍，不能只挡 HTTP 路由。
+  const addr = socket.remoteAddress;
+  if (!remoteAccess.isLocalAddress(addr) && !remoteAccess.getState().allowRemote) {
+    socket.destroy();
+    return;
+  }
   const { pathname, query } = url.parse(req.url, true);
   if (pathname !== "/ws/terminal") {
     socket.destroy();
@@ -420,6 +546,7 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[CC-Monitor WebUI] 监听 http://${HOST}:${PORT} （仅本机可访问）`);
+  const accessNote = HOST === "127.0.0.1" ? "（仅本机可访问）" : `（已绑定 ${HOST}，"允许远程访问"开关的实际状态见首页）`;
+  console.log(`[CC-Monitor WebUI] 监听 http://${HOST}:${PORT} ${accessNote}`);
   console.log(`[CC-Monitor WebUI] 审计日志读取自: ${audit.dbPath()}`);
 });

@@ -212,6 +212,40 @@ html, body {
 }
 .tab-btn:hover { color: var(--text); background: var(--bg-elevated); }
 .tab-btn.active { color: var(--text); background: var(--bg-elevated); border-color: var(--border); font-weight: 600; }
+.nav-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  vertical-align: middle;
+}
+
+/* ---------- 待批准 ---------- */
+.approvals-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+.approval-item {
+  border: 2px solid var(--yellow);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--yellow) 8%, var(--bg-elevated));
+}
+.approval-rule { margin-top: 4px; font-size: 12px; color: var(--text-dim); }
+.approval-value {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border-radius: 4px;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.approval-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.approval-actions button { width: auto; margin-bottom: 0; }
 
 .pill {
   font-size: 12px;
@@ -274,6 +308,10 @@ html, body {
 .audit-btn-start.active { background: var(--green); color: #06281a; border-color: var(--green); font-weight: 700; }
 .audit-btn-pause.active { background: var(--yellow); color: #4a3900; border-color: var(--yellow); font-weight: 700; }
 .audit-btn-stop.active { background: var(--red); color: #fff; border-color: var(--red); font-weight: 700; }
+/* 允许远程访问打开的时候要显眼——这个开关关系到有没有人能不经身份验证直接连上
+   这台机器的 shell，不能跟旁边其它普通开关一个存在感。 */
+#remote-access-row.active { color: var(--red); font-weight: 700; }
+#remote-access-row.active .switch-track { background: var(--red); }
 
 /* ---------- 历史数据记录列表 ---------- */
 .archives-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; }
@@ -340,6 +378,10 @@ html, body {
    "点其它 tab 还是显示日志审计" bug 的根因。加上 .active 就只在真正激活时生效。 */
 #view-logs.active { display: flex; flex-direction: column; }
 .logs-toolbar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+/* 跟 Claude Tap 那边保持一致的布局：允许换行，会话筛选下拉推到工具栏最右边，
+   标题和自动滚动开关留在左边一组。 */
+#view-logs .logs-toolbar { flex-wrap: wrap; }
+#view-logs #log-session-filter { margin-left: auto; }
 /* 自动滚动开关：视觉上是个 iOS 风格的滑动开关，底层还是原生 <input type="checkbox">——
    只是把它缩到看不见（依然占位、依然可以被 <label> 点击/键盘聚焦），旁边这两个 <span>
    纯粹是画出来的轨道+圆点，用 :checked 同级选择器联动样式，不用额外写 JS。 */
@@ -410,6 +452,24 @@ html, body {
 .session-item:hover { background: var(--bg-elevated); }
 .session-item.active { border-color: var(--accent); background: var(--bg-elevated); }
 .session-item .cwd { color: var(--text); word-break: break-all; }
+/* 会话状态点——working/idle/blocked，跟 herdr "一眼看出哪个卡住了"是一个思路。
+   blocked 用闪烁强调，这是三个状态里唯一"需要你现在就去处理"的。 */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.status-dot.status-working { background: var(--green); }
+.status-dot.status-idle { background: var(--text-dim); }
+.status-dot.status-blocked { background: var(--red); animation: status-blink 1s ease-in-out infinite; }
+.status-dot.status-dead { background: var(--text-dim); opacity: 0.4; }
+@keyframes status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
 .session-item .meta { color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
 .session-item .kill-btn { color: var(--red); cursor: pointer; }
 .session-item.dead .cwd { color: var(--text-dim); text-decoration: line-through; }
@@ -548,6 +608,12 @@ html, body {
 .status-row .seg.dead { color: var(--text-dim); text-decoration: line-through; }
 
 @media (max-width: 900px) {
+  /* #tabs 那条 order:3 + flex:1 1 100% 的规则想让导航单独换到自己一整行，
+     但 #topbar 本身一直没设 flex-wrap，父容器不允许换行，子元素设 flex-basis:100%
+     也没用——挤在同一行里的结果就是 #tabs 自己的按钮被迫在一个很窄的列里各种叠着换行，
+     整个顶栏被撑得很高，把下面页面内容往下顶、跟其它元素挤在一起，看着就像乱套/
+     "下拉框和内容重叠"。根因在这，不是哪个具体下拉框的问题。 */
+  #topbar { flex-wrap: wrap; }
   #tabs { order: 3; flex: 1 1 100%; }
   #sidebar { flex: 0 0 auto; max-height: 160px; }
   .view.row.active { flex-direction: column; }
@@ -737,6 +803,7 @@ html, body {
 .tap-role-system { color: var(--text-dim); background: transparent; border: 1px solid var(--border); }
 .tap-ts { color: var(--text-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .tap-usage { color: var(--text-dim); font-size: 10.5px; margin-left: auto; }
+.tap-session-tag { color: var(--text-dim); font-size: 10.5px; }
 
 .tap-block { margin-top: 4px; word-break: break-word; white-space: pre-wrap; }
 .tap-text { color: var(--text); }

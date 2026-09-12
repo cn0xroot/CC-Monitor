@@ -45,6 +45,7 @@ class SessionManager {
       scrollback: [],
       alive: true,
       exitCode: null,
+      lastOutputAt: Date.now(),
     };
 
     // Claude Code 第一次在某个还没被信任过的目录里启动时，会弹一个"是否信任这个文件夹"
@@ -58,6 +59,7 @@ class SessionManager {
     let recentOutput = "";
 
     term.onData((data) => {
+      session.lastOutputAt = Date.now();
       session.scrollback.push(data);
       if (session.scrollback.length > SCROLLBACK_LIMIT) session.scrollback.shift();
       this._broadcast(session, { type: "data", data });
@@ -111,6 +113,7 @@ class SessionManager {
       alive: s.alive,
       exitCode: s.exitCode,
       clientCount: s.clients.size,
+      lastOutputAt: s.lastOutputAt,
     }));
   }
 

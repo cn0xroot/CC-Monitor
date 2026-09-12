@@ -39,7 +39,12 @@ def handle_pre(data):
         elif action == "block":
             decision = "blocked"
         elif action == "confirm":
-            decision = "allowed" if notify.confirm(tool_name, rule, matched_value) else "blocked"
+            # 之前这个 session 里对同一条规则点过"一直允许"，就不用再问一遍——
+            # 这个记忆是按 session 记的，别的 session 跑一样的命令还是照常问。
+            if storage.is_session_always_allowed(session_id, rule["id"]):
+                decision = "allowed"
+            else:
+                decision = "allowed" if notify.confirm(tool_name, rule, matched_value, session_id=session_id, cwd=cwd) else "blocked"
         else:  # "log"
             decision = "allowed"
 

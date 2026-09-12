@@ -7,6 +7,65 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-12
+
+### Added
+- **Pending approvals center**: new "Approvals" nav tab that mirrors Claude Code's default
+  "allow this action?" confirmation prompt into the Web UI. The same `confirm`-type action can
+  be answered either at the terminal that triggered it (y/N) or from the web page ("allow once
+  / deny once / always allow") — whichever answers first wins (a `pending_approvals` SQLite row
+  guarded by `WHERE status='pending'` keeps this race-safe, so both channels can never both take
+  effect). "Always allow" is scoped to the session, not a global rule change: that rule won't be
+  asked again in this session, but any other session running the exact same command still gets
+  prompted. The confirm timeout was extended from 20s to 90s to give the web channel time to
+  respond.
+- **Terminal session status dots**: each terminal session now shows working / blocked / idle
+  (closed sessions show dead), similar in spirit to
+  [herdr](https://github.com/herdrdev/herdr)'s "status per pane instead of hunting for the
+  stuck one" — not a new detection mechanism, just reusing existing data: a pending approval on
+  that session (highest priority — blocked), recent real terminal output, or a recent matching
+  audit event, to tell "actively working" apart from "sitting at the prompt."
+- **Anthropic account info on Home**: now also shows the `limits[]` breakdown (session /
+  weekly_all / weekly_scoped, each with percent, severity, resets_at — weekly_scoped also names
+  which model it's scoped to) and `spend` (whether pay-as-you-go usage credits are enabled past
+  plan limits, and how much has been used).
+- **Install-operation stats**: below the file-op stats card on Home, four new counters — pip /
+  system package manager / npm / other — with click-through detail of the exact install
+  commands. Reuses the same `matched_rule` groupings the policy engine already computes, so
+  there's only one source of truth for what counts as an install.
+- **Remote access security toggle**: new "allow other devices to access this service" switch on
+  Home. The default bind stays `127.0.0.1` and is never changed by this toggle — actually
+  listening on all interfaces still requires an admin to explicitly set
+  `CC_MONITOR_WEBUI_HOST=0.0.0.0` and restart the process. The toggle governs a separate gate:
+  even if the process is explicitly bound to `0.0.0.0`, the HTTP middleware and WebSocket
+  upgrade handler both check this flag first and reject non-local origins by default — an
+  additional, default-off application-layer gate for the "I really do want to listen on all
+  interfaces" case.
+- **Claude Tap merged all-sessions view**: shows recent activity from every session with a
+  transcript, merged and sorted by timestamp, instead of switching between sessions one at a
+  time.
+- **One-click install/start scripts**: added `install.sh` (checks Python/Node, runs
+  `install.py`, installs webui dependencies, checks for bpftrace) and `start.sh` (installs
+  dependencies and starts the Web UI).
+- **Desktop (Electron) scaffolding**: added `webui/electron-main.js`, which directly `require`s
+  the existing `server.js` (Express + ws + node-pty + better-sqlite3) to run inside Electron's
+  main process with zero server-side code changes; the desktop build uses port 9998, distinct
+  from the web version's 9999, so both can run side by side. So far only validated that the
+  embedded server starts correctly on Linux — macOS and Linux ARM64 packaging is planned but no
+  downloadable desktop build exists yet.
+
+### Changed
+- **README now defaults to English**: the former Chinese `README.md` moved to
+  `README.zh-CN.md`, and the former `README.en.md` content became the new `README.md`
+  (English); the language-switch links in both were updated to match.
+
+### Fixed
+- `webui/lib/usage.js` required `https-proxy-agent`, which is a pure-ESM package
+  (`"type":"module"`, no CJS `require` export condition) — it happened to work with `require()`
+  under this environment's Node 22, but crashed with `ERR_REQUIRE_ESM` under Electron's bundled
+  older Node. Found while actually testing the desktop scaffolding; switched to an async dynamic
+  `import()` that works under both.
+
 ## [1.1.2] - 2026-09-12
 
 ### Fixed

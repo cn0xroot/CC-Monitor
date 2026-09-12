@@ -9,17 +9,20 @@ const fs = require("fs");
 const https = require("https");
 const os = require("os");
 const path = require("path");
-const { HttpsProxyAgent } = require("https-proxy-agent");
+// https-proxy-agent 装的是纯 ESM 包（package.json 里 "type":"module"，没有 require 导出条件），
+// 普通 node（本环境是 v22，支持同步 require(esm)）能 require 但 Electron 自带的旧版 Node 不行，
+// 会直接抛 ERR_REQUIRE_ESM 把桌面版启动流程崩掉——改成动态 import() 两边都兼容。
 
 const CREDENTIALS_PATH = path.join(os.homedir(), ".claude", ".credentials.json");
 const USAGE_API_HOST = "api.anthropic.com";
 const USAGE_API_PATH = "/api/oauth/usage";
 const CACHE_MAX_AGE_MS = 180 * 1000; // 跟 ccstatusline 一样，避免把接口打太狠
 
-function proxyAgent() {
+async function proxyAgent() {
   const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
   if (!proxyUrl) return undefined;
   try {
+    const { HttpsProxyAgent } = await import("https-proxy-agent");
     return new HttpsProxyAgent(proxyUrl);
   } catch (e) {
     return undefined;
@@ -46,9 +49,40 @@ function bucketInfo(bucket) {
   };
 }
 
-function fetchUsageOnce(token) {
+// `limits` 数组是接口里比 five_hour/seven_day 更细一档的额度明细——同一个 kind
+// （session/weekly_all/weekly_scoped）在不同 severity（normal/警告级别）下都会单独
+// 列一条，weekly_scoped 那种还带具体是限定给哪个模型（scope.model）的。
+function limitInfo(l) {
+  return {
+    kind: l.kind || null,
+    group: l.group || null,
+    percent: typeof l.percent === "number" ? l.percent : null,
+    severity: l.severity || null,
+    resetsAt: l.resets_at || null,
+    scopeModel: l?.scope?.model?.display_name || null,
+    isActive: !!l.is_active,
+  };
+}
+
+// `spend`：账号超出套餐额度之后能不能/有没有额外花钱买用量（Anthropic 的"usage credits"），
+// 跟 five_hour/seven_day 那种"百分比额度"是两码事，这里是实打实的金额。
+function spendInfo(spend) {
+  if (!spend) return null;
+  return {
+    usedAmountMinor: spend.used?.amount_minor ?? null,
+    currency: spend.used?.currency || null,
+    exponent: typeof spend.used?.exponent === "number" ? spend.used.exponent : 2,
+    percent: typeof spend.percent === "number" ? spend.percent : null,
+    severity: spend.severity || null,
+    enabled: !!spend.enabled,
+    disabledReason: spend.disabled_reason || null,
+    canPurchaseCredits: !!spend.can_purchase_credits,
+  };
+}
+
+async function fetchUsageOnce(token) {
+  const agent = await proxyAgent();
   return new Promise((resolve) => {
-    const agent = proxyAgent();
     const req = https.request(
       {
         host: USAGE_API_HOST,
@@ -77,6 +111,8 @@ function fetchUsageOnce(token) {
                 weekly: bucketInfo(parsed.seven_day),
                 weeklySonnet: bucketInfo(parsed.seven_day_sonnet),
                 weeklyOpus: bucketInfo(parsed.seven_day_opus),
+                limits: Array.isArray(parsed.limits) ? parsed.limits.map(limitInfo) : [],
+                spend: spendInfo(parsed.spend),
               },
             });
           } catch (e) {

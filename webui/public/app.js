@@ -174,8 +174,9 @@ async function refreshSessionList() {
   for (const s of sessions) {
     const el = document.createElement("div");
     el.className = "session-item" + (s.id === currentSessionId ? " active" : "") + (s.alive ? "" : " dead");
+    const status = s.status || (s.alive ? "idle" : "dead");
     el.innerHTML = `
-      <div class="cwd">${escapeHtml(s.cwd)}</div>
+      <div class="cwd">${s.alive ? `<span class="status-dot status-${status}" title="${escapeHtml(t("terminal.status." + status))}"></span>` : ""}${escapeHtml(s.cwd)}</div>
       <div class="meta">
         <span>${new Date(s.createdAt).toLocaleTimeString()} ${s.alive ? "" : t("terminal.exited")}</span>
         <span class="kill-btn" data-id="${s.id}">${t("terminal.close")}</span>
@@ -260,6 +261,7 @@ function createGridPane(s) {
   el.className = "grid-pane";
   el.innerHTML = `
     <div class="grid-pane-header" title="${escapeHtml(s.cwd)}">
+      <span class="status-dot status-${s.status || "idle"}" data-role="status-dot" title="${escapeHtml(t("terminal.status." + (s.status || "idle")))}"></span>
       <span class="name">${escapeHtml(folderName(s.cwd))} · ${s.id.slice(0, 8)}…</span>
       <span class="kill-btn">${t("terminal.close")}</span>
     </div>
@@ -360,6 +362,15 @@ function syncGridPanes(sessions) {
       gridPanes.set(s.id, pane);
       grid.appendChild(pane.el);
       if (!firstNew) firstNew = pane;
+    } else if (s.alive && gridPanes.has(s.id)) {
+      // 已经存在的面板不用重建，只更新状态点——createGridPane() 只在第一次
+      // 出现时跑一遍，后续每次轮询靠这里把 working/blocked/idle 刷新上去。
+      const dot = gridPanes.get(s.id).el.querySelector('[data-role="status-dot"]');
+      if (dot) {
+        const status = s.status || "idle";
+        dot.className = "status-dot status-" + status;
+        dot.title = t("terminal.status." + status);
+      }
     }
   }
 
@@ -646,6 +657,7 @@ async function pollLogs() {
 // ---------- Claude Tap：发给/收到模型的完整对话内容 ----------
 const tapSelect = document.getElementById("tap-session-select");
 const tapMeta = document.getElementById("tap-meta");
+const TAP_ALL_SESSIONS = "__all__";
 let tapNextLine = 0;
 let tapKnownSessions = [];
 
@@ -656,6 +668,13 @@ function refreshTapSessionOptions(rows) {
   if (document.activeElement === tapSelect) return;
   const current = tapSelect.value;
   tapSelect.innerHTML = `<option value="">${t("tap.selectPlaceholder")}</option>`;
+  const hasAnyTranscript = rows.some((r) => r.has_transcript);
+  if (hasAnyTranscript) {
+    const allOpt = document.createElement("option");
+    allOpt.value = TAP_ALL_SESSIONS;
+    allOpt.textContent = t("tap.allSessions");
+    tapSelect.appendChild(allOpt);
+  }
   for (const r of rows) {
     const opt = document.createElement("option");
     opt.value = r.session_id;
@@ -664,7 +683,7 @@ function refreshTapSessionOptions(rows) {
     opt.title = `${r.cwd || ""}\nID: ${r.session_id}`;
     tapSelect.appendChild(opt);
   }
-  if (current && rows.some((r) => r.session_id === current)) tapSelect.value = current;
+  if (current && (current === TAP_ALL_SESSIONS || rows.some((r) => r.session_id === current))) tapSelect.value = current;
 }
 
 tapSelect.addEventListener("change", () => {
@@ -678,10 +697,16 @@ function renderTapEntry(entry) {
   const el = document.createElement("div");
   el.className = "tap-entry tap-kind-" + entry.kind;
   const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString() : "";
+  // "全部会话"合并视图下每条都带 sessionId，需要标出是哪个会话的，
+  // 单会话视图（entry.sessionId 不存在）不显示这个标签。
+  const sessionTag = entry.sessionId
+    ? `<span class="tap-session-tag">📁 ${escapeHtml(folderName(entry.cwd))}${entry.model ? " · " + escapeHtml(modelShort(entry.model)) : ""} · ${escapeHtml(entry.sessionId.slice(0, 8))}…</span>`
+    : "";
   el.innerHTML = `
     <div class="tap-header">
       <span class="tap-role tap-role-${entry.kind}">${escapeHtml(t("tap.kind." + entry.kind))}</span>
       <span class="tap-ts">${ts}</span>
+      ${sessionTag}
       ${entry.usageHtml || ""}
     </div>
     ${entry.blocksHtml || ""}
@@ -692,11 +717,31 @@ function renderTapEntry(entry) {
 async function pollTap() {
   const sessionId = tapSelect.value;
   if (!sessionId) return;
+  const list = document.getElementById("tap-list");
+
+  if (sessionId === TAP_ALL_SESSIONS) {
+    // "全部会话"合并视图：每个 session 各取最近一小段、按时间戳合并，不用增量游标
+    // （session 数量对个人工具来说通常不多，每次全量重拉比维护多文件游标简单得多）。
+    const result = await api("/api/transcript/all?limit=200&per_session_limit=30");
+    if (!result) return;
+    tapMeta.textContent = t("tap.allSessionsMeta", { n: result.sessionCount });
+    tapMeta.title = "";
+    if (result.entries.length === 0) {
+      list.innerHTML = `<div class="empty-state">${t("tap.loading")}</div>`;
+      return;
+    }
+    list.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (const entry of result.entries) frag.appendChild(renderTapEntry(entry));
+    list.appendChild(frag);
+    if (tapAutoscrollToggle.checked) list.scrollTop = 0;
+    return;
+  }
+
   const params = new URLSearchParams({ session_id: sessionId, since_line: String(tapNextLine), limit: "300" });
   const result = await api("/api/transcript?" + params.toString());
   if (!result) return;
   tapNextLine = result.nextLine;
-  const list = document.getElementById("tap-list");
   if (!result.transcriptPath) {
     list.innerHTML = `<div class="empty-state">${t("tap.noTranscriptBody")}</div>`;
     return;
@@ -741,6 +786,12 @@ async function refreshOverview() {
     document.getElementById("stat-file-writes").textContent = s.fileOps.writes;
     document.getElementById("stat-file-edits").textContent = s.fileOps.edits;
     document.getElementById("stat-file-deletes").textContent = s.fileOps.deletes;
+  }
+  if (s.installOps) {
+    document.getElementById("stat-install-pip").textContent = s.installOps.pip;
+    document.getElementById("stat-install-system").textContent = s.installOps.system;
+    document.getElementById("stat-install-npm").textContent = s.installOps.npm;
+    document.getElementById("stat-install-other").textContent = s.installOps.other;
   }
 
   renderBarList("source-breakdown", s.bySource.map((r) => ({
@@ -813,6 +864,50 @@ document.getElementById("audit-stop-btn").addEventListener("click", async () => 
   const ok = await confirmDialog(t("modal.stopAudit.title"), t("modal.stopAudit.body"));
   if (!ok) return;
   setAuditState("stopped");
+});
+
+// ---------- 是否允许其它设备访问这个 Web UI ----------
+// 这个开关只是把意图写进一个标志位；进程实际监听的地址是启动时就定死的，标志位改了
+// 不会让 127.0.0.1 变成能被局域网连上——真要生效，管理员得显式设
+// CC_MONITOR_WEBUI_HOST=0.0.0.0 重启进程。这里用 listeningHost 字段判断当前是不是
+// "改了但还没真正生效"，提示清楚，不让人误以为点一下开关就已经暴露到网络上了
+// （或者反过来，以为关掉开关就真的把端口锁回本机了——端口有没有对外开放看的是
+// 启动参数，不是这个标志位）。
+const remoteAccessToggle = document.getElementById("remote-access-toggle");
+const remoteAccessNote = document.getElementById("remote-access-note");
+function applyRemoteAccessState(info) {
+  remoteAccessToggle.checked = info.allowRemote;
+  const pill = document.getElementById("remote-access-row");
+  pill.classList.toggle("active", info.allowRemote);
+  if (info.listeningHost === "127.0.0.1") {
+    remoteAccessNote.textContent = t("home.remoteAccess.stillLocalOnly");
+  } else if (info.allowRemote) {
+    remoteAccessNote.textContent = t("home.remoteAccess.liveWarning", { host: info.listeningHost });
+  } else {
+    remoteAccessNote.textContent = t("home.remoteAccess.liveBlocked", { host: info.listeningHost });
+  }
+}
+async function refreshRemoteAccessState() {
+  const info = await api("/api/remote-access-state");
+  if (!info) return;
+  applyRemoteAccessState(info);
+}
+remoteAccessToggle.addEventListener("change", async () => {
+  const wantsOn = remoteAccessToggle.checked;
+  if (wantsOn) {
+    const ok = await confirmDialog(t("modal.remoteAccess.title"), t("modal.remoteAccess.body"));
+    if (!ok) {
+      remoteAccessToggle.checked = false;
+      return;
+    }
+  }
+  const info = await api("/api/remote-access-state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allowRemote: wantsOn }),
+  });
+  if (!info) return;
+  applyRemoteAccessState(info);
 });
 
 // ---------- 数据管理：持久化归档 / 清空当前数据 / 历史数据记录列表 ----------
@@ -908,7 +1003,57 @@ async function refreshArchivesList() {
   });
 }
 
-// 打开一份历史归档，翻看里面具体记录了哪些事件——复用首页下钻详情那个弹窗，
+// ---------- 待批准：action=confirm 的操作，触发它的终端能直接按 y/N，这里也能点 ----------
+// 这几个请求都是"卡着等结果"的（hook 进程还在阻塞、Claude Code 那次工具调用还没继续），
+// 不是普通审计记录，等的时间越长对方越难受，轮询间隔比其它列表都短。
+async function refreshApprovals() {
+  const rows = await api("/api/pending-approvals");
+  const badge = document.getElementById("approvals-badge");
+  if (!rows) return;
+  badge.hidden = rows.length === 0;
+  badge.textContent = String(rows.length);
+
+  const list = document.getElementById("approvals-list");
+  if (rows.length === 0) {
+    list.innerHTML = `<div class="empty-state">${t("approvals.empty")}</div>`;
+    return;
+  }
+  list.innerHTML = rows
+    .map(
+      (r) => `
+    <div class="approval-item" data-id="${r.id}">
+      <div class="row1">
+        <span class="ts">${escapeHtml(r.ts)}</span>
+        <span class="risk ${r.risk}">${escapeHtml(riskLabel(r.risk))}</span>
+        <span class="session-tag">📁 ${escapeHtml(folderName(r.cwd))} · ${r.session_id ? escapeHtml(r.session_id.slice(0, 8)) + "…" : "-"}</span>
+      </div>
+      <div class="approval-rule">${escapeHtml(r.matched_rule || "-")} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}</div>
+      <div class="approval-value">${escapeHtml(r.matched_value)}</div>
+      <div class="approval-actions">
+        <button class="btn-primary approval-allow" data-id="${r.id}">${t("approvals.allowOnce")}</button>
+        <button class="btn-danger approval-deny" data-id="${r.id}">${t("approvals.denyOnce")}</button>
+        <button class="btn-secondary approval-always" data-id="${r.id}">${t("approvals.alwaysAllow")}</button>
+      </div>
+    </div>`
+    )
+    .join("");
+  list.querySelectorAll("button[data-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const decision = btn.classList.contains("approval-allow")
+        ? "allow"
+        : btn.classList.contains("approval-deny")
+        ? "deny"
+        : "always_allow";
+      const result = await api(`/api/pending-approvals/${btn.dataset.id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!result) return;
+      refreshApprovals();
+    });
+  });
+}
 // 内容部分直接复用跟"Log 审计"页一样的 renderLogItem() 渲染，看着是一致的。
 // 归档是固定不变的快照，不用轮询，事件多的话点"加载更多"往后翻页就行。
 let archiveViewerNextId = 0;
@@ -1107,11 +1252,17 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind.startsWith("file-op-")) {
-    const opType = kind.slice("file-op-".length); // read | write | edit | delete
-    const opLabelKey = { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
-    title.textContent = t(opLabelKey) + " — " + t("drilldown.fileOp.suffix");
-    const rows = await api("/api/drilldown/file-op/" + opType);
+  if (kind.startsWith("file-op-") || kind.startsWith("install-op-")) {
+    // 文件操作（读/写/编辑/删除）和软件安装（pip/系统包/npm/其它）这两组下钻详情
+    // 数据形状、渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
+    const isInstall = kind.startsWith("install-op-");
+    const prefix = isInstall ? "install-op-" : "file-op-";
+    const opType = kind.slice(prefix.length);
+    const opLabelKey = isInstall
+      ? { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" }[opType]
+      : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
+    title.textContent = t(opLabelKey) + " — " + t(isInstall ? "drilldown.installOp.suffix" : "drilldown.fileOp.suffix");
+    const rows = await api(`/api/drilldown/${isInstall ? "install-op" : "file-op"}/${opType}`);
     if (!rows) return;
     if (rows.length === 0) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
@@ -1240,6 +1391,83 @@ async function refreshUsageBoard() {
   ].join("");
 }
 
+// ---------- 首页：Anthropic 账号信息（用量四件套 + limits 明细 + spend） ----------
+const SEVERITY_COLOR = { normal: "var(--green)", warning: "var(--yellow)", critical: "var(--red)" };
+function severityLabel(sev) {
+  return t("home.anthropicAccount.severity." + sev) || sev || "-";
+}
+function limitKindLabel(kind) {
+  return t("home.anthropicAccount.limitKind." + kind) || kind || "-";
+}
+
+async function refreshHomeAnthropicInfo() {
+  const result = await api("/api/usage");
+  const cardsEl = document.getElementById("anthropic-usage-cards");
+  const limitsBox = document.getElementById("anthropic-limits-box");
+  const limitsList = document.getElementById("anthropic-limits-list");
+  const spendBox = document.getElementById("anthropic-spend-box");
+  const spendInfo = document.getElementById("anthropic-spend-info");
+  if (!result) return;
+  if (result.error) {
+    cardsEl.innerHTML = `<div class="empty-state">${t("status.usageError", { msg: escapeHtml(result.error) })}</div>`;
+    limitsBox.hidden = true;
+    spendBox.hidden = true;
+    return;
+  }
+  const d = result.data;
+  cardsEl.innerHTML = [
+    usageCard(t("status.usage.session"), d.session),
+    usageCard(t("status.usage.weekly"), d.weekly),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
+  ].join("");
+
+  if (d.limits && d.limits.length > 0) {
+    limitsBox.hidden = false;
+    limitsList.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("home.anthropicAccount.limitKindCol")}</th><th>${t("home.anthropicAccount.percentCol")}</th>
+          <th>${t("home.anthropicAccount.severityCol")}</th><th>${t("home.anthropicAccount.resetCol")}</th><th>${t("home.anthropicAccount.activeCol")}</th>
+        </tr></thead>
+        <tbody>
+          ${d.limits
+            .map(
+              (l) => `
+            <tr>
+              <td>${escapeHtml(limitKindLabel(l.kind))}${l.scopeModel ? ` (${escapeHtml(l.scopeModel)})` : ""}</td>
+              <td>${l.percent === null ? "-" : l.percent + "%"}</td>
+              <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
+              <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}</td>
+              <td>${l.isActive ? "●" : "-"}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+  } else {
+    limitsBox.hidden = true;
+  }
+
+  if (d.spend) {
+    spendBox.hidden = false;
+    const s = d.spend;
+    const rows = [];
+    rows.push({ label: t("home.anthropicAccount.spendEnabled"), value: s.enabled ? t("home.anthropicAccount.yes") : t("home.anthropicAccount.no") });
+    if (s.enabled) {
+      const amount = s.usedAmountMinor !== null ? (s.usedAmountMinor / Math.pow(10, s.exponent)).toFixed(s.exponent) : "-";
+      rows.push({ label: t("home.anthropicAccount.spendUsed"), value: `${amount} ${s.currency || ""}` });
+      rows.push({ label: t("home.anthropicAccount.spendPercent"), value: s.percent === null ? "-" : s.percent + "%" });
+      rows.push({ label: t("home.anthropicAccount.spendCanPurchase"), value: s.canPurchaseCredits ? t("home.anthropicAccount.yes") : t("home.anthropicAccount.no") });
+    } else if (s.disabledReason) {
+      rows.push({ label: t("home.anthropicAccount.spendDisabledReason"), value: escapeHtml(s.disabledReason) });
+    }
+    spendInfo.innerHTML = rows.map((r) => `<div class="bar-row"><span class="name">${escapeHtml(r.label)}</span><span>${r.value}</span></div>`).join("");
+  } else {
+    spendBox.hidden = true;
+  }
+}
+
 // ---------- 启动 ----------
 function refreshEverythingNow() {
   refreshSessionList();
@@ -1249,8 +1477,11 @@ function refreshEverythingNow() {
   refreshOverview();
   refreshStatusBoard();
   refreshUsageBoard();
+  refreshHomeAnthropicInfo();
   refreshTerminalStatusline();
   refreshAuditState();
+  refreshRemoteAccessState();
+  refreshApprovals();
 }
 
 // 浏览器会把后台标签页的 setInterval 大幅节流（甚至几分钟才跑一次）来省电，
@@ -1288,7 +1519,10 @@ async function bootstrap() {
   await refreshOverview();
   await refreshStatusBoard();
   await refreshUsageBoard();
+  await refreshHomeAnthropicInfo();
   await refreshAuditState();
+  await refreshRemoteAccessState();
+  await refreshApprovals();
 
   setInterval(refreshSessionList, 4000);
   setInterval(refreshLogSessionOptions, 8000);
@@ -1297,7 +1531,10 @@ async function bootstrap() {
   setInterval(refreshOverview, 5000);
   setInterval(refreshStatusBoard, 5000);
   setInterval(refreshUsageBoard, 30000); // 后端本身有 180s 缓存，前端更不用问太勤
+  setInterval(refreshHomeAnthropicInfo, 30000);
   setInterval(refreshTerminalStatusline, 5000);
   setInterval(refreshAuditState, 5000);
+  setInterval(refreshRemoteAccessState, 15000); // 安全相关但很少变，不用跟审计状态一样勤
+  setInterval(refreshApprovals, 2000); // 这几个是卡着等结果的，轮询间隔比其它都短
 }
 bootstrap();

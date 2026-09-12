@@ -20,6 +20,32 @@ CREATE TABLE IF NOT EXISTS events (
     decision TEXT,
     detail TEXT
 );
+
+-- action=confirm 的操作既可以在触发它的那个终端里直接按 y/N，也可以在 Web UI 的
+-- "待批准"页面点按钮——两条路谁先写进这张表、谁的结果就算数（status 从 'pending'
+-- 变成别的值之后，另一条路的 UPDATE 因为 WHERE status='pending' 不成立而不会生效）。
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    session_id TEXT,
+    tool_name TEXT,
+    cwd TEXT,
+    matched_rule TEXT,
+    matched_value TEXT,
+    risk TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolved_at TEXT,
+    resolved_via TEXT
+);
+
+-- "一直允许"是按 session 生效的，不是改全局规则——同一个 session 里这条规则
+-- 以后不用再问，别的 session（哪怕跑一模一样的命令）还是照常问。
+CREATE TABLE IF NOT EXISTS session_always_allow (
+    session_id TEXT NOT NULL,
+    matched_rule TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, matched_rule)
+);
 """
 
 
@@ -27,7 +53,9 @@ def _connect():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), timeout=5)
     conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute(SCHEMA)
+    # SCHEMA 现在是好几条 CREATE TABLE 拼在一起的——sqlite3.Connection.execute()
+    # 一次只能跑一条语句，多条得用 executescript()。
+    conn.executescript(SCHEMA)
     try:
         conn.execute("ALTER TABLE events ADD COLUMN transcript_path TEXT")
     except sqlite3.OperationalError:
@@ -112,5 +140,75 @@ def fetch_last(limit=200):
             (limit,),
         )
         return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_value, risk):
+    conn = _connect()
+    try:
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO pending_approvals "
+                "(ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status) "
+                "VALUES (?,?,?,?,?,?,?,'pending')",
+                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name, cwd, matched_rule, matched_value, risk),
+            )
+            return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def poll_approval_status(approval_id):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT status FROM pending_approvals WHERE id = ?", (approval_id,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def resolve_approval(approval_id, status, via):
+    """把一条待批准记录标成 status（allowed/denied/always_allowed/expired）。
+
+    WHERE status='pending' 是关键：tty 和 Web UI 两条路可能同时想resolve 同一条，
+    谁的 UPDATE 先落地、changes 就是 1，另一条因为这时候 status 已经不是 pending
+    了，UPDATE 不会生效——不用额外加锁，SQLite 本身的事务隔离就够了。
+    """
+    conn = _connect()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE pending_approvals SET status = ?, resolved_at = ?, resolved_via = ? "
+                "WHERE id = ? AND status = 'pending'",
+                (status, time.strftime("%Y-%m-%dT%H:%M:%S%z"), via, approval_id),
+            )
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def is_session_always_allowed(session_id, matched_rule):
+    if not session_id or not matched_rule:
+        return False
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM session_always_allow WHERE session_id = ? AND matched_rule = ?",
+            (session_id, matched_rule),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def add_session_always_allow(session_id, matched_rule):
+    conn = _connect()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO session_always_allow (session_id, matched_rule, created_at) VALUES (?,?,?)",
+                (session_id, matched_rule, time.strftime("%Y-%m-%dT%H:%M:%S%z")),
+            )
     finally:
         conn.close()
