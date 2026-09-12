@@ -7,6 +7,15 @@
 
 ## [未发布]
 
+## [1.1.2] - 2026-09-12
+
+### 修复
+- 修了一类"点了没反应"的 CSS 优先级 bug：`.error-banner`/`#terminal-statusline`/
+  `#terminal-grid-pane`/`.archive-load-more` 这四个元素都写了不带 `[hidden]` 条件的
+  unconditional `display`，优先级比浏览器默认的 `[hidden]{display:none}` 高，导致 JS
+  设置 `.hidden = true` 完全不起作用——错误提示条点"知道了"关不掉、终端网格/单会话
+  视图切换其实一直没真正切换过。补上对应的 `[hidden]{display:none}` 规则覆盖回去。
+
 ## [1.1.1] - 2026-09-12
 
 ### 修复

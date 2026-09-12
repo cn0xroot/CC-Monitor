@@ -294,6 +294,7 @@ html, body {
 .archive-actions button { width: auto; }
 .archive-item .archive-delete { color: var(--red); flex: 0 0 auto; width: auto; }
 .archive-load-more { display: block; margin: 10px auto 4px; width: auto; }
+.archive-load-more[hidden] { display: none; }
 
 /* ---------- 首页 ---------- */
 .cards { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
@@ -426,6 +427,7 @@ html, body {
   border-bottom: 1px solid var(--border);
   min-height: 14px;
 }
+#terminal-statusline[hidden] { display: none; }
 #terminal-statusline .seg { display: flex; align-items: center; gap: 4px; }
 #terminal-statusline .seg.branch { color: var(--magenta); }
 #terminal-statusline .seg.dirty::after { content: "●"; color: var(--yellow); margin-left: 2px; }
@@ -565,6 +567,10 @@ html, body {
   padding: 10px;
 }
 
+/* 同一类 bug 又一次：这几个元素都写了不带 [hidden] 条件的 display:flex，优先级
+   比浏览器默认的 [hidden]{display:none} 高，导致 JS 设置 .hidden = true 完全不
+   起作用——点"知道了"关不掉错误提示条，就是这个原因。加一条 [hidden] 规则
+   （class/id + 属性选择器，优先级比原来那条更高）覆盖回去。 */
 .error-banner {
   background: #3a1414;
   color: #ffb4b4;
@@ -577,6 +583,7 @@ html, body {
   justify-content: space-between;
   gap: 12px;
 }
+.error-banner[hidden] { display: none; }
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;
@@ -777,6 +784,7 @@ html, body {
 
 /* ---------- 终端网格视图（多 agent 同屏，herdr 风格） ---------- */
 #terminal-grid-pane { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 8px; min-height: 0; }
+#terminal-grid-pane[hidden] { display: none; }
 .grid-hint { flex: 0 0 auto; color: var(--text-dim); font-size: 11.5px; padding: 4px 6px 8px; }
 .terminal-grid {
   flex: 1 1 auto;

@@ -7,6 +7,17 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-12
+
+### Fixed
+- Fixed a class of "click does nothing" CSS specificity bugs: `.error-banner`,
+  `#terminal-statusline`, `#terminal-grid-pane`, and `.archive-load-more` all declared an
+  unconditional `display` with no `[hidden]` gate, which outranks the browser's default
+  `[hidden]{display:none}` rule — so setting `.hidden = true` in JS had no visual effect.
+  The error banner's "Got it" button couldn't actually dismiss it, and the terminal's
+  grid/single-view toggle never really switched anything. Added the matching
+  `[hidden]{display:none}` rules to restore the intended behavior.
+
 ## [1.1.1] - 2026-09-12
 
 ### Fixed
