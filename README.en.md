@@ -232,6 +232,9 @@ reading/writing SSH keys and credential files, writing to system directories, an
 
 ## Development Progress
 
+For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.md)
+([中文](./CHANGELOG.md)).
+
 ### Implemented
 
 - [x] Application-layer hook interceptor (`PreToolUse`/`PostToolUse`), covering Bash/Write/Edit/Read/WebFetch and other tools

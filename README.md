@@ -203,6 +203,8 @@ sudo ./bin/CC-Monitor-probe
 
 ## 功能开发进展
 
+每个版本具体实现了什么功能，见 [CHANGELOG.md](./CHANGELOG.md)（[English](./CHANGELOG.en.md)）。
+
 ### 已实现
 
 - [x] 应用层 Hook 拦截器（`PreToolUse`/`PostToolUse`），覆盖 Bash/Write/Edit/Read/WebFetch 等全部工具

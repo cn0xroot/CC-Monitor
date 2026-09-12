@@ -238,6 +238,13 @@ function collapse(text, limit = 500) {
   return s;
 }
 
+// 专给 JSON 格式化输出用——只按长度截断，不能像 collapse() 那样把换行替换成
+// " ⏎ " 占位符，不然缩进结构就全毁了，那还叫什么"JSON 格式显示"。
+function truncateKeepNewlines(text, limit = 4000) {
+  if (text.length > limit) return text.slice(0, limit) + `\n...(共${text.length}字符，已截断)`;
+  return text;
+}
+
 function renderBlockHtml(block) {
   const btype = block.type;
   if (btype === "text") {
@@ -246,8 +253,14 @@ function renderBlockHtml(block) {
     return `<div class="tap-block tap-text">${escapeHtml(collapse(text, 2000))}</div>`;
   }
   if (btype === "thinking") {
+    // 之前限 800 字符，长一点的思考过程基本全被截断成"...已截断"；现在放宽到 2 万字符
+    // （对思考内容来说已经算"全量"了，只是留个上限防极端情况），配合前端"显示详情"
+    // 开关做折叠/展开——折叠态默认只露出几行，开关打开就是这里给的完整内容。
+    // 注意：如果这里显示"(内容已省略)"，是因为 transcript 里这条 thinking block 本身
+    // 就没存文字内容（Claude Code 没有把这次的思考过程落盘），不是我们这边主动截掉的，
+    // 开关对这种情况没有效果——没有数据，开了也变不出来。
     const text = (block.thinking || "").trim();
-    const shown = text ? escapeHtml(collapse(text, 800)) : "(内容已省略)";
+    const shown = text ? escapeHtml(collapse(text, 20000)) : "(内容已省略)";
     return `<div class="tap-block tap-thinking">💭 思考: ${shown}</div>`;
   }
   if (btype === "tool_use") {
@@ -262,13 +275,20 @@ function renderBlockHtml(block) {
     return `<div class="tap-block tap-tool-use"><span class="tap-tool-name">🔧 ${escapeHtml(name)}</span>: ${bodyHtml}</div>`;
   }
   if (btype === "tool_result") {
+    // "用户"这一轮里的工具结果，content 本身经常不是纯文本，而是一个结构化对象/数组
+    // （比如带图片的多段内容）。之前统一 JSON.stringify 成一行塞进去，几百个字符挤在
+    // 一起完全没法读；结构化内容改成带缩进的 JSON 格式单独用等宽块显示，纯字符串的
+    // 还是走原来的日志高亮，不用为了统一格式反而把本来可读的纯文本也拆碎。
     const content = block.content;
-    const text = typeof content === "string" ? content : JSON.stringify(content);
     const isError = !!block.is_error;
-    const rendered = highlightLogHtml(collapse(text, 800));
     const cls = isError ? "tap-tool-result-error" : "tap-tool-result";
     const prefix = isError ? "✗ 工具结果(错误)" : "✓ 工具结果";
-    return `<div class="tap-block ${cls}"><span class="tap-tool-label">${prefix}</span>: ${rendered}</div>`;
+    if (typeof content === "string") {
+      const rendered = highlightLogHtml(collapse(content, 800));
+      return `<div class="tap-block ${cls}"><span class="tap-tool-label">${prefix}</span>: ${rendered}</div>`;
+    }
+    const json = truncateKeepNewlines(JSON.stringify(content, null, 2), 4000);
+    return `<div class="tap-block ${cls}"><span class="tap-tool-label">${prefix}</span>: <pre class="tap-json">${escapeHtml(json)}</pre></div>`;
   }
   if (btype === "image") {
     return `<div class="tap-block tap-image">🖼 [图片内容，未显示]</div>`;

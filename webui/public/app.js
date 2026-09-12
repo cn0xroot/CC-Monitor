@@ -32,6 +32,11 @@ function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function formatUptime(ms) {
+  const mins = Math.floor(ms / 60000);
+  return mins < 1 ? t("terminal.justNow") : t("terminal.minutesAgo", { n: mins });
+}
+
 // ---------- 错误提示条：网络/接口失败时给出可见反馈，而不是静默不动 ----------
 const errorBanner = document.getElementById("error-banner");
 let errorHideTimer = null;
@@ -571,6 +576,16 @@ function setupAutoscrollToggle(elementId, storageKey) {
 const logAutoscrollToggle = setupAutoscrollToggle("log-autoscroll-toggle", "cc_monitor_log_autoscroll");
 const tapAutoscrollToggle = setupAutoscrollToggle("tap-autoscroll-toggle", "cc_monitor_tap_autoscroll");
 
+// "显示思考详情"开关：关（默认）时 .tap-thinking 只露出前几行、超出部分用 CSS 折叠；
+// 开的时候展开全部。后端现在本来就把完整思考内容发下来了（不是按开关状态单独请求），
+// 这里纯粹是前端 CSS 折叠/展开，切换瞬间生效，不用重新拉数据。
+const tapThinkingDetailToggle = setupAutoscrollToggle("tap-thinking-detail-toggle", "cc_monitor_tap_thinking_detail");
+function applyThinkingDetailClass() {
+  document.getElementById("tap-list").classList.toggle("show-thinking-detail", tapThinkingDetailToggle.checked);
+}
+tapThinkingDetailToggle.addEventListener("change", applyThinkingDetailClass);
+applyThinkingDetailClass();
+
 // 操作分类：读/写/编辑/执行/删除，用来给徽章挑颜色。删除没有专门的工具，
 // 跟首页文件操作统计用一样的近似识别方式——Bash 命令文本里带 rm/unlink/rmdir/shred。
 function operationCategory(ev) {
@@ -686,7 +701,16 @@ async function pollTap() {
     list.innerHTML = `<div class="empty-state">${t("tap.noTranscriptBody")}</div>`;
     return;
   }
+  if (result.missing) {
+    // hook payload 里报过这个路径，但文件实际不存在——常见于一次性工具调用/
+    // 后台任务这类没有落盘常规 project transcript 的执行上下文，不是卡住了。
+    tapMeta.textContent = result.transcriptPath;
+    tapMeta.title = result.transcriptPath;
+    list.innerHTML = `<div class="empty-state">${t("tap.transcriptMissing")}</div>`;
+    return;
+  }
   tapMeta.textContent = `${result.totalLines} · ${result.transcriptPath}`;
+  tapMeta.title = result.transcriptPath;
   if (result.entries.length === 0 && list.children.length === 0) {
     list.innerHTML = `<div class="empty-state">${t("tap.loading")}</div>`;
     return;
@@ -936,6 +960,48 @@ async function openDrilldown(kind) {
   const body = document.getElementById("drilldown-body");
   body.innerHTML = `<div class="empty-state">${t("drilldown.loading")}</div>`;
   drilldownModal.hidden = false;
+
+  if (kind === "live-sessions") {
+    title.textContent = t("drilldown.liveSessions.title");
+    const rows = await api("/api/sessions");
+    if (!rows) return;
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("drilldown.liveSessions.cwd")}</th><th>${t("drilldown.liveSessions.status")}</th>
+          <th>${t("drilldown.liveSessions.uptime")}</th><th>${t("drilldown.liveSessions.clients")}</th>
+          <th>${t("drilldown.liveSessions.model")}</th><th>${t("drilldown.liveSessions.events")}</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${rows
+            .map(
+              (s) => `
+            <tr class="dd-row-clickable" data-id="${escapeHtml(s.id)}">
+              <td>${escapeHtml(s.cwd || "-")}</td>
+              <td>${s.alive ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
+              <td class="dd-mono">${formatUptime(Date.now() - s.createdAt)}</td>
+              <td>${s.clientCount}</td>
+              <td>${escapeHtml(modelShort(s.model) || "-")}</td>
+              <td>${s.eventCount === null || s.eventCount === undefined ? "-" : s.eventCount}</td>
+              <td>${s.alive ? `<span class="dd-open-hint">${t("drilldown.liveSessions.open")} ›</span>` : ""}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+    body.querySelectorAll(".dd-row-clickable").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        drilldownModal.hidden = true;
+        document.querySelector('.tab-btn[data-tab="terminal"]').click();
+        selectSession(tr.dataset.id);
+      });
+    });
+    return;
+  }
 
   if (kind === "sessions") {
     title.textContent = t("drilldown.sessions.title");

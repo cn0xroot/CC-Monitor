@@ -675,6 +675,19 @@ html, body {
 .btn-danger:hover { filter: brightness(1.1); }
 
 /* ---------- Claude Tap ---------- */
+/* 工具栏要能适应窄窗口：允许换行，会话下拉框推到最右边（跟标题/开关分开一组），
+   meta 信息（行数 + transcript 完整路径，可能很长）单独占一整行、超宽就省略号截断，
+   完整路径放 title 属性，鼠标悬停能看到。 */
+#view-tap .logs-toolbar { flex-wrap: wrap; }
+#view-tap #tap-session-select { margin-left: auto; }
+#tap-meta {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  order: 10;
+}
 #tap-session-select {
   background: var(--bg-elevated);
   color: var(--text);
@@ -720,11 +733,43 @@ html, body {
 
 .tap-block { margin-top: 4px; word-break: break-word; white-space: pre-wrap; }
 .tap-text { color: var(--text); }
-.tap-thinking { color: var(--text-dim); font-style: italic; }
+/* 默认折叠只露出 4 行（后端其实已经把完整思考内容发下来了），"显示思考详情"开关
+   打开时 .tap-list 会带上 show-thinking-detail，撤掉高度限制展开全部。 */
+.tap-thinking {
+  color: var(--text-dim);
+  font-style: italic;
+  max-height: 5.6em;
+  overflow: hidden;
+  position: relative;
+}
+.tap-thinking::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.4em;
+  background: linear-gradient(to bottom, transparent, var(--bg-panel));
+}
+.tap-list.show-thinking-detail .tap-thinking { max-height: none; overflow: visible; }
+.tap-list.show-thinking-detail .tap-thinking::after { display: none; }
 .tap-tool-use { color: var(--text); }
 .tap-tool-name { color: var(--accent); font-weight: 700; }
 .tap-tool-result { color: var(--text); }
 .tap-tool-result-error { color: var(--red); }
+.tap-json {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+}
 .tap-tool-label { font-weight: 700; }
 .tap-image { color: var(--text-dim); }
 .tap-unknown { color: var(--text-dim); }
@@ -788,3 +833,5 @@ html, body {
 .dd-group { margin-bottom: 14px; }
 .dd-group-title { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .dd-group-title .n { color: var(--accent); }
+.dd-row-clickable { cursor: pointer; }
+.dd-open-hint { color: var(--accent); font-weight: 600; white-space: nowrap; }

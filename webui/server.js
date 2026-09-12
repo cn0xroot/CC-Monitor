@@ -52,8 +52,27 @@ const sessions = new SessionManager();
 
 // ---- REST API: 终端会话管理 ----
 
+// Web UI 自己开的 PTY 会话（sessions.list() 里的 id）跟 hooks 记录的 Claude Code
+// session_id 是两套完全不相关的 id——PTY 那个是我们自己 crypto.randomUUID() 出来的，
+// Claude Code 自己另外生成它的 session_id，两边没有天然的对应关系。只能靠 cwd 相同
+// 这个弱关联去猜：同一个工作目录里，活动时间最新的那个审计 session，大概率就是这个
+// PTY 里跑着的那个 claude 进程——不保证 100% 准确（同一个目录被开了好几次的话可能猜错），
+// 但足够在首页"进行中"这张下钻详情里顺带显示一下模型/事件数，不做成分开另查的功能。
 app.get("/api/sessions", (req, res) => {
-  res.json(sessions.list());
+  const live = sessions.list();
+  const auditRows = audit.listSessions();
+  const enriched = live.map((s) => {
+    const candidates = auditRows.filter((r) => r.cwd === s.cwd);
+    candidates.sort((a, b) => (a.last_ts < b.last_ts ? 1 : -1));
+    const match = candidates[0];
+    return {
+      ...s,
+      auditSessionId: match ? match.session_id : null,
+      eventCount: match ? match.event_count : null,
+      model: match && match.transcript_path ? transcript.getModel(match.transcript_path) : null,
+    };
+  });
+  res.json(enriched);
 });
 
 app.post("/api/sessions", (req, res) => {
@@ -94,6 +113,13 @@ app.get("/api/transcript", (req, res) => {
   const transcriptPath = audit.getTranscriptPath(sessionId);
   if (!transcriptPath) {
     return res.json({ entries: [], nextLine: 0, transcriptPath: null, totalLines: 0 });
+  }
+  // hook payload 里的 transcript_path 是 Claude Code 自己上报的"它打算/正在写到哪个文件"，
+  // 不代表这个文件一定真的存在——有些执行上下文（比如某些一次性的工具调用、后台任务）
+  // 压根没有落盘常规的 project transcript。这种情况要明确告诉前端"文件不存在"，
+  // 不然前端会一直显示"0 · 那个路径"、卡在"加载中"，看起来像是卡死了，其实是没有数据源。
+  if (!fs.existsSync(transcriptPath)) {
+    return res.json({ entries: [], nextLine: 0, transcriptPath, totalLines: 0, missing: true });
   }
 
   const sinceLineRaw = req.query.since_line;

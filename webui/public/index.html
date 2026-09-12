@@ -53,9 +53,9 @@
         <button id="clear-data-btn" class="btn-danger" data-i18n="home.dataMgmt.clear">🗑 清空当前数据</button>
       </div>
       <div class="cards">
-        <div class="card">
+        <div class="card clickable" data-drilldown="live-sessions">
           <div class="card-num" id="stat-live-sessions">-</div>
-          <div class="card-label" data-i18n="home.card.liveSessions">Web UI 终端会话（进行中）</div>
+          <div class="card-label"><span data-i18n="home.card.liveSessions">Web UI 终端会话（进行中）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
         </div>
         <div class="card clickable" data-drilldown="sessions">
           <div class="card-num" id="stat-total-sessions">-</div>
@@ -145,6 +145,11 @@
           <input type="checkbox" id="tap-autoscroll-toggle" class="switch-input" checked>
           <span class="switch-track"><span class="switch-thumb"></span></span>
           <span data-i18n="logs.autoScroll">自动滚动到最新</span>
+        </label>
+        <label class="autoscroll-toggle">
+          <input type="checkbox" id="tap-thinking-detail-toggle" class="switch-input">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span data-i18n="tap.showThinkingDetail">显示思考详情</span>
         </label>
         <span id="tap-meta" class="hint"></span>
       </div>
