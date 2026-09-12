@@ -260,7 +260,13 @@ function renderBlockHtml(block) {
     // 就没存文字内容（Claude Code 没有把这次的思考过程落盘），不是我们这边主动截掉的，
     // 开关对这种情况没有效果——没有数据，开了也变不出来。
     const text = (block.thinking || "").trim();
-    const shown = text ? escapeHtml(collapse(text, 20000)) : "(内容已省略)";
+    // 原来这里写的是"(内容已省略)"，看着很像是我们主动截掉/隐藏了什么，
+    // 用户一直追着问"怎么还是这样、fix bug"——实际是 Claude Code 自己压根没把这次
+    // 思考正文存到本地 transcript 里（只留了个校验用的 signature），不是能靠开关
+    // 或者代码修复解决的事，文案直接说清楚原因，别让人以为这是我们这边能修的 bug。
+    const shown = text
+      ? escapeHtml(collapse(text, 20000))
+      : `<span class="tap-thinking-empty">（Claude Code 未在本地保存这段思考正文，仅保留校验签名，无法显示）</span>`;
     return `<div class="tap-block tap-thinking">💭 思考: ${shown}</div>`;
   }
   if (btype === "tool_use") {

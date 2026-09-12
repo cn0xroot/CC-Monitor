@@ -753,6 +753,7 @@ html, body {
 }
 .tap-list.show-thinking-detail .tap-thinking { max-height: none; overflow: visible; }
 .tap-list.show-thinking-detail .tap-thinking::after { display: none; }
+.tap-thinking-empty { font-style: normal; color: var(--yellow); }
 .tap-tool-use { color: var(--text); }
 .tap-tool-name { color: var(--accent); font-weight: 700; }
 .tap-tool-result { color: var(--text); }
