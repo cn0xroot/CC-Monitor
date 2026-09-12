@@ -7,6 +7,16 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-12
+
+### Fixed
+- When Claude Tap has no thinking text to show, the message changed from "(内容已省略)"
+  ("content omitted"), which read as if something were being withheld, to an explicit
+  explanation: Claude Code itself never stored that thinking text in the local transcript
+  (only a verification signature) — checked across every project's transcript on this
+  machine, all 14,556 thinking blocks are empty without exception. This isn't content
+  CC-Monitor can read but chooses not to show; there's no data to recover.
+
 ## [1.1] - 2026-09-12
 
 Work done after the `v1.0` tag:
