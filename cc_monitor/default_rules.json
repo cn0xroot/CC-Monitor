@@ -1,0 +1,250 @@
+[
+  {
+    "id": "dangerous_delete",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\\s+(/|~|\\$HOME|\\.\\.)(\\s|$)"
+  },
+  {
+    "id": "disk_overwrite",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(dd|mkfs|fdisk|parted)\\b"
+  },
+  {
+    "id": "curl_pipe_shell",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(curl|wget)[^|;\\n]*\\|\\s*(sudo\\s+)?(sh|bash|zsh)\\b"
+  },
+  {
+    "id": "reverse_shell_pattern",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\bnc\\b[^\\n]*-e\\s+/bin/(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)"
+  },
+  {
+    "id": "chmod_world_writable_recursive",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchmod\\s+(-R\\s+)?777\\b.*\\s(/|~)"
+  },
+  {
+    "id": "chown_root_recursive",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchown\\s+(-R\\s+)?\\S+\\s+(/|~)(\\s|$)"
+  },
+  {
+    "id": "chgrp_root_recursive",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchgrp\\s+(-R\\s+)?\\S+\\s+(/|~)(\\s|$)"
+  },
+  {
+    "id": "setuid_setgid_bit",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchmod\\s+(-R\\s+)?\\S*[ug]\\+s\\b|\\bchmod\\s+(-R\\s+)?[0-7]?[42][0-7]{3}\\b"
+  },
+  {
+    "id": "chmod_recursive_generic",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchmod\\s+-R\\b"
+  },
+  {
+    "id": "fork_bomb",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": ":\\s*\\(\\s*\\)\\s*\\{[^}]*:\\s*\\|\\s*:[^}]*&[^}]*\\}\\s*;\\s*:"
+  },
+  {
+    "id": "user_account_management",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(useradd|userdel|usermod|adduser|deluser|passwd)\\b"
+  },
+  {
+    "id": "ssh_authorized_keys_bash_write",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": ">>?\\s*~?/?(\\.ssh/authorized_keys|\\.ssh/id_\\w+|\\.ssh/config)\\b"
+  },
+  {
+    "id": "crontab_persistence",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bcrontab\\s+-[erl]\\b|>>?\\s*/etc/cron"
+  },
+  {
+    "id": "systemd_persistence",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bsystemctl\\s+(enable|start)\\s+\\S+"
+  },
+  {
+    "id": "disable_security_controls",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bsetenforce\\s+0\\b|\\bufw\\s+disable\\b|\\biptables\\s+(-F|--flush)\\b|\\bsystemctl\\s+(stop|disable)\\s+(firewalld|ufw|apparmor)\\b"
+  },
+  {
+    "id": "sudo_pip_install",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bsudo\\s+(python3?\\s+-m\\s+pip|pip3?)\\s+install\\b"
+  },
+  {
+    "id": "system_package_install",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-[A-Za-z]*[SR]\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b"
+  },
+  {
+    "id": "sudo_usage",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(^|;|&&|\\|\\|)\\s*sudo\\b"
+  },
+  {
+    "id": "pip_install_venv_context",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(?=.*\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b)(?=.*(venv|virtualenv|\\.venv|conda\\s+activate|pipx\\s+install|pipenv\\s+install|poetry\\s+(add|install)|--user\\b))"
+  },
+  {
+    "id": "pip_install_no_venv",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b"
+  },
+  {
+    "id": "npm_global_install",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\s+.*(-g\\b|--global\\b)"
+  },
+  {
+    "id": "package_install_other",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bgem\\s+install\\b|\\bcargo\\s+install\\b|\\bgo\\s+install\\b|\\bbrew\\s+install\\b|\\bcomposer\\s+(require|global\\s+require)\\b"
+  },
+  {
+    "id": "git_force_push",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bgit\\s+push\\b.*(--force|-f)\\b"
+  },
+  {
+    "id": "git_hard_reset_clean",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*f[a-zA-Z]*d?[a-zA-Z]*\\b"
+  },
+  {
+    "id": "history_tampering",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bhistory\\s+-c\\b|>\\s*~?/?\\.bash_history\\b|\\brm\\s+-f?\\s*~?/\\.bash_history\\b"
+  },
+  {
+    "id": "docker_privileged_or_host_mount",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bdocker\\s+run\\b[^\\n]*(--privileged\\b|-v\\s+/:/)"
+  },
+  {
+    "id": "sensitive_file_write",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "file_path",
+    "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$|known_hosts$)"
+  },
+  {
+    "id": "shell_rc_write",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Write", "Edit"],
+    "field": "file_path",
+    "pattern": "(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile|\\.zprofile)$"
+  },
+  {
+    "id": "sensitive_file_read",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Read"],
+    "field": "file_path",
+    "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$)"
+  },
+  {
+    "id": "system_config_write",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Write", "Edit"],
+    "field": "file_path",
+    "pattern": "^/(etc|boot|System|Library)/"
+  },
+  {
+    "id": "outbound_request",
+    "risk": "low",
+    "action": "log",
+    "tools": ["WebFetch"],
+    "field": "url",
+    "pattern": ".*"
+  }
+]

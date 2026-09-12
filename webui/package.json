@@ -1,0 +1,22 @@
+{
+  "name": "cc-monitor-webui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CC-Monitor Web UI: multi-session Claude Code terminal + live audit log viewer",
+  "author": "cn0xroot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1",
+    "https-proxy-agent": "^9.1.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.21.3",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-webgl": "^0.16.0"
+  }
+}

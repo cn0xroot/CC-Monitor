@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CC-Monitor</title>
+<link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand" data-i18n="brand.title">CC-Monitor</div>
+    <nav id="tabs">
+      <button class="tab-btn active" data-tab="home" data-i18n="nav.home">首页</button>
+      <button class="tab-btn" data-tab="logs" data-i18n="nav.logs">Log 审计</button>
+      <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
+      <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">Claude Tap</button>
+      <button class="tab-btn" data-tab="status" data-i18n="nav.status">状态信息</button>
+      <button class="tab-btn" data-tab="archives" data-i18n="nav.archives">历史数据</button>
+    </nav>
+    <select id="theme-select" class="pill-select" title="Theme">
+      <option value="brand" data-i18n="theme.brand">标准配色</option>
+      <option value="dark" data-i18n="theme.dark">深色</option>
+      <option value="light" data-i18n="theme.light">浅色</option>
+      <option value="dracula" data-i18n="theme.dracula">Dracula</option>
+      <option value="nord" data-i18n="theme.nord">Nord</option>
+      <option value="midnight" data-i18n="theme.midnight">Midnight</option>
+      <option value="ocean" data-i18n="theme.ocean">Ocean</option>
+      <option value="forest" data-i18n="theme.forest">Forest</option>
+      <option value="sunset" data-i18n="theme.sunset">Sunset</option>
+      <option value="rose" data-i18n="theme.rose">Rose</option>
+    </select>
+    <button id="lang-toggle-btn" class="pill" title="切换语言 / Switch language">EN</button>
+    <div id="audit-state-pill" class="pill audit-state-running" data-i18n-title="topbar.auditState.title" title="审计状态">● <span id="audit-state-text">运行中</span></div>
+    <div id="gpu-status" class="pill" data-i18n-title="" title="终端渲染方式">检测渲染方式中…</div>
+  </header>
+
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <main id="views">
+
+    <!-- 首页：概览统计 -->
+    <section id="view-home" class="view active">
+      <div class="data-mgmt-bar">
+        <span class="hint" data-i18n="home.auditCtl.hint">控制 hooks 这次要不要真的判定/拦截——暂停/停止期间 Claude Code 的操作仍会正常执行，只是 CC-Monitor 不再介入</span>
+        <button id="audit-toggle-btn" class="btn-secondary audit-btn-pause">⏸ 暂停审计</button>
+        <button id="audit-stop-btn" class="btn-secondary audit-btn-stop" data-i18n="home.auditCtl.stop">⏹ 停止审计</button>
+      </div>
+      <div class="data-mgmt-bar">
+        <span class="hint" data-i18n="home.dataMgmt.hint">当前展示的是实时事件数据；可以把它存档留存，或者清空重新开始统计</span>
+        <button id="archive-data-btn" class="btn-secondary" data-i18n="home.dataMgmt.archive">📦 持久化归档</button>
+        <button id="clear-data-btn" class="btn-danger" data-i18n="home.dataMgmt.clear">🗑 清空当前数据</button>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-num" id="stat-live-sessions">-</div>
+          <div class="card-label" data-i18n="home.card.liveSessions">Web UI 终端会话（进行中）</div>
+        </div>
+        <div class="card clickable" data-drilldown="sessions">
+          <div class="card-num" id="stat-total-sessions">-</div>
+          <div class="card-label"><span data-i18n="home.card.totalSessions">监测到的 Claude Code 会话总数</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card clickable" data-drilldown="event-types">
+          <div class="card-num" id="stat-total-events">-</div>
+          <div class="card-label"><span data-i18n="home.card.totalEvents">审计事件总数</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card accent-red clickable" data-drilldown="blocked">
+          <div class="card-num" id="stat-blocked">-</div>
+          <div class="card-label"><span data-i18n="home.card.blocked">已拦截的高危操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card accent-yellow">
+          <div class="card-num" id="stat-bypass">-</div>
+          <div class="card-label" data-i18n="home.card.bypass">疑似绕过监测</div>
+        </div>
+      </div>
+
+      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.fileOps.title">文件操作统计（Claude Code 发起的）</div>
+      <div class="cards">
+        <div class="card clickable" data-drilldown="file-op-read"><div class="card-num" id="stat-file-reads">-</div><div class="card-label"><span data-i18n="home.fileOps.reads">读取</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-write"><div class="card-num" id="stat-file-writes">-</div><div class="card-label"><span data-i18n="home.fileOps.writes">写入</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-edit"><div class="card-num" id="stat-file-edits">-</div><div class="card-label"><span data-i18n="home.fileOps.edits">编辑</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-delete"><div class="card-num" id="stat-file-deletes">-</div><div class="card-label"><span data-i18n="home.fileOps.deletes">删除（按命令文本近似识别，非精确）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+      </div>
+
+      <div class="home-columns">
+        <div class="home-box">
+          <div class="box-title" data-i18n="home.sourceBreakdown">日志类型分布</div>
+          <div id="source-breakdown" class="bar-list"></div>
+        </div>
+        <div class="home-box">
+          <div class="box-title" data-i18n="home.riskBreakdown">风险等级分布</div>
+          <div id="risk-breakdown" class="bar-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Log 审计：全宽日志查看 -->
+    <section id="view-logs" class="view">
+      <div class="logs-toolbar">
+        <span class="panel-title" style="padding:0;" data-i18n="logs.title">审计日志</span>
+        <select id="log-session-filter">
+          <option value="" data-i18n="logs.allSessions">全部会话</option>
+        </select>
+        <label class="autoscroll-toggle">
+          <input type="checkbox" id="log-autoscroll-toggle" class="switch-input" checked>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span data-i18n="logs.autoScroll">自动滚动到最新</span>
+        </label>
+      </div>
+      <div id="log-list-full" class="log-list wide"></div>
+    </section>
+
+    <!-- 终端会话：多会话对话 + 输入 -->
+    <section id="view-terminal" class="view row">
+      <aside id="sidebar">
+        <div class="panel-title" data-i18n="terminal.title">终端会话</div>
+        <button id="new-session-btn" class="btn-primary" data-i18n="terminal.newSession">+ 新建会话</button>
+        <button id="grid-toggle-btn" class="btn-secondary" style="width:100%;margin-bottom:10px;">⊞ 切换到网格视图</button>
+        <div id="session-list" class="session-list"></div>
+      </aside>
+
+      <div id="terminal-pane">
+        <div id="terminal-statusline"></div>
+        <div id="terminal-wrap">
+          <div id="terminal-empty" class="empty-hint" data-i18n="terminal.empty">点击左侧"新建会话"启动一个 Claude Code 终端，可以直接在这里对话，不用再切到终端软件</div>
+          <div id="terminal"></div>
+        </div>
+      </div>
+
+      <div id="terminal-grid-pane" hidden>
+        <div class="grid-hint" data-i18n="terminal.gridHint">同屏显示所有进行中的会话，点击某个面板可以聚焦输入；只有点亮边框的那个会收到键盘输入。</div>
+        <div id="terminal-grid" class="terminal-grid"></div>
+      </div>
+    </section>
+
+    <!-- Claude Tap：发给/收到模型的完整对话内容，逐会话查看 -->
+    <section id="view-tap" class="view">
+      <div class="logs-toolbar">
+        <span class="panel-title" style="padding:0;" data-i18n="nav.tap">Claude Tap</span>
+        <select id="tap-session-select">
+          <option value="" data-i18n="tap.selectPlaceholder">选择一个会话…</option>
+        </select>
+        <label class="autoscroll-toggle">
+          <input type="checkbox" id="tap-autoscroll-toggle" class="switch-input" checked>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span data-i18n="logs.autoScroll">自动滚动到最新</span>
+        </label>
+        <span id="tap-meta" class="hint"></span>
+      </div>
+      <div id="tap-list" class="tap-list"></div>
+    </section>
+
+    <!-- 状态信息：类似 ccstatusline，展示账号额度 + 每个会话的实时状态 -->
+    <section id="view-status" class="view">
+      <div class="panel-title"><span data-i18n="status.usageTitle">账号额度</span><span class="hint" data-i18n="status.usageHint">（跟 ccstatusline 读同一份 Claude Code 登录凭证查询，账号级别，所有会话共享）</span></div>
+      <div id="usage-board" class="cards"></div>
+
+      <div class="panel-title" style="margin-top:18px;"><span data-i18n="status.sessionTitle">会话状态</span><span class="hint" data-i18n="status.sessionHint">（模型 / token 用量 / 吞吐速率 / cwd / git 分支 / 拦截情况）</span></div>
+      <div id="status-board" class="status-board"></div>
+    </section>
+
+    <!-- 历史数据：之前归档过的事件数据快照列表 -->
+    <section id="view-archives" class="view">
+      <div class="panel-title"><span data-i18n="archives.title">历史数据记录</span><span class="hint" data-i18n="archives.hint">（首页"持久化归档"生成的快照，每份都是归档那一刻的完整事件数据）</span></div>
+      <div id="archives-list" class="archives-list"></div>
+    </section>
+
+  </main>
+</div>
+
+<div id="new-session-modal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3 data-i18n="modal.newSession.title">新建终端会话</h3>
+    <p class="modal-hint" data-i18n-html="modal.newSession.hint">会在这个目录下打开一个 shell，并自动帮你敲好 <code>claude</code> 启动命令。</p>
+    <label for="new-session-cwd" data-i18n="modal.newSession.cwdLabel">工作目录</label>
+    <div class="cwd-input-row">
+      <input id="new-session-cwd" type="text" data-i18n-placeholder="modal.newSession.cwdPlaceholder" placeholder="/home/you/project（留空用默认目录）" autocomplete="off">
+      <button id="new-session-browse-btn" class="btn-secondary" type="button" data-i18n="modal.newSession.browse">📁 浏览</button>
+    </div>
+    <div class="modal-actions">
+      <button id="new-session-cancel" class="btn-secondary" data-i18n="modal.cancel">取消</button>
+      <button id="new-session-confirm" class="btn-primary" data-i18n="modal.create">创建</button>
+    </div>
+  </div>
+</div>
+
+<div id="dir-browser-modal" class="modal-backdrop" hidden>
+  <div class="modal modal-wide">
+    <div class="modal-header-row">
+      <h3 data-i18n="modal.dirBrowser.title">选择文件夹</h3>
+      <button id="dir-browser-close" class="btn-secondary" data-i18n="drilldown.close">关闭</button>
+    </div>
+    <div id="dir-browser-path" class="dir-browser-path"></div>
+    <div id="dir-browser-list" class="dir-browser-list"></div>
+    <div class="modal-actions">
+      <button id="dir-browser-cancel" class="btn-secondary" data-i18n="modal.cancel">取消</button>
+      <button id="dir-browser-select" class="btn-primary" data-i18n="modal.dirBrowser.select">选择此文件夹</button>
+    </div>
+  </div>
+</div>
+
+<div id="archive-modal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3 data-i18n="modal.archive.title">持久化归档</h3>
+    <p class="modal-hint" data-i18n="modal.archive.hint">把当前的事件数据完整存一份快照到历史记录里，可以起个名字方便以后识别（不填也可以）。归档之后当前数据不会被清空，如果想重新开始统计，请再点"清空当前数据"。</p>
+    <label for="archive-label" data-i18n="modal.archive.labelLabel">备注名称</label>
+    <input id="archive-label" type="text" data-i18n-placeholder="modal.archive.labelPlaceholder" placeholder="比如：上线前基线 / 2026-09-12 排查记录" autocomplete="off">
+    <div class="modal-actions">
+      <button id="archive-cancel" class="btn-secondary" data-i18n="modal.cancel">取消</button>
+      <button id="archive-confirm" class="btn-primary" data-i18n="modal.archive.confirm">存档</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-modal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3 id="confirm-title">确认操作</h3>
+    <p id="confirm-body" class="modal-hint"></p>
+    <div class="modal-actions">
+      <button id="confirm-cancel" class="btn-secondary" data-i18n="modal.cancel">取消</button>
+      <button id="confirm-ok" class="btn-danger" data-i18n="modal.confirm">确认</button>
+    </div>
+  </div>
+</div>
+
+<div id="drilldown-modal" class="modal-backdrop" hidden>
+  <div class="modal modal-wide">
+    <div class="modal-header-row">
+      <h3 id="drilldown-title">详情</h3>
+      <button id="drilldown-close" class="btn-secondary" data-i18n="drilldown.close">关闭</button>
+    </div>
+    <div id="drilldown-body" class="drilldown-body"></div>
+  </div>
+</div>
+
+<script src="/i18n.js"></script>
+<script src="/vendor/xterm/lib/xterm.js"></script>
+<script src="/vendor/xterm-addon-fit/xterm-addon-fit.js"></script>
+<script src="/vendor/xterm-addon-webgl/xterm-addon-webgl.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

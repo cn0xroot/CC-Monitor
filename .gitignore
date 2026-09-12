@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node (webui/)
+node_modules/
+npm-debug.log*
+*.tsbuildinfo
+
+# CC-Monitor 运行时数据（不属于代码，不该进仓库）
+.cc-monitor/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Claude Code / hooks 安装时产生的备份
+*.json.bak
+settings.json.bak.*
+
+# 编辑器 / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+

@@ -1,0 +1,49 @@
+#!/usr/bin/env bpftrace
+// CC-Monitor 系统层探针（Linux / eBPF）
+//
+// 独立于 Claude Code 自身的 hooks，直接在内核层跟踪所有从 `claude` 进程派生出来的
+// 子孙进程树的 execve（真正执行了什么命令）和 connect（真正连了哪个 IP:port）。
+// 用于交叉验证应用层 hooks 是否被绕过/篡改——hooks 是"自证清白"，这里是独立的第三方观察。
+//
+// 边界识别：子进程 fork 出来后、真正 exec 新程序之前，comm 仍然继承自父进程（"claude"）；
+// 一旦这个子进程 execve 到别的程序（比如 /bin/bash），就是它从 Claude Code 派生出来的证据。
+// 之后再用 sched_process_fork 把这条"血统"持续传播给后续所有子孙进程。
+
+BEGIN
+{
+    printf("READY\n");
+}
+
+tracepoint:sched:sched_process_fork
+/@watch[args.parent_pid]/
+{
+    @watch[args.child_pid] = 1;
+}
+
+tracepoint:syscalls:sys_enter_execve
+{
+    if (comm == "claude") {
+        @watch[pid] = 1;
+    }
+    if (@watch[pid]) {
+        printf("EXEC\t%d\t%d\t%s\t", pid, uid, comm);
+        join(args.argv);
+    }
+}
+
+tracepoint:syscalls:sys_enter_connect
+/@watch[pid]/
+{
+    $sa = (struct sockaddr *) args.uservaddr;
+    if ($sa->sa_family == 2) {
+        $sin = (struct sockaddr_in *) $sa;
+        $port = ($sin->sin_port >> 8) | (($sin->sin_port << 8) & 0xff00);
+        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\n", pid, uid, comm, ntop($sin->sin_addr.s_addr), $port);
+    }
+}
+
+tracepoint:sched:sched_process_exit
+/@watch[pid]/
+{
+    delete(@watch[pid]);
+}
