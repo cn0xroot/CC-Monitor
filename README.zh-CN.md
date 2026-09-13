@@ -145,7 +145,22 @@ CC-Monitor 是双层监测架构：
 
 ## 安装
 
-依赖：Python 3（标准库即可，无第三方包依赖）。系统层探针额外依赖 Linux 的 `bpftrace`。
+### 环境要求
+
+- **hooks（`cc_monitor/`）**：Python 3.8 及以上，标准库即可，无第三方包依赖。系统层探针
+  额外依赖 Linux 的 `bpftrace`（可选功能，没装也不影响 hooks 正常工作）。
+- **Web UI（`webui/`）**：Node.js **≥ 22**——不是随便定的下限，是 `better-sqlite3`
+  这个依赖自己在 `package.json` 的 `engines` 字段里写死的要求（`express` 本身只要
+  Node ≥ 18，但 `better-sqlite3` 卡在 22，装了低于这个版本的 Node 大概率会在装依赖
+  或者启动阶段直接报错）。用 [nvm](https://github.com/nvm-sh/nvm) 之类工具确认一下
+  `node --version` 再装。
+
+**已验证可以正常运行的环境**（不代表其它环境跑不了，只是这是实际测过、确认没问题的）：
+Ubuntu 24.04 LTS（内核 7.0，x86_64）、AMD Ryzen 9 9950X（Zen 5 架构）、Node.js
+v22.17.1、npm 10.9.2、Python 3.13.5。桌面版（Electron）额外验证过：早期锁定的
+Electron 33.x 在这颗 CPU 上打包出来的应用启动即崩溃（详见下面"桌面版"一节），换成
+44.x 后正常——这也是为什么 `webui/package.json` 里 Electron 版本没有随便往回调的
+原因。
 
 **赶时间的话**：`./install.sh` 一键装好（hooks 注册 + Web UI 依赖），装完用 `./start.sh`
 一键启动 Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，往下看手动步骤。

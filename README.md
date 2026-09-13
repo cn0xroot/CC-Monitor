@@ -170,8 +170,22 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
 
 ## Installation
 
-Dependency: Python 3 (standard library only, no third-party packages). The system-layer probe
-additionally needs `bpftrace` on Linux.
+### Requirements
+
+- **Hooks (`cc_monitor/`)**: Python 3.8+, standard library only, no third-party packages. The
+  system-layer probe additionally needs `bpftrace` on Linux (optional — the hooks work fine
+  without it).
+- **Web UI (`webui/`)**: Node.js **≥ 22** — not an arbitrary floor, it's what `better-sqlite3`
+  itself declares in its `package.json` `engines` field (`express` only needs Node ≥ 18, but
+  `better-sqlite3` requires 22; an older Node will likely fail during install or at startup).
+  Check `node --version` before installing, e.g. via [nvm](https://github.com/nvm-sh/nvm).
+
+**Verified working environment** (not the only one that works — just the one this has
+actually been tested and confirmed on): Ubuntu 24.04 LTS (kernel 7.0, x86_64), AMD Ryzen 9
+9950X (Zen 5), Node.js v22.17.1, npm 10.9.2, Python 3.13.5. The desktop (Electron) build was
+additionally verified to crash on startup on this CPU with the originally-pinned Electron
+33.x, and to run correctly after upgrading to 44.x (see the Desktop app section below) — which
+is why that version isn't pinned back down.
 
 **In a hurry?** Run `./install.sh` to do it all in one step (hook registration + Web UI
 dependencies), then `./start.sh` to launch the Web UI (it installs dependencies on first run if

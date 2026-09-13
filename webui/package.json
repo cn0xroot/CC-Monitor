@@ -5,6 +5,9 @@
   "description": "CC-Monitor Web UI: multi-session Claude Code terminal + live audit log viewer",
   "author": "cn0xroot",
   "main": "electron-main.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/",

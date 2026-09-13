@@ -209,7 +209,11 @@ def _handle_connect_line(fields):
 
 def run():
     if shutil.which("bpftrace") is None:
-        print("错误: 未找到 bpftrace，请先安装 (apt install bpftrace / brew 等)", file=sys.stderr)
+        print(
+            "错误: 未找到 bpftrace，请先安装（如 Debian/Ubuntu: apt install bpftrace）。"
+            "这个探针依赖 Linux 内核的 eBPF 子系统，macOS 上没有等价物，装不了也跑不起来。",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if not BT_SCRIPT.exists():
         print("错误: 找不到探针脚本 {}".format(BT_SCRIPT), file=sys.stderr)
