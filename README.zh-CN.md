@@ -42,6 +42,38 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
 `CC_MONITOR_WEBUI_HOST=0.0.0.0` 重启服务，那个开关才会真正生效（默认关，绑成
 `0.0.0.0` 之后也是先拒绝所有非本机请求，开关打开才放行）。
 
+## 桌面版（Electron）
+
+不想开浏览器手动跑 `node server.js` 的话，`webui/` 下也有一个 Electron 套壳版本——
+直接 `require` 现有的 `server.js`（Express + ws + node-pty + better-sqlite3），不用改
+一行服务端代码，跑起来是一个独立窗口的桌面应用。
+
+```bash
+cd webui
+npm install
+npm run electron          # 开发模式：直接跑，不用先打包
+```
+
+固定监听 `127.0.0.1:9998`（跟网页版默认的 9999 不冲突，两种用法能同时开着）。
+
+打包成可分发的安装包：
+
+```bash
+npm run dist:linux   # AppImage（x64 + arm64）
+npm run dist:mac     # universal dmg（Intel + Apple Silicon 通用）
+```
+
+打包前会自动跑 `electron-rebuild` 把 `node-pty`/`better-sqlite3` 这两个原生模块
+重新编译成匹配 Electron 内置 Node 版本的 ABI（这两个包本身用的是预编译的 prebuilds，
+跟 Electron 的 Node 版本对不上直接用会崩，rebuild 这一步是必须的，不是可选优化）。
+
+**已知情况**：`devDependencies` 里的 Electron 版本锁在 `^44.0.0`，不是随便挑的——
+早期用默认的 33.x 时，在一台 AMD 最新款 CPU（Zen 5 架构）上打包出来的桌面版一启动
+就必现 segfault，换成 44.x 后问题消失，怀疑是那个版本内置 Chromium 对这颗 CPU 某个
+新指令集的支持有 bug，不建议把这个版本号往回调。目前只在 Linux x64 上完整验证过
+"打包出来的桌面版能正常启动、内嵌服务正常监听"这条链路；macOS 和 Linux ARM64 的
+打包产物还没有做过端到端验证。
+
 ## 截图
 
 | 首页概览 | 会话列表下钻 |
@@ -271,7 +303,3 @@ sudo ./bin/CC-Monitor-probe
   控制 UI 怎么渲染 API 已经返回的内容，新模型下开着也没用）；Opus 4.6 / Sonnet 4.6
   及更早的模型默认就是 `"summarized"`，会有正文。CC-Monitor 的"显示思考详情"开关
   在有正文的时候能完整展开，没有正文时如实说明原因，不会假装能变出不存在的数据。
-
-## Contributors
-
-- [cn0xroot](https://github.com/cn0xroot)

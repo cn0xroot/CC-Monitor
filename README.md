@@ -49,6 +49,41 @@ explicitly set `CC_MONITOR_WEBUI_HOST=0.0.0.0` and restart the service; only the
 switch actually do anything (it defaults to off even when bound to `0.0.0.0`, rejecting every
 non-local request until turned on).
 
+## Desktop app (Electron)
+
+If you'd rather not open a browser and run `node server.js` by hand, `webui/` also has an
+Electron wrapper — it directly `require`s the existing `server.js` (Express + ws + node-pty +
+better-sqlite3) with zero server-side code changes, and runs as a standalone windowed app.
+
+```bash
+cd webui
+npm install
+npm run electron          # dev mode: runs directly, no packaging needed
+```
+
+Binds to `127.0.0.1:9998` (distinct from the web version's default 9999, so both can run at
+the same time).
+
+To build a distributable installer:
+
+```bash
+npm run dist:linux   # AppImage (x64 + arm64)
+npm run dist:mac     # universal dmg (Intel + Apple Silicon)
+```
+
+Both scripts run `electron-rebuild` first to recompile `node-pty`/`better-sqlite3` against
+Electron's bundled Node ABI — these packages ship prebuilt binaries that don't match
+Electron's Node version out of the box, so this rebuild step is required, not an optional
+optimization.
+
+**Known status**: the Electron version pinned in `devDependencies` (`^44.0.0`) isn't
+arbitrary — an earlier build on the default 33.x reproducibly segfaulted on startup on a
+recent AMD CPU (Zen 5), and switching to 44.x fixed it; this looks like a Chromium/CPU
+compatibility bug in that older Electron release, so don't roll the version back. So far only
+the "packaged app starts and its embedded server listens correctly" path has been verified
+end-to-end on Linux x64; the macOS and Linux ARM64 builds haven't been validated end-to-end
+yet.
+
 ## Screenshots
 
 | Home overview | Session list drilldown |
@@ -312,7 +347,3 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
   before showing the latest results.
 - The network layer only sees IP:port, not the real hostname (best-effort reverse DNS, not always
   accurate).
-
-## Contributors
-
-- [cn0xroot](https://github.com/cn0xroot)
