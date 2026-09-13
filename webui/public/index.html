@@ -13,12 +13,12 @@
     <div class="brand" data-i18n="brand.title">CC-Monitor</div>
     <nav id="tabs">
       <button class="tab-btn active" data-tab="home" data-i18n="nav.home">首页</button>
-      <button class="tab-btn" data-tab="logs" data-i18n="nav.logs">Log 审计</button>
-      <button class="tab-btn" data-tab="approvals"><span data-i18n="nav.approvals">AI 审批台</span><span id="approvals-badge" class="nav-badge" hidden>0</span></button>
-      <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
-      <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">Claude Tap</button>
       <button class="tab-btn" data-tab="status" data-i18n="nav.status">状态信息</button>
       <button class="tab-btn" data-tab="network" data-i18n="nav.network">网络流量</button>
+      <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
+      <button class="tab-btn" data-tab="approvals"><span data-i18n="nav.approvals">AI 审批台</span><span id="approvals-badge" class="nav-badge" hidden>0</span></button>
+      <button class="tab-btn" data-tab="logs" data-i18n="nav.logs">Log 审计</button>
+      <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">Claude Tap</button>
       <button class="tab-btn" data-tab="archives" data-i18n="nav.archives">历史数据</button>
     </nav>
     <select id="theme-select" class="pill-select" title="Theme">
@@ -103,6 +103,10 @@
           <div class="card-num" id="stat-mcp-calls">-</div>
           <div class="card-label"><span data-i18n="home.card.mcpCalls">MCP 调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
         </div>
+        <div class="card clickable" data-drilldown="skill-calls">
+          <div class="card-num" id="stat-skill-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.skillCalls">Skill 调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
         <div class="card clickable" data-drilldown="ai-trajectory">
           <div class="card-num" id="stat-ai-trajectory">-</div>
           <div class="card-label"><span data-i18n="home.card.aiTrajectory">AI 轨迹（访问过的域名/IP）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
@@ -111,18 +115,18 @@
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.fileOps.title">文件操作统计（Claude Code 发起的）</div>
       <div class="cards">
-        <div class="card clickable" data-drilldown="file-op-read"><div class="card-num" id="stat-file-reads">-</div><div class="card-label"><span data-i18n="home.fileOps.reads">读取</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="file-op-write"><div class="card-num" id="stat-file-writes">-</div><div class="card-label"><span data-i18n="home.fileOps.writes">写入</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="file-op-edit"><div class="card-num" id="stat-file-edits">-</div><div class="card-label"><span data-i18n="home.fileOps.edits">编辑</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="file-op-delete"><div class="card-num" id="stat-file-deletes">-</div><div class="card-label"><span data-i18n="home.fileOps.deletes">删除（按命令文本近似识别，非精确）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-blue" data-drilldown="file-op-read"><div class="card-num" id="stat-file-reads">-</div><div class="card-label"><span data-i18n="home.fileOps.reads">读取</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-cyan" data-drilldown="file-op-write"><div class="card-num" id="stat-file-writes">-</div><div class="card-label"><span data-i18n="home.fileOps.writes">写入</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-green" data-drilldown="file-op-edit"><div class="card-num" id="stat-file-edits">-</div><div class="card-label"><span data-i18n="home.fileOps.edits">编辑</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-yellow" data-drilldown="file-op-delete"><div class="card-num" id="stat-file-deletes">-</div><div class="card-label"><span data-i18n="home.fileOps.deletes">删除（按命令文本近似识别，非精确）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.installOps.title">软件安装统计（按命中的安装类规则识别）</div>
       <div class="cards">
-        <div class="card clickable" data-drilldown="install-op-pip"><div class="card-num" id="stat-install-pip">-</div><div class="card-label"><span data-i18n="home.installOps.pip">pip 安装 Python 包</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="install-op-system"><div class="card-num" id="stat-install-system">-</div><div class="card-label"><span data-i18n="home.installOps.system">系统包管理器（apt/yum/dnf/pacman）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="install-op-npm"><div class="card-num" id="stat-install-npm">-</div><div class="card-label"><span data-i18n="home.installOps.npm">npm 全局安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="install-op-other"><div class="card-num" id="stat-install-other">-</div><div class="card-label"><span data-i18n="home.installOps.other">其它软件安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-blue" data-drilldown="install-op-pip"><div class="card-num" id="stat-install-pip">-</div><div class="card-label"><span data-i18n="home.installOps.pip">pip 安装 Python 包</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-cyan" data-drilldown="install-op-system"><div class="card-num" id="stat-install-system">-</div><div class="card-label"><span data-i18n="home.installOps.system">系统包管理器（apt/yum/dnf/pacman）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-green" data-drilldown="install-op-npm"><div class="card-num" id="stat-install-npm">-</div><div class="card-label"><span data-i18n="home.installOps.npm">npm 全局安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable chip-yellow" data-drilldown="install-op-other"><div class="card-num" id="stat-install-other">-</div><div class="card-label"><span data-i18n="home.installOps.other">其它软件安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="box-title" style="margin:4px 0 8px;"><span data-i18n="home.anthropicAccount.title">Anthropic 账号信息</span> <span class="hint" data-i18n="home.anthropicAccount.hint">（跟 ccstatusline 读同一份 OAuth 凭证查询，账号级别，所有会话共享）</span></div>

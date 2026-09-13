@@ -278,6 +278,29 @@ function mcpCallBreakdown(limit = 100) {
   }, []);
 }
 
+// Skill 调用——跟 MCP 调用同一个思路，只是分组用的不是 tool_name 前缀，而是
+// tool_input 里的 skill 字段本身（`Skill` 这个工具名固定不变，具体调用的是哪个
+// skill 全在 detail.skill 里）。SQLite 自带的 json_extract 直接在 SQL 里取，
+// 不用先把每一行 detail 都读出来在 JS 里 JSON.parse 一遍。
+function skillCallStats() {
+  return withDb((db) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Skill'`).get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+function skillCallBreakdown(limit = 100) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT COALESCE(json_extract(detail, '$.skill'), '?') AS skill, COUNT(*) AS n
+         FROM events WHERE source = 'hook_pre' AND tool_name = 'Skill'
+         GROUP BY skill ORDER BY n DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 // 工具调用/MCP 调用卡片下钻里点进某个具体工具名之后的事件明细，跟 fileOpDetails/
 // installDetails 是同一个套路。
 function toolCallDetails(toolName, limit = 300) {
@@ -289,6 +312,63 @@ function toolCallDetails(toolName, limit = 300) {
          ORDER BY id DESC LIMIT ?`
       )
       .all(toolName, limit);
+  }, []);
+}
+
+// 工具调用/MCP 调用/Skill 调用这三张卡片下钻的"事件明细"部分——按工具名分组的次数
+// 只能看出"用得多不多"，看不出"具体是哪个 session、哪个目录、什么时候调用的"，
+// 这三个函数专门补这块：平铺列出最近的事件，带 Session ID/cwd/时间戳。
+function toolCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(`SELECT id, ts, session_id, cwd, tool_name FROM events WHERE source = 'hook_pre' ORDER BY id DESC LIMIT ?`)
+      .all(limit);
+  }, []);
+}
+
+function mcpCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name FROM events
+         WHERE source = 'hook_pre' AND tool_name LIKE ? ESCAPE '\\'
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(MCP_TOOL_PATTERN, limit);
+  }, []);
+}
+
+function skillCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, COALESCE(json_extract(detail, '$.skill'), '?') AS skill FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Skill'
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+// AI 轨迹卡片下钻的事件明细部分——跟上面三个不一样：这些数据来自系统层探针的
+// CONNECT 观测（source='os_net'），探针只在内核层面看到 pid/uid，天生不知道
+// "这属于 Claude Code 的哪个 session"，所以 session_id/cwd 在这张表里永远是空的，
+// 不是查询漏了字段——前端要如实显示"不可用"，不能编一个假的出来。能给的是
+// 时间戳和 pid（探针观测到的进程号，勉强算是"哪个进程"的线索）。
+function networkConnectEvents(limit = 300) {
+  return withDb((db) => {
+    const rows = db
+      .prepare(`SELECT id, ts, tool_name, detail FROM events WHERE source = 'os_net' ORDER BY id DESC LIMIT ?`)
+      .all(limit);
+    return rows.map((r) => {
+      let detail = {};
+      try {
+        detail = r.detail ? JSON.parse(r.detail) : {};
+      } catch (e) {
+        detail = {};
+      }
+      return { id: r.id, ts: r.ts, comm: r.tool_name, pid: detail.pid, ip: detail.ip, port: detail.port, host: detail.host };
+    });
   }, []);
 }
 
@@ -344,7 +424,13 @@ module.exports = {
   toolCallBreakdown,
   mcpCallStats,
   mcpCallBreakdown,
+  skillCallStats,
+  skillCallBreakdown,
   toolCallDetails,
+  toolCallEvents,
+  mcpCallEvents,
+  skillCallEvents,
+  networkConnectEvents,
   eventTypeBreakdown,
   blockedDetails,
 };

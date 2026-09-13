@@ -11,13 +11,17 @@
     return [lon / 180, lat / 90];
   }
 
+  // 等距柱状投影天生是 2:1（经度跨 360°、纬度跨 180°），画布不一定正好是 2:1，
+  // 所以要在 clip space 里按画布实际宽高比再缩放一次，让经纬度的像素密度一致，
+  // 多出来的部分用留白（letterbox/pillarbox）而不是拉伸填满。
   const VERT_POINT = `#version 300 es
 layout(location=0) in vec2 a_ll;
 layout(location=1) in float a_mag;
 uniform float u_size;
+uniform vec2 u_scale;
 out float v_mag;
 void main() {
-  vec2 p = vec2(a_ll.y / 180.0, a_ll.x / 90.0);
+  vec2 p = vec2(a_ll.y / 180.0, a_ll.x / 90.0) * u_scale;
   gl_Position = vec4(p, 0.0, 1.0);
   gl_PointSize = u_size * (0.6 + a_mag * 1.8);
   v_mag = a_mag;
@@ -39,8 +43,9 @@ void main() {
 
   const VERT_LINE = `#version 300 es
 layout(location=0) in vec2 a_ll;
+uniform vec2 u_scale;
 void main() {
-  vec2 p = vec2(a_ll.y / 180.0, a_ll.x / 90.0);
+  vec2 p = vec2(a_ll.y / 180.0, a_ll.x / 90.0) * u_scale;
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
 
@@ -128,6 +133,9 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
       this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
       this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
       this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      const canvasAspect = this.canvas.width / this.canvas.height;
+      const dataAspect = 2; // 经度 360° / 纬度 180°
+      this.scale = canvasAspect > dataAspect ? [dataAspect / canvasAspect, 1] : [1, canvasAspect / dataAspect];
       this.render();
     }
 
@@ -174,11 +182,14 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
+      const scale = this.scale || [1, 1];
+
       if (this.landCount > 0) {
         gl.useProgram(this.lineProg);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.landBuf);
         gl.enableVertexAttribArray(0);
         gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(gl.getUniformLocation(this.lineProg, "u_scale"), scale[0], scale[1]);
         gl.uniform3f(gl.getUniformLocation(this.lineProg, "u_col"), 0.35, 0.55, 0.75);
         gl.uniform1f(gl.getUniformLocation(this.lineProg, "u_alpha"), 0.55);
         gl.drawArrays(gl.LINES, 0, this.landCount);
@@ -192,6 +203,7 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.magBuf);
         gl.enableVertexAttribArray(1);
         gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(gl.getUniformLocation(this.pointProg, "u_scale"), scale[0], scale[1]);
         gl.uniform1f(gl.getUniformLocation(this.pointProg, "u_size"), 26 * (window.devicePixelRatio || 1));
         gl.uniform3f(gl.getUniformLocation(this.pointProg, "u_col"), 0.95, 0.55, 0.25);
         gl.drawArrays(gl.POINTS, 0, this.pointCount);

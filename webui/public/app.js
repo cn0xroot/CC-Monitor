@@ -854,6 +854,7 @@ async function refreshOverview() {
   document.getElementById("stat-bypass").textContent = s.bypassTotal;
   document.getElementById("stat-tool-calls").textContent = s.toolCalls;
   document.getElementById("stat-mcp-calls").textContent = s.mcpCalls;
+  document.getElementById("stat-skill-calls").textContent = s.skillCalls;
   document.getElementById("stat-ai-trajectory").textContent = s.aiTrajectory;
 
   if (s.fileOps) {
@@ -1441,25 +1442,51 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind === "tool-calls" || kind === "mcp-calls") {
-    const isMcp = kind === "mcp-calls";
-    title.textContent = isMcp ? t("drilldown.mcpCalls.title") : t("drilldown.toolCalls.title");
-    const rows = await api(`/api/drilldown/${kind}`);
-    if (!rows) return;
-    if (rows.length === 0) {
+  if (kind === "tool-calls" || kind === "mcp-calls" || kind === "skill-calls") {
+    const groupKind = kind === "mcp-calls" ? "mcp" : kind === "skill-calls" ? "skill" : "tool";
+    title.textContent =
+      groupKind === "mcp" ? t("drilldown.mcpCalls.title") : groupKind === "skill" ? t("drilldown.skillCalls.title") : t("drilldown.toolCalls.title");
+    const result = await api(`/api/drilldown/${kind}`);
+    if (!result) return;
+    const { breakdown, events } = result;
+    if (breakdown.length === 0) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
       return;
     }
+    const columnLabel = groupKind === "mcp" ? t("drilldown.mcpCalls.server") : groupKind === "skill" ? t("drilldown.skillCalls.skill") : t("drilldown.toolCalls.tool");
+    const rowLabel = (r) => (groupKind === "mcp" ? r.server : groupKind === "skill" ? r.skill : toolLabel(r.tool_name, r.tool_name));
+    const eventLabel = (e) => (groupKind === "skill" ? e.skill : toolLabel(e.tool_name, e.tool_name));
     body.innerHTML = `
       <table class="dd-table">
         <thead><tr>
-          <th>${isMcp ? t("drilldown.mcpCalls.server") : t("drilldown.toolCalls.tool")}</th>
+          <th>${columnLabel}</th>
           <th>${t("drilldown.toolCalls.count")}</th>
         </tr></thead>
         <tbody>
-          ${rows
-            .map((r) => `<tr><td>${escapeHtml(isMcp ? r.server : toolLabel(r.tool_name, r.tool_name))}</td><td>${r.n}</td></tr>`)
-            .join("")}
+          ${breakdown.map((r) => `<tr><td>${escapeHtml(rowLabel(r))}</td><td>${r.n}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="box-title" style="margin:18px 0 8px;">${t("drilldown.eventDetail")}</div>
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("drilldown.col.time")}</th>
+          <th>${t("drilldown.col.sessionId")}</th>
+          <th>${t("drilldown.col.cwd")}</th>
+          <th>${columnLabel}</th>
+        </tr></thead>
+        <tbody>
+          ${
+            events
+              .map(
+                (e) => `<tr>
+              <td class="dd-mono">${escapeHtml((e.ts || "").slice(0, 19))}</td>
+              <td class="dd-mono">${e.session_id ? escapeHtml(e.session_id.slice(0, 8)) + "…" : "-"}</td>
+              <td>${escapeHtml(e.cwd || "-")}</td>
+              <td>${escapeHtml(eventLabel(e))}</td>
+            </tr>`
+              )
+              .join("") || `<tr><td colspan="4">${t("drilldown.empty")}</td></tr>`
+          }
         </tbody>
       </table>`;
     return;
@@ -1467,7 +1494,7 @@ async function openDrilldown(kind) {
 
   if (kind === "ai-trajectory") {
     title.textContent = t("drilldown.aiTrajectory.title");
-    const result = await api("/api/network-traffic?limit=500");
+    const [result, connectEvents] = await Promise.all([api("/api/network-traffic?limit=500"), api("/api/drilldown/ai-trajectory-events")]);
     if (!result) return;
     const rows = result.rows;
     if (rows.length === 0) {
@@ -1496,6 +1523,31 @@ async function openDrilldown(kind) {
               </tr>`;
             })
             .join("")}
+        </tbody>
+      </table>
+      <div class="box-title" style="margin:18px 0 4px;">${t("drilldown.eventDetail")}</div>
+      <div class="hint" style="margin-bottom:10px;">${t("drilldown.aiTrajectory.noSessionHint")}</div>
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("drilldown.col.time")}</th>
+          <th>${t("drilldown.col.process")}</th>
+          <th>${t("network.col.target")}</th>
+          <th>PID</th>
+        </tr></thead>
+        <tbody>
+          ${
+            (connectEvents || [])
+              .map((e) => {
+                const target = e.host ? `${escapeHtml(e.host)}<br><span class="dd-mono hint">${escapeHtml(e.ip || "")}:${e.port ?? "-"}</span>` : `<span class="dd-mono">${escapeHtml(e.ip || "-")}:${e.port ?? "-"}</span>`;
+                return `<tr>
+                <td class="dd-mono">${escapeHtml((e.ts || "").slice(0, 19))}</td>
+                <td class="dd-mono">${escapeHtml(e.comm || "-")}</td>
+                <td>${target}</td>
+                <td class="dd-mono">${e.pid ?? "-"}</td>
+              </tr>`;
+              })
+              .join("") || `<tr><td colspan="4">${t("drilldown.empty")}</td></tr>`
+          }
         </tbody>
       </table>`;
     return;
@@ -1643,14 +1695,15 @@ function fmtResetAt(iso) {
   }
 }
 
-function usageCard(label, bucket) {
+const USAGE_CHIP_CYCLE = ["chip-blue", "chip-cyan", "chip-green"];
+function usageCard(label, bucket, cycleIndex) {
   if (!bucket || bucket.utilization === null) {
     return `<div class="card"><div class="card-num">-</div><div class="card-label">${label}</div></div>`;
   }
   const pct = Math.round(bucket.utilization);
-  const accent = pct >= 90 ? "accent-red" : pct >= 70 ? "accent-yellow" : "";
+  const chip = pct >= 90 ? "chip-red" : pct >= 70 ? "chip-yellow" : USAGE_CHIP_CYCLE[cycleIndex % USAGE_CHIP_CYCLE.length];
   return `
-    <div class="card ${accent}">
+    <div class="card ${chip}">
       <div class="card-num">${pct}%</div>
       <div class="card-label">${label}<br>${bucket.resetsAt ? t("status.usage.resetLabel") + ": " + fmtResetAt(bucket.resetsAt) : ""}</div>
     </div>`;
@@ -1666,10 +1719,10 @@ async function refreshUsageBoard() {
   }
   const d = result.data;
   el.innerHTML = [
-    usageCard(t("status.usage.session"), d.session),
-    usageCard(t("status.usage.weekly"), d.weekly),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
+    usageCard(t("status.usage.session"), d.session, 0),
+    usageCard(t("status.usage.weekly"), d.weekly, 1),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, 2),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, 0),
   ].join("");
 }
 
@@ -1698,10 +1751,10 @@ async function refreshHomeAnthropicInfo() {
   }
   const d = result.data;
   cardsEl.innerHTML = [
-    usageCard(t("status.usage.session"), d.session),
-    usageCard(t("status.usage.weekly"), d.weekly),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
+    usageCard(t("status.usage.session"), d.session, 0),
+    usageCard(t("status.usage.weekly"), d.weekly, 1),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, 2),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, 0),
   ].join("");
 
   if (d.limits && d.limits.length > 0) {

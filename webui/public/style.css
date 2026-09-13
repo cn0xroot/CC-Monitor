@@ -363,6 +363,19 @@ html, body {
 .card.accent-red .card-num { color: var(--red); }
 .card.accent-yellow .card-num { color: var(--yellow); }
 
+/* 彩色数字块——logo 用的那套 Signal/Scan/Watch 配色搬过来，染的是整张卡片的
+   底色（不是只在数字外面包一个小色块），同一组统计里每张卡片用不同颜色，一眼分得清 */
+.card.chip-blue { background: color-mix(in srgb, var(--accent) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.card.chip-cyan { background: color-mix(in srgb, var(--cyan) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--cyan) 40%, var(--border)); }
+.card.chip-green { background: color-mix(in srgb, var(--green) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--green) 40%, var(--border)); }
+.card.chip-yellow { background: color-mix(in srgb, var(--yellow) 26%, var(--bg-panel)); border-color: color-mix(in srgb, var(--yellow) 45%, var(--border)); }
+.card.chip-red { background: color-mix(in srgb, var(--red) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
+.card.chip-blue .card-num { color: var(--accent); }
+.card.chip-cyan .card-num { color: var(--cyan); }
+.card.chip-green .card-num { color: var(--green); }
+.card.chip-yellow .card-num { color: var(--yellow); }
+.card.chip-red .card-num { color: var(--red); }
+
 .home-columns { display: flex; gap: 16px; flex-wrap: wrap; }
 .home-box {
   flex: 1 1 320px;

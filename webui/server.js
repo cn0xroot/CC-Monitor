@@ -352,6 +352,7 @@ app.get("/api/overview", async (req, res) => {
     installOps: audit.installStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
+    skillCalls: audit.skillCallStats().total,
     aiTrajectory: netSummary.distinctIps,
   });
 });
@@ -454,11 +455,19 @@ app.get("/api/drilldown/install-op/:type", (req, res) => {
 });
 
 app.get("/api/drilldown/tool-calls", (req, res) => {
-  res.json(audit.toolCallBreakdown());
+  res.json({ breakdown: audit.toolCallBreakdown(), events: audit.toolCallEvents() });
 });
 
 app.get("/api/drilldown/mcp-calls", (req, res) => {
-  res.json(audit.mcpCallBreakdown());
+  res.json({ breakdown: audit.mcpCallBreakdown(), events: audit.mcpCallEvents() });
+});
+
+app.get("/api/drilldown/skill-calls", (req, res) => {
+  res.json({ breakdown: audit.skillCallBreakdown(), events: audit.skillCallEvents() });
+});
+
+app.get("/api/drilldown/ai-trajectory-events", (req, res) => {
+  res.json(audit.networkConnectEvents());
 });
 
 // ---- REST API: 数据归档（把当前事件数据存档）/ 清空当前事件数据 / 历史归档列表 ----
