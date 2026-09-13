@@ -5,6 +5,44 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.4.1] - 2026-09-13
+
+### Fixed
+- **The interface font-size setting wasn't actually global**: 62 places in the stylesheet
+  (buttons, card numbers, table text, …) had hardcoded pixel font-sizes, so changing only
+  `body`'s own `font-size` never touched them — the slider looked like it barely did
+  anything. Fixing it surfaced a second, related bug: after converting all 62 to `rem`
+  units relative to the root, the first verification pass showed the CSS variable updating
+  correctly while `<html>`'s actual font-size never moved — because the combined
+  `html, body { ... font-size: 1rem }` rule applies to both elements, and `1rem` on the
+  root element itself doesn't mean "relative to itself," it resolves against the browser's
+  16px default; that rule came later in the cascade and silently overrode the dedicated
+  `html` font-size rule. Verified in a fresh browser profile: at the 14px default, buttons
+  render at 13px and card numbers at 28px; at 18px, buttons become 16.7px and card numbers
+  36px — every piece of text scales together now.
+- **The interface font setting had no effect on nav-bar/button text**: browsers'
+  built-in default stylesheet never lets `<button>`/`<select>`/`<input>`/`<textarea>`
+  inherit the surrounding `font-family` — they fall back to the OS's native UI control
+  font instead (Arial, in practice), and that's standard behavior in every browser, not a
+  broken inheritance chain. So switching fonts did nothing for the "Home"/"Status" nav
+  buttons or things like the "New Session" button. Fixed with a single
+  `button, input, select, textarea { font-family: inherit; }` rule — verified via
+  screenshot that the nav text now actually picks up Kaiti's handwritten brush strokes.
+
+### Added
+- **Three new Chinese font options** in the interface font setting: Kaiti (calligraphy-
+  style), Heiti (Source Han Sans), and Songti (Source Han Serif). No font files were
+  bundled into the project — a full CJK glyph set runs 17–21MB each, and bundling would
+  make the first font switch painfully slow to download — so these are plain font-name
+  references instead; they render correctly wherever the visitor's system/browser already
+  has a matching font installed (this Linux machine itself has AR PL UKai/UMing, Noto
+  Sans/Serif CJK, and LXGW WenKai, so same-machine or same-LAN access picks them up
+  directly; Windows's "Microsoft YaHei"/"SimSun" and macOS's "PingFang SC"/"STKaiti" are
+  also in the respective stacks). A "Liu style" (柳体, Liu Gongquan calligraphy) option was
+  not added — no such font is installed on this system, and the free fonts online claiming
+  that style have unverified licensing, so bundling one wasn't safe to do without
+  confirmation.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added

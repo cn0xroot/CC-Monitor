@@ -186,6 +186,9 @@ const I18N = {
     "settings.font.mono": "等宽字体",
     "settings.font.serif": "衬线字体",
     "settings.font.rounded": "圆体",
+    "settings.font.kaiti": "楷体",
+    "settings.font.heiti": "黑体（思源黑体）",
+    "settings.font.songti": "宋体（思源宋体）",
     "settings.sizeLabel": "界面字号",
     "settings.previewText": "CC-Monitor 正在监控 Claude Code 的文件读写、命令执行与网络连接。",
     "settings.reset": "恢复默认",
@@ -572,6 +575,9 @@ const I18N = {
     "settings.font.mono": "Monospace",
     "settings.font.serif": "Serif",
     "settings.font.rounded": "Rounded",
+    "settings.font.kaiti": "Kaiti (Chinese calligraphy-style)",
+    "settings.font.heiti": "Heiti (Source Han Sans)",
+    "settings.font.songti": "Songti (Source Han Serif)",
     "settings.sizeLabel": "Interface font size",
     "settings.previewText": "CC-Monitor is watching Claude Code's file reads/writes, command execution, and network connections.",
     "settings.reset": "Reset to defaults",
@@ -839,11 +845,19 @@ function applyTheme(theme) {
 }
 
 // ---------- 界面字体/字号（外观设置弹窗） ----------
+// 这几个中文字体没有打包字体文件进项目（完整 CJK 字库一个 17~21MB，直接打包会让
+// 首次切字体的下载很慢），是纯字体名引用——访问者的系统/浏览器本地要真的装了这个
+// 字体才会生效，没装就退到后面的备选字体。同一台机器（或同一局域网内的 Linux
+// 机器）自己开浏览器访问的话，Windows 的"微软雅黑"/"宋体"、Mac 的"苹方"/"华文楷体"、
+// 以及这台 Linux 上已经装好的 AR PL UKai/UMing、Noto Sans/Serif CJK、霞鹜文楷都能命中。
 const FONT_STACKS = {
   system: '"Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, "LXGW WenKai", "霞鹜文楷", "楷体", "STKaiti", "Kaiti SC", KaiTi, "AR PL UKai CN", sans-serif',
   mono: 'Menlo, Consolas, "SF Mono", "JetBrains Mono", "LXGW WenKai", "霞鹜文楷", monospace',
   serif: 'Georgia, "Songti SC", "STSong", SimSun, "LXGW WenKai", serif',
   rounded: '"SF Pro Rounded", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  kaiti: '"楷体", "STKaiti", "Kaiti SC", KaiTi, "华文楷体", "文鼎ＰＬ简中楷", "AR PL KaitiM GB", "AR PL UKai CN", "霞鹜文楷", "LXGW WenKai", -apple-system, sans-serif',
+  heiti: '"Microsoft YaHei", "微软雅黑", "PingFang SC", "苹方", "Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Micro Hei", "文泉驿微米黑", -apple-system, "Segoe UI", sans-serif',
+  songti: '"SimSun", "宋体", "Songti SC", "宋体-简", "STSong", "Noto Serif CJK SC", "AR PL UMing CN", "文鼎ＰＬ细上海宋", Georgia, serif',
 };
 let currentFont = localStorage.getItem("cc_monitor_font") || "system";
 let currentFontSize = parseInt(localStorage.getItem("cc_monitor_font_size"), 10) || 14;

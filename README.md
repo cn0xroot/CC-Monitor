@@ -124,8 +124,14 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search)'s color scheme) shown as its
     own accent-color dot with an active highlight; the original top-bar theme dropdown still
     works too and stays in sync.
-  - **Interface font** (system default / monospace / serif / rounded) and **interface font
-    size** (12–18px slider) — new settings, with a live preview, persisted to `localStorage`.
+  - **Interface font** (system default / monospace / serif / rounded / Kaiti / Heiti
+    (Source Han Sans) / Songti (Source Han Serif)) and **interface font size** (12–18px
+    slider, applied at the root element with every `font-size` in the stylesheet in `rem`,
+    so one change scales the whole app proportionally) — new settings, with a live
+    preview, persisted to `localStorage`. The Chinese font options aren't bundled as font
+    files (a full CJK glyph set is 17–21MB each, which would make the first font switch
+    painfully slow) — they're plain font-name references that only render correctly where
+    the visitor's system already has a matching font installed.
   - **Language toggle**: translation covers UI chrome (nav, buttons, titles, empty-state
     hints, risk/operation/status labels) but not the data itself (raw command text, tool
     output, transcript content). The risk/operation-type/status badges in the audit log use
