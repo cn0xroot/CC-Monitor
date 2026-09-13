@@ -7,6 +7,45 @@
 
 ## [未发布]
 
+## [1.2.2] - 2026-09-12
+
+### 修复
+- Web UI 终端会话"模型ID识别失败"的真正根因：新建终端会话时，spawn 出来的 `claude`
+  进程原样继承了 Node 服务进程自己的 `CLAUDE_CODE_SESSION_ID`/`CLAUDE_CODE_CHILD_SESSION`
+  等环境变量（当 `node server.js` 本身是在另一个 Claude Code 会话里启动的时候就会
+  出现），导致它被当成"子会话"处理，根本不写自己的 transcript 文件。建终端前把这些
+  变量摘干净了。（之前误判过是 cwd 符号链接不匹配，那个修复本身也有效、保留了，
+  但不是这个 bug 的主因）
+- WEB 终端会话经常"突然就没了"：服务端此前没有任何全局崩溃保护，一个请求/WS 消息
+  里的未捕获异常会直接干掉整个进程、陪葬所有会话。加了 `uncaughtException`/
+  `unhandledRejection` 兜底（记日志但不退出），`sessions.js` 的 `write()` 也补了
+  漏掉的 try/catch。
+- 网页刷新后终端会话/Claude Tap 选中的会话都要重新选：当前会话状态只是纯前端临时
+  变量，刷新就归零。存进 `localStorage`，刷新自动恢复。顺手修了 Claude Tap 那边一个
+  "判断是否首次建下拉选项"用错判断条件（`options.length===0` 因为 HTML 里写死了
+  占位 option 永远为 false）导致恢复逻辑压根不触发的隐藏 bug。
+- 待批准漏掉 Claude Code 原生的 WebSearch 等询问：新增 `web_search` 规则，并且把
+  confirm 通过后的 hook 输出从纯 exit code 改成 `hookSpecificOutput.permissionDecision
+  :"allow"` 这种 JSON 格式——不这样做的话，网页上点"允许"之后 Claude Code 自己的原生
+  弹窗还会再问一遍。没被我们规则覆盖的操作仍然原样交给 Claude Code 自己的原生询问
+  处理，不会被静默放行。
+- 终端软件（非 WEB 端终端）的确认框在网页上看不到：根因是 Web UI 进程和你终端里
+  `claude` 进程如果不是同一个操作系统用户，两边会读写完全不同的 `~/.cc-monitor/`
+  数据库。新增"Claude Code 运行身份检测"卡片（首页常驻 + 下钻明细），检测到用户不
+  一致时会有醒目提示；`start.sh` 用 root 启动时会警告，`server.js` 启动时打印当前
+  运行用户。
+
+### 新增
+- 待批准增加"批准，且 10/30 分钟内不再询问"两个选项，跟"一直允许"共用同一套
+  session 级别的记忆机制，只是多带一个过期时间。
+- 待批准支持浏览器桌面通知（Notification API）：有新请求时哪怕没开着这个页面/
+  标签页不在前台也能弹系统通知，点击直接跳回来处理，同一条请求不会重复通知。
+- 首页"终端会话（进行中）"下钻增加 Session ID / 拦截绕过 / 时间范围三列，跟"所有
+  会话"下钻保持一致。
+
+### 变更
+- "待批准"改名"AI 审批台"（英文 "AI Approvals"），中英文界面和文档同步更新。
+
 ## [1.2.1] - 2026-09-12
 
 ### 修复

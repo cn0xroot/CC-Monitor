@@ -7,6 +7,51 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-12
+
+### Fixed
+- The real root cause of "model ID not detected" for Web UI terminal sessions: a newly
+  spawned `claude` process inherited the host Node process's own `CLAUDE_CODE_SESSION_ID`/
+  `CLAUDE_CODE_CHILD_SESSION` environment variables (this shows up whenever `node server.js`
+  itself was started from inside another Claude Code session), causing Claude Code to treat
+  it as a nested child session and never write its own transcript file. Strip those env vars
+  before spawning. (An earlier fix for a cwd/symlink mismatch was a real, separate
+  improvement and is kept, but wasn't the main cause of this bug.)
+- Web UI terminal sessions occasionally "just disappearing": the server had zero global
+  crash protection, so any single uncaught exception or WS message error took down the
+  entire process — and every live session with it. Added `uncaughtException`/
+  `unhandledRejection` handlers (log, don't exit); also wrapped a missing try/catch in
+  `sessions.js`'s `write()`.
+- Refreshing the browser lost the selected terminal session / Claude Tap session: this state
+  was a plain in-memory variable that reset on reload. Now persisted to `localStorage` and
+  restored automatically. Fixed a related hidden bug in Claude Tap's option-rebuild logic
+  (`options.length === 0` is never true because the HTML ships with a placeholder option, so
+  the "is this the first build" check never fired).
+- AI Approvals missed Claude Code's own native asks like WebSearch: added a `web_search`
+  rule, and switched the hook's approved-confirm response from a plain exit code to the
+  `hookSpecificOutput.permissionDecision:"allow"` JSON format — without this, choosing
+  "allow" on the web page still left Claude Code's own native popup asking a second time.
+  Anything not covered by our rule table still falls through to Claude Code's own native
+  prompt untouched, rather than being silently waved through.
+- Confirmation prompts from a real terminal (not the Web UI) were invisible on the web page:
+  root cause was the Web UI process and your terminal's `claude` process running as
+  different OS users, each reading/writing a separate `~/.cc-monitor/` database. Added a
+  "Claude Code identity check" (Home page card + drilldown) that flags a user mismatch;
+  `start.sh` now warns on a root launch, and `server.js` logs its effective user on startup.
+
+### Added
+- Two new AI Approvals options: "allow, don't ask again for 10/30 minutes," sharing the same
+  session-scoped memory as "always allow" plus an expiry.
+- Browser desktop notifications (Notification API) for AI Approvals — new requests raise a
+  system notification even when the tab isn't focused; click it to jump back in. Each
+  request notifies only once.
+- The "Terminal Sessions (live)" drilldown on Home now also shows Session ID / blocked-or-
+  bypassed / time range, matching the "all sessions" drilldown.
+
+### Changed
+- Renamed "Pending Approvals" to "AI Approvals" ("AI 审批台" in Chinese) across the UI and
+  docs.
+
 ## [1.2.1] - 2026-09-12
 
 ### Fixed
