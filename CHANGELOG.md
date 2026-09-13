@@ -7,6 +7,20 @@
 
 ## [未发布]
 
+## [1.2.1] - 2026-09-12
+
+### 修复
+- `webui/package.json` 的 `main` 字段一直是 `"server.js"`，导致 electron-builder 打包出来
+  的桌面版直接把纯 Express 服务端脚本当成 Electron 主进程入口，完全绕过了
+  `electron-main.js` 里开窗口、设置 9998 端口的逻辑（表现为：打包出来的 AppImage 不开
+  窗口，还去抢网页版默认监听的 9999 端口）。之前手动跑 `electron electron-main.js`
+  测试是好的，是因为显式指定了入口文件，掩盖了这个问题；实际打包才暴露出来。改成
+  `"main": "electron-main.js"`。
+
+### 变更
+- `.gitignore` 新增 `webui/dist/`（electron-builder 的打包输出目录），避免几十上百 MB
+  的二进制文件被误提交进仓库。
+
 ## [1.2.0] - 2026-09-12
 
 ### 新增

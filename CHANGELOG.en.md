@@ -7,6 +7,21 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-12
+
+### Fixed
+- `webui/package.json`'s `main` field was still `"server.js"`, so electron-builder packaged
+  the raw Express server script as the Electron main process, entirely bypassing
+  `electron-main.js`'s window-opening and port-9998 logic (in practice: the packaged AppImage
+  opened no window and tried to grab the web version's default port 9999 instead). Manual
+  testing via `electron electron-main.js` worked fine because it named the entry file
+  explicitly, masking the bug — an actual package build surfaced it. Fixed by setting
+  `"main": "electron-main.js"`.
+
+### Changed
+- Added `webui/dist/` (electron-builder's output directory) to `.gitignore`, so the tens-to-
+  hundreds-of-MB packaged binaries never get committed by accident.
+
 ## [1.2.0] - 2026-09-12
 
 ### Added
