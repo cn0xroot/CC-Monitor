@@ -112,9 +112,9 @@ function confirmDialog(title, body) {
 }
 
 // ---------- 顶部导航 / 页面切换 ----------
-document.querySelectorAll(".tab-btn").forEach((btn) => {
+document.querySelectorAll(".tab-btn:not(.nav-external-link)").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-btn:not(.nav-external-link)").forEach((b) => b.classList.remove("active"));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("view-" + btn.dataset.tab).classList.add("active");
@@ -879,6 +879,14 @@ async function refreshOverview() {
     document.getElementById("stat-install-npm").textContent = s.installOps.npm;
     document.getElementById("stat-install-other").textContent = s.installOps.other;
   }
+  if (s.githubOps) {
+    document.getElementById("stat-github-push").textContent = s.githubOps.push;
+    document.getElementById("stat-github-clone").textContent = s.githubOps.clone;
+    document.getElementById("stat-github-commit").textContent = s.githubOps.commit;
+    document.getElementById("stat-github-pullFetch").textContent = s.githubOps.pullFetch;
+    document.getElementById("stat-github-ghCli").textContent = s.githubOps.ghCli;
+    document.getElementById("stat-github-otherGit").textContent = s.githubOps.otherGit;
+  }
 
   renderBarList("source-breakdown", s.bySource.map((r) => ({
     name: sourceLabel2(r.source) || r.source || "-",
@@ -1379,6 +1387,50 @@ drilldownModal.addEventListener("click", (ev) => {
   if (ev.target === drilldownModal) drilldownModal.hidden = true;
 });
 
+// 网络流量表格里的"连接次数"点开看这个目标地址的每次连接时间/进程明细，以及网络流量
+// 页顶部汇总卡片（总连接次数/不同 IP 数）点开看完整明细——这些元素都是轮询重建
+// innerHTML 生成的，事件委托绑在 document 上一次性搞定，不用每次刷新完都重新挂监听器。
+document.addEventListener("click", (ev) => {
+  const targetEl = ev.target.closest("[data-target-ip]");
+  if (targetEl) {
+    showTargetConnections(targetEl.dataset.targetIp, targetEl.dataset.targetPort, targetEl.dataset.targetHost);
+    return;
+  }
+  const drilldownEl = ev.target.closest(".card.clickable[data-drilldown]");
+  if (drilldownEl) openDrilldown(drilldownEl.dataset.drilldown);
+});
+
+async function showTargetConnections(ip, port, host) {
+  const title = document.getElementById("drilldown-title");
+  const body = document.getElementById("drilldown-body");
+  const targetLabel = host ? `${host} (${ip}:${port})` : `${ip}:${port}`;
+  title.textContent = t("network.targetDrilldown.title", { target: targetLabel });
+  body.innerHTML = `<div class="empty-state">${t("drilldown.loading")}</div>`;
+  drilldownModal.hidden = false;
+  const events = await api("/api/drilldown/ai-trajectory-events");
+  if (!events) return;
+  const matched = events.filter((e) => e.ip === ip && String(e.port) === String(port));
+  if (matched.length === 0) {
+    body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <table class="dd-table">
+      <thead><tr><th>${t("drilldown.col.time")}</th><th>${t("drilldown.col.process")}</th><th>PID</th></tr></thead>
+      <tbody>
+        ${matched
+          .map(
+            (e) => `<tr>
+          <td class="dd-mono">${escapeHtml((e.ts || "").slice(0, 19))}</td>
+          <td class="dd-mono">${escapeHtml(e.comm || "-")}</td>
+          <td class="dd-mono">${e.pid ?? "-"}</td>
+        </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
 async function openDrilldown(kind) {
   const title = document.getElementById("drilldown-title");
   const body = document.getElementById("drilldown-body");
@@ -1617,7 +1669,7 @@ async function openDrilldown(kind) {
                 <td>${loc}</td>
                 <td>${formatBytes(r.txBytes)}</td>
                 <td>${formatBytes(r.rxBytes)}</td>
-                <td>${r.connectCount}</td>
+                <td><span class="dd-open-hint" style="cursor:pointer;" data-target-ip="${escapeHtml(r.ip)}" data-target-port="${r.port}" data-target-host="${escapeHtml(r.host || "")}">${r.connectCount} ›</span></td>
               </tr>`;
             })
             .join("")}
@@ -1679,17 +1731,22 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind.startsWith("file-op-") || kind.startsWith("install-op-")) {
-    // 文件操作（读/写/编辑/删除）和软件安装（pip/系统包/npm/其它）这两组下钻详情
-    // 数据形状、渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
-    const isInstall = kind.startsWith("install-op-");
-    const prefix = isInstall ? "install-op-" : "file-op-";
+  if (kind.startsWith("file-op-") || kind.startsWith("install-op-") || kind.startsWith("github-op-")) {
+    // 文件操作（读/写/编辑/删除）、软件安装（pip/系统包/npm/其它）、GitHub 操作
+    // （push/clone/commit/pull-fetch/gh CLI/其它 git）这三组下钻详情数据形状、
+    // 渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
+    const apiKind = kind.startsWith("install-op-") ? "install-op" : kind.startsWith("github-op-") ? "github-op" : "file-op";
+    const prefix = apiKind + "-";
     const opType = kind.slice(prefix.length);
-    const opLabelKey = isInstall
-      ? { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" }[opType]
-      : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
-    title.textContent = t(opLabelKey) + " — " + t(isInstall ? "drilldown.installOp.suffix" : "drilldown.fileOp.suffix");
-    const rows = await api(`/api/drilldown/${isInstall ? "install-op" : "file-op"}/${opType}`);
+    const opLabelKey =
+      apiKind === "install-op"
+        ? { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" }[opType]
+        : apiKind === "github-op"
+          ? { push: "home.githubOps.push", clone: "home.githubOps.clone", commit: "home.githubOps.commit", pullFetch: "home.githubOps.pullFetch", ghCli: "home.githubOps.ghCli", otherGit: "home.githubOps.otherGit" }[opType]
+          : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
+    const suffixKey = apiKind === "install-op" ? "drilldown.installOp.suffix" : apiKind === "github-op" ? "drilldown.githubOp.suffix" : "drilldown.fileOp.suffix";
+    title.textContent = t(opLabelKey) + " — " + t(suffixKey);
+    const rows = await api(`/api/drilldown/${apiKind}/${opType}`);
     if (!rows) return;
     if (rows.length === 0) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
@@ -1712,10 +1769,6 @@ async function openDrilldown(kind) {
   }
 }
 
-document.querySelectorAll(".card.clickable").forEach((card) => {
-  card.addEventListener("click", () => openDrilldown(card.dataset.drilldown));
-});
-
 // ---------- 状态信息页（类 ccstatusline） ----------
 // 跟 ccstatusline 的 TokensTotal/TokensCached 挂件同一个格式（"2.6M"/"30.6k"），
 // 数字本身也是同一个口径：Total = input+output+cached，Cached = cache_read+cache_creation。
@@ -1735,6 +1788,49 @@ function fmtDuration(fromTs, toTs) {
   } catch (e) {
     return "-";
   }
+}
+
+async function refreshModelUsage() {
+  const result = await api("/api/model-usage");
+  const wrap = document.getElementById("model-usage-wrap");
+  if (!result) return;
+  const models = result.models || [];
+  if (models.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">${t("status.modelUsage.empty")}</div>`;
+    return;
+  }
+  const maxTotal = Math.max(1, ...models.map((m) => m.totalTokens));
+  wrap.innerHTML = `
+    <table class="dd-table">
+      <thead><tr>
+        <th>${t("status.modelUsage.col.model")}</th>
+        <th>${t("status.modelUsage.col.sessions")}</th>
+        <th>${t("status.modelUsage.col.input")}</th>
+        <th>${t("status.modelUsage.col.output")}</th>
+        <th>${t("status.modelUsage.col.cache")}</th>
+        <th>${t("status.modelUsage.col.total")}</th>
+      </tr></thead>
+      <tbody>
+        ${models
+          .map((m) => {
+            const barPct = Math.round((m.totalTokens / maxTotal) * 100);
+            return `<tr>
+          <td><b>${escapeHtml(modelShort(m.model))}</b></td>
+          <td class="dd-mono">${m.sessionCount}</td>
+          <td class="dd-mono">${formatTokensShort(m.inputTokens)}</td>
+          <td class="dd-mono">${formatTokensShort(m.outputTokens)}</td>
+          <td class="dd-mono">${formatTokensShort(m.cacheReadTokens + m.cacheCreationTokens)}</td>
+          <td>
+            <div class="neon-bar-cell">
+              <div class="neon-bar" style="width:120px;border:1px solid var(--accent);"><div class="neon-bar-fill" style="width:${barPct}%;background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, white), var(--accent));"></div></div>
+              <span class="neon-bar-pct" style="color:var(--accent);">${formatTokensShort(m.totalTokens)}</span>
+            </div>
+          </td>
+        </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>`;
 }
 
 async function refreshStatusBoard() {
@@ -1759,6 +1855,7 @@ async function refreshStatusBoard() {
   for (const s of auditSessions) {
     const ts = s.tokenStats;
     let tokenSegs = "";
+    let contextSeg = "";
     if (ts) {
       const rate = ts.outputTokensPerSec != null ? `${ts.outputTokensPerSec.toFixed(1)} tok/s ↑` : "";
       const rateIn = ts.inputTokensPerSec != null ? `${ts.inputTokensPerSec.toFixed(1)} tok/s ↓` : "";
@@ -1769,7 +1866,19 @@ async function refreshStatusBoard() {
         ${totalShort ? `<span class="seg">Σ Total: ${totalShort}${cachedShort ? " · Cached: " + cachedShort : ""}</span>` : ""}
         ${rate ? `<span class="seg">⚡ ${rate}${rateIn ? " · " + rateIn : ""}</span>` : ""}
       `;
+      if (ts.contextTokens != null) {
+        // Claude Code 不会把当前模型准确的上下文窗口大小告诉我们的 hooks（只有它自己
+        // 的 statusLine 输入才带这个字段），跟 ccstatusline 拿不到时一样退化成按 200K
+        // 标准上下文窗口估算——这是个近似值，不是精确读数，UI 文案要说清楚。
+        const ctxPct = Math.min(100, Math.round((ts.contextTokens / DEFAULT_CONTEXT_WINDOW) * 100));
+        const ctxColor = healthColor(100 - ctxPct);
+        contextSeg = `<span class="seg" style="color:${ctxColor};" title="${t("status.contextWindow.hint")}">📐 ${t("status.contextWindow.label")}: ${ctxPct}% (${formatTokensShort(ts.contextTokens)}/200k)</span>`;
+      }
     }
+    const cs = s.compactionStats;
+    const compactionSeg = cs && cs.count > 0
+      ? `<span class="seg" title="${t("status.compaction.hint", { n: cs.autoCount, m: cs.manualCount, tokens: formatTokensShort(cs.cumulativeDroppedTokens) })}">🗜 ${t("status.compaction.label", { n: cs.count })}</span>`
+      : "";
     rows.push(`
       <div class="status-row">
         <span class="seg kind">🤖 ${folderName(s.cwd)} · ${s.sessionId.slice(0, 8)}…</span>
@@ -1779,6 +1888,8 @@ async function refreshStatusBoard() {
         <span class="seg">⏱ ${fmtDuration(s.firstTs, s.lastTs)}</span>
         <span class="seg">${t("status.eventCount", { n: s.eventCount })}</span>
         ${tokenSegs}
+        ${contextSeg}
+        ${compactionSeg}
         ${s.blockedCount > 0 ? `<span class="seg blocked">${t("status.blockedCount", { n: s.blockedCount })}</span>` : ""}
         ${s.bypassCount > 0 ? `<span class="seg bypass">${t("status.bypassCount", { n: s.bypassCount })}</span>` : ""}
       </div>`);
@@ -1805,16 +1916,116 @@ function fmtResetAt(iso) {
   }
 }
 
-function usageCard(label, bucket) {
+// 5 小时/7 天是接口本身文案里写的窗口长度（"单次额度 (5 小时窗口)"/"周额度"），
+// 不是猜的——沙漏要知道"这个窗口总共多长"才能算出"已经过去多少"。
+const SESSION_WINDOW_MS = 5 * 3600 * 1000;
+const WEEKLY_WINDOW_MS = 7 * 24 * 3600 * 1000;
+// Claude Code 不会把当前模型准确的上下文窗口大小告诉我们的 hooks（这个信息只在它
+// 自己的 statusLine 输入里才有），跟 ccstatusline 拿不到时一样退化成这个标准值
+// （多数模型的标准上下文窗口），是个近似值。
+const DEFAULT_CONTEXT_WINDOW = 200000;
+
+let hourglassUidCounter = 0;
+// 沙漏：上格剩余沙子 = 1-elapsed，下格已落下的沙子 = elapsed，各自用 clipPath 卡在
+// 对应的三角形里，纯 CSS/SVG 画的，不需要图片素材，颜色跟主题的 --accent 联动。
+function hourglassSvg(elapsedFraction) {
+  const e = Math.max(0, Math.min(1, elapsedFraction));
+  const uid = `hg${hourglassUidCounter++}`;
+  const topSandH = (1 - e) * 15;
+  const botSandH = e * 15;
+  return `
+    <svg class="hourglass-svg" width="14" height="24" viewBox="0 0 24 40" aria-hidden="true">
+      <defs>
+        <clipPath id="${uid}t"><polygon points="4,3 20,3 12,19"/></clipPath>
+        <clipPath id="${uid}b"><polygon points="12,21 20,37 4,37"/></clipPath>
+      </defs>
+      <g clip-path="url(#${uid}t)"><rect class="hg-sand" x="0" y="${3 + (15 - topSandH)}" width="24" height="${topSandH}"/></g>
+      <g clip-path="url(#${uid}b)"><rect class="hg-sand" x="0" y="${37 - botSandH}" width="24" height="${botSandH}"/></g>
+      <polygon class="hg-glass" points="4,3 20,3 12,19 20,37 4,37 12,19"/>
+    </svg>`;
+}
+
+function hexToRgb(hex) {
+  const h = hex.trim().replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const num = parseInt(full, 16) || 0;
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+function rgbToHex([r, g, b]) {
+  return "#" + [r, g, b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+}
+function lerpRgb(c1, c2, t) { return [0, 1, 2].map((i) => c1[i] + (c2[i] - c1[i]) * t); }
+function themeVarHex(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+// 健康度渐变——0=最危险（红）100=最健康（绿），中间过一道黄，两段线性插值。三个
+// 锚点直接读当前主题的 --red/--yellow/--green，不是写死的固定色，换主题这套渐变
+// 跟着联动（跟之前"整卡片染色"那次的反馈保持一致：颜色跟主题走，不要写死）。
+function healthColor(healthPct) {
+  const p = Math.max(0, Math.min(100, healthPct));
+  const red = hexToRgb(themeVarHex("--red", "#ff5f6d"));
+  const yellow = hexToRgb(themeVarHex("--yellow", "#e6b450"));
+  const green = hexToRgb(themeVarHex("--green", "#4fd18b"));
+  const rgb = p <= 50 ? lerpRgb(red, yellow, p / 50) : lerpRgb(yellow, green, (p - 50) / 50);
+  return rgbToHex(rgb);
+}
+function withAlpha(hex, alpha) {
+  return hex + Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, "0");
+}
+
+// conky 风格的分段配色——不是连续渐变，是固定色阶，每 10% 一档，5% 以下和
+// 85% 以上单独加两档（更红/更绿），色值本身写死、够鲜艳，不跟主题变量走
+// （这是专门给"单次额度剩余百分比"这一个进度条用的，跟别的额度条用的连续
+// 渐变 healthColor() 是两套独立的配色逻辑，按需求只用在这一个地方）。
+const CONKY_STEPS = [
+  [5, "#d90000"], // <5%：很红
+  [10, "#ff4d3d"], // ~10%：微红
+  [20, "#ff7a3d"],
+  [30, "#ff9f3d"],
+  [40, "#ffc93d"],
+  [50, "#e9e64a"],
+  [60, "#c3e64a"],
+  [70, "#8fdb4a"],
+  [85, "#4fd15f"],
+  [100, "#00e05a"], // 85-100%：很绿
+];
+function conkyStepColor(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  for (const [ceiling, color] of CONKY_STEPS) {
+    if (p <= ceiling) return color;
+  }
+  return CONKY_STEPS[CONKY_STEPS.length - 1][1];
+}
+
+function usageCard(label, bucket, windowMs) {
   if (!bucket || bucket.utilization === null) {
     return `<div class="card"><div class="card-num">-</div><div class="card-label">${label}</div></div>`;
   }
-  const pct = Math.round(bucket.utilization);
-  const accent = pct >= 90 ? "accent-red" : pct >= 70 ? "accent-yellow" : "";
+  const usedPct = Math.round(bucket.utilization);
+  const isSession = windowMs === SESSION_WINDOW_MS;
+  const accent = usedPct >= 90 ? "accent-red" : usedPct >= 70 ? "accent-yellow" : "";
+  // 单次额度（session）显示"剩余百分比"，剩得越多越健康；其它额度依旧显示"已使用
+  // 百分比"，但颜色统一换算成"健康度"（剩余越多越绿）——数字含义不同，颜色逻辑一致。
+  const displayPct = isSession ? 100 - usedPct : usedPct;
+  const healthPct = isSession ? displayPct : 100 - usedPct;
+  const barColor = isSession ? conkyStepColor(healthPct) : healthColor(healthPct);
+  const barColorLight = rgbToHex(lerpRgb(hexToRgb(barColor), [255, 255, 255], 0.6));
+  let hourglass = "";
+  if (bucket.resetsAt && windowMs) {
+    const msLeft = new Date(bucket.resetsAt).getTime() - Date.now();
+    if (!Number.isNaN(msLeft)) {
+      const elapsed = 1 - Math.max(0, Math.min(1, msLeft / windowMs));
+      hourglass = `<span class="hourglass-wrap" title="${t("status.usage.windowElapsed", { pct: Math.round(elapsed * 100) })}">${hourglassSvg(elapsed)}</span> `;
+    }
+  }
   return `
     <div class="card ${accent}">
-      <div class="card-num">${pct}%</div>
-      <div class="card-label">${label}<br>${bucket.resetsAt ? t("status.usage.resetLabel") + ": " + fmtResetAt(bucket.resetsAt) : ""}</div>
+      <div class="card-num" style="color:${barColor}">${displayPct}%</div>
+      <div class="neon-bar neon-bar-lg" style="border:1px solid ${barColor}; box-shadow:0 0 10px ${withAlpha(barColor, 0.55)};">
+        <div class="neon-bar-fill" style="width:${displayPct}%; background:linear-gradient(90deg, ${barColorLight}, ${barColor});"></div>
+      </div>
+      <div class="card-label">${t(isSession ? "status.usage.remainingLabel" : "status.usage.usedLabel")} · ${label}<br>${bucket.resetsAt ? hourglass + t("status.usage.resetLabel") + ": " + fmtResetAt(bucket.resetsAt) : ""}</div>
     </div>`;
 }
 
@@ -1828,11 +2039,19 @@ async function refreshUsageBoard() {
   }
   const d = result.data;
   el.innerHTML = [
-    usageCard(t("status.usage.session"), d.session),
-    usageCard(t("status.usage.weekly"), d.weekly),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
+    usageCard(t("status.usage.session"), d.session, SESSION_WINDOW_MS),
+    usageCard(t("status.usage.weekly"), d.weekly, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS),
+    ...perModelWeeklyCards(d),
   ].join("");
+}
+
+// 有些模型（目前观察到的是 Fable）没有专门的顶层字段，只在 limits[] 里挂一条按模型
+// 限额的记录——usage.js 已经把它摘出来放进 perModelWeekly 数组，这里按数组长度动态
+// 生成对应数量的卡片，不写死具体模型名。
+function perModelWeeklyCards(d) {
+  return (d.perModelWeekly || []).map((m) => usageCard(t("status.usage.weeklyModel", { model: m.model }), m, WEEKLY_WINDOW_MS));
 }
 
 // ---------- 首页：Anthropic 账号信息（用量四件套 + limits 明细 + spend） ----------
@@ -1844,16 +2063,27 @@ function limitKindLabel(kind) {
   return t("home.anthropicAccount.limitKind." + kind) || kind || "-";
 }
 
-const SEVERITY_BAR_CLASS = { normal: "sev-normal", warning: "sev-warning", critical: "sev-critical" };
-function neonPercentBar(percent, severity) {
+const SEVERITY_BAR_CLASS = { normal: "sev-normal", warning: "sev-warning", critical: "sev-critical", purple: "sev-purple" };
+function neonPercentBar(percent, severity, big) {
   if (percent === null || percent === undefined) return "-";
   const pct = Math.max(0, Math.min(100, percent));
   const sevClass = SEVERITY_BAR_CLASS[severity] || "sev-normal";
   return `
-    <div class="neon-bar ${sevClass}">
+    <div class="neon-bar ${sevClass}${big ? " neon-bar-lg" : ""}">
       <div class="neon-bar-fill" style="width:${pct}%"></div>
     </div>
     <span class="neon-bar-pct">${percent}%</span>`;
+}
+
+// 重置时间那一栏配的"这个窗口已经过去多少"紫色进度条——跟额度百分比不是一回事，
+// kind=session 用 5 小时窗口，其它（weekly_all/weekly_scoped）用 7 天窗口。
+function limitElapsedBar(resetsAt, kind) {
+  if (!resetsAt) return "";
+  const windowMs = kind === "session" ? SESSION_WINDOW_MS : WEEKLY_WINDOW_MS;
+  const msLeft = new Date(resetsAt).getTime() - Date.now();
+  if (Number.isNaN(msLeft)) return "";
+  const elapsed = Math.round((1 - Math.max(0, Math.min(1, msLeft / windowMs))) * 100);
+  return `<div class="neon-bar-cell" style="margin-top:4px;">${neonPercentBar(elapsed, "purple")}</div>`;
 }
 
 function fmtAccountDate(iso) {
@@ -1901,6 +2131,39 @@ async function refreshAccountProfile() {
   renderAccountProfileInto("status-profile-box", "status-profile-info", info);
 }
 
+// 额度明细（limits）表格——首页和状态信息页各有一份 DOM（同一份数据渲染两次），
+// 状态信息页那份用加长加粗的 neon-bar-lg，首页保留原来的小号版本。
+function renderLimitsInto(box, list, limits) {
+  if (!box || !list) return;
+  if (!limits || limits.length === 0) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const big = box.id === "status-limits-box";
+  list.innerHTML = `
+    <table class="dd-table">
+      <thead><tr>
+        <th>${t("home.anthropicAccount.limitKindCol")}</th><th>${t("home.anthropicAccount.percentCol")}</th>
+        <th>${t("home.anthropicAccount.severityCol")}</th><th>${t("home.anthropicAccount.resetCol")}</th><th>${t("home.anthropicAccount.activeCol")}</th>
+      </tr></thead>
+      <tbody>
+        ${limits
+          .map(
+            (l) => `
+          <tr>
+            <td>${escapeHtml(limitKindLabel(l.kind))}${l.scopeModel ? ` (${escapeHtml(l.scopeModel)})` : ""}</td>
+            <td class="neon-bar-cell">${neonPercentBar(l.percent, l.severity, big)}</td>
+            <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
+            <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}${limitElapsedBar(l.resetsAt, l.kind)}</td>
+            <td>${l.isActive ? "●" : "-"}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
 async function refreshHomeAnthropicInfo() {
   refreshAccountProfile();
   const result = await api("/api/usage");
@@ -1918,38 +2181,15 @@ async function refreshHomeAnthropicInfo() {
   }
   const d = result.data;
   cardsEl.innerHTML = [
-    usageCard(t("status.usage.session"), d.session),
-    usageCard(t("status.usage.weekly"), d.weekly),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
+    usageCard(t("status.usage.session"), d.session, SESSION_WINDOW_MS),
+    usageCard(t("status.usage.weekly"), d.weekly, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS),
+    ...perModelWeeklyCards(d),
   ].join("");
 
-  if (d.limits && d.limits.length > 0) {
-    limitsBox.hidden = false;
-    limitsList.innerHTML = `
-      <table class="dd-table">
-        <thead><tr>
-          <th>${t("home.anthropicAccount.limitKindCol")}</th><th>${t("home.anthropicAccount.percentCol")}</th>
-          <th>${t("home.anthropicAccount.severityCol")}</th><th>${t("home.anthropicAccount.resetCol")}</th><th>${t("home.anthropicAccount.activeCol")}</th>
-        </tr></thead>
-        <tbody>
-          ${d.limits
-            .map(
-              (l) => `
-            <tr>
-              <td>${escapeHtml(limitKindLabel(l.kind))}${l.scopeModel ? ` (${escapeHtml(l.scopeModel)})` : ""}</td>
-              <td class="neon-bar-cell">${neonPercentBar(l.percent, l.severity)}</td>
-              <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
-              <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}</td>
-              <td>${l.isActive ? "●" : "-"}</td>
-            </tr>`
-            )
-            .join("")}
-        </tbody>
-      </table>`;
-  } else {
-    limitsBox.hidden = true;
-  }
+  renderLimitsInto(limitsBox, limitsList, d.limits);
+  renderLimitsInto(document.getElementById("status-limits-box"), document.getElementById("status-limits-list"), d.limits);
 
   if (d.spend) {
     spendBox.hidden = false;
@@ -2055,8 +2295,8 @@ async function refreshNetworkTraffic() {
   document.getElementById("network-summary").innerHTML = `
     <div class="card"><div class="card-num">${formatBytes(s.txBytes)}</div><div class="card-label">${t("network.totalTx")}</div></div>
     <div class="card"><div class="card-num">${formatBytes(s.rxBytes)}</div><div class="card-label">${t("network.totalRx")}</div></div>
-    <div class="card"><div class="card-num">${s.connectCount}</div><div class="card-label">${t("network.totalConnects")}</div></div>
-    <div class="card"><div class="card-num">${s.distinctIps}</div><div class="card-label">${t("network.distinctIps")}</div></div>
+    <div class="card clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.connectCount}</div><div class="card-label">${t("network.totalConnects")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
+    <div class="card clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.distinctIps}</div><div class="card-label">${t("network.distinctIps")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
   `;
 
   const rows = trafficResult.rows;
@@ -2082,7 +2322,7 @@ async function refreshNetworkTraffic() {
                 <td>${loc}</td>
                 <td>${formatBytes(r.txBytes)}</td>
                 <td>${formatBytes(r.rxBytes)}</td>
-                <td>${r.connectCount}</td>
+                <td><span class="dd-open-hint" style="cursor:pointer;" data-target-ip="${escapeHtml(r.ip)}" data-target-port="${r.port}" data-target-host="${escapeHtml(r.host || "")}">${r.connectCount} ›</span></td>
                 <td class="dd-mono">${escapeHtml((r.lastSeen || "").slice(0, 19))}</td>
               </tr>`;
             })
@@ -2106,6 +2346,7 @@ function refreshEverythingNow() {
   pollTap();
   refreshOverview();
   refreshStatusBoard();
+  refreshModelUsage();
   refreshUsageBoard();
   refreshHomeAnthropicInfo();
   refreshTerminalStatusline();
@@ -2128,6 +2369,39 @@ window.addEventListener("focus", refreshEverythingNow);
 
 // ---------- 语言 / 主题切换 ----------
 document.getElementById("theme-select").addEventListener("change", (ev) => applyTheme(ev.target.value));
+
+// ---------- 外观设置弹窗（主题色块 / 字体 / 字号） ----------
+function buildThemeSwatchGrid() {
+  const grid = document.getElementById("theme-swatch-grid");
+  grid.innerHTML = THEMES.map(
+    (theme) => `
+    <button type="button" class="theme-swatch${theme === currentTheme ? " active" : ""}" data-theme="${theme}">
+      <span class="swatch-dot" style="background:${THEME_ACCENT[theme]}"></span>
+      ${t("theme." + theme)}
+    </button>`
+  ).join("");
+  grid.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => applyTheme(btn.dataset.theme));
+  });
+}
+
+const settingsModal = document.getElementById("settings-modal");
+document.getElementById("settings-btn").addEventListener("click", () => {
+  buildThemeSwatchGrid();
+  settingsModal.hidden = false;
+});
+document.getElementById("settings-close-btn").addEventListener("click", () => (settingsModal.hidden = true));
+settingsModal.addEventListener("click", (ev) => {
+  if (ev.target === settingsModal) settingsModal.hidden = true;
+});
+document.getElementById("font-family-select").addEventListener("change", (ev) => applyFont(ev.target.value));
+document.getElementById("font-size-range").addEventListener("input", (ev) => applyFontSize(ev.target.value));
+document.getElementById("settings-reset-btn").addEventListener("click", () => {
+  applyTheme("brand");
+  applyFont("system");
+  applyFontSize(14);
+  buildThemeSwatchGrid();
+});
 document.getElementById("lang-toggle-btn").addEventListener("click", () => {
   setLang(currentLang === "zh" ? "en" : "zh");
   syncGridToggleBtnText();
@@ -2144,6 +2418,8 @@ document.getElementById("lang-toggle-btn").addEventListener("click", () => {
 
 async function bootstrap() {
   applyTheme(currentTheme);
+  applyFont(currentFont);
+  applyFontSize(currentFontSize);
   applyStaticI18n();
   syncGridToggleBtnText();
   syncApprovalsNotifyBtn();
@@ -2157,6 +2433,7 @@ async function bootstrap() {
   await pollLogs();
   await refreshOverview();
   await refreshStatusBoard();
+  await refreshModelUsage();
   await refreshUsageBoard();
   await refreshHomeAnthropicInfo();
   await refreshAuditState();

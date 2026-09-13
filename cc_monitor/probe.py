@@ -187,9 +187,14 @@ def _handle_exec_line(fields):
 
 
 def _handle_connect_line(fields):
-    # CONNECT \t pid \t uid \t comm \t ip \t port
-    _tag, pid, uid, comm, ip, port = fields
-    host = _reverse_dns(ip)
+    # CONNECT \t pid \t uid \t comm \t ip \t port \t dns_query_host
+    # dns_query_host 来自 uprobe:libc:getaddrinfo 抓到的、这个进程连接前实际问过的
+    # 域名（比如 "api.anthropic.com"）——比事后对 IP 做反向 DNS 靠谱得多：很多云厂商/
+    # CDN 出口 IP 根本没配 PTR 记录，反向解析永远拿不到域名，但这里在连接发生之前
+    # 就已经知道域名是什么了。反向 DNS 留着当兜底（万一没经过 getaddrinfo，比如
+    # 直接连 IP 字面量的场景）。
+    _tag, pid, uid, comm, ip, port, dns_query_host = fields
+    host = dns_query_host or _reverse_dns(ip)
     target = "{} ({})".format(ip, host) if host else ip
     storage.log_event(
         session_id="",

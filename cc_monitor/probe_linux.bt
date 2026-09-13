@@ -31,6 +31,19 @@ tracepoint:syscalls:sys_enter_execve
     }
 }
 
+// libc 的 getaddrinfo(node, ...) 第一个参数就是应用层真正想解析的域名（比如
+// "api.anthropic.com"）——比事后对连上的 IP 做反向 DNS（PTR 记录）靠谱得多：很多
+// 云厂商/CDN 出口 IP 根本没配 PTR，反向解析注定拿不到域名，但这里抓的是"当时问的
+// 是什么"，域名从连接发生之前就已经知道了。按 pid 记最近一次问的域名，接到 CONNECT
+// 时直接查表——Node.js 的 DNS 解析发生在 libuv worker 线程，但 bpftrace 的 pid
+// 内置变量取的是线程组 ID（等价于 getpid()），跟发起 connect() 的主线程是同一个值，
+// 能对上。
+uprobe:libc:getaddrinfo
+/@watch[pid]/
+{
+    @dns_query[pid] = str(arg0);
+}
+
 tracepoint:syscalls:sys_enter_connect
 /@watch[pid]/
 {
@@ -38,7 +51,7 @@ tracepoint:syscalls:sys_enter_connect
     if ($sa->sa_family == 2) {
         $sin = (struct sockaddr_in *) $sa;
         $port = ($sin->sin_port >> 8) | (($sin->sin_port << 8) & 0xff00);
-        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\n", pid, uid, comm, ntop($sin->sin_addr.s_addr), $port);
+        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\t%s\n", pid, uid, comm, ntop($sin->sin_addr.s_addr), $port, @dns_query[pid]);
     }
 }
 
@@ -90,4 +103,5 @@ tracepoint:sched:sched_process_exit
 /@watch[pid]/
 {
     delete(@watch[pid]);
+    delete(@dns_query[pid]);
 }

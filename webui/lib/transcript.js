@@ -149,6 +149,10 @@ function getTokenStats(path) {
   if (!path) return null;
   const raw = readTail(path, 500000);
   const turns = [];
+  // 按模型分桶——同一个 session 中途换模型（比如从 Sonnet 切到 Opus）很常见，
+  // 一次扫描顺便按 message.model 分组，不用为了"不同模型的使用情况统计"再单独
+  // 重新扫一遍文件。
+  const byModel = {};
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -161,6 +165,15 @@ function getTokenStats(path) {
     if (obj.type === "assistant" && obj.message && obj.message.usage && obj.timestamp) {
       const t = Date.parse(obj.timestamp);
       if (!Number.isNaN(t)) turns.push({ ts: t, usage: obj.message.usage });
+      const model = obj.message.model || "unknown";
+      const u = obj.message.usage;
+      if (!byModel[model]) byModel[model] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turns: 0 };
+      const b = byModel[model];
+      b.inputTokens += u.input_tokens || 0;
+      b.outputTokens += u.output_tokens || 0;
+      b.cacheReadTokens += u.cache_read_input_tokens || 0;
+      b.cacheCreationTokens += u.cache_creation_input_tokens || 0;
+      b.turns += 1;
     }
   }
   if (turns.length === 0) return null;
@@ -187,6 +200,13 @@ function getTokenStats(path) {
     }
   }
 
+  // "上下文窗口用了多少"不是把整个 session 的 token 全部加起来（那是"总共花了多少
+  // 钱/token"，跟 totalTokens 一样），是看最后一轮对话实际带着多大的上下文——跟
+  // ccstatusline 的 getContextWindowMetrics() 同一个算法：input + cache_read +
+  // cache_creation，只取最后一条。
+  const lu = last.usage;
+  const contextTokens = (lu.input_tokens || 0) + (lu.cache_read_input_tokens || 0) + (lu.cache_creation_input_tokens || 0);
+
   return {
     lastUsage: last.usage,
     windowTurns: turns.length,
@@ -196,9 +216,47 @@ function getTokenStats(path) {
     totalCacheCreationTokens: totalCacheCreation,
     totalCachedTokens: totalCached,
     totalTokens,
+    contextTokens,
     outputTokensPerSec,
     inputTokensPerSec,
+    byModel,
   };
+}
+
+// Context compaction——Claude Code 自动/手动把上下文摘要压缩之后，transcript 里会
+// 插一条 type="system" subtype="compact_boundary" 的记录，compactMetadata 里带着
+// 触发方式（auto/manual）和压缩前后的 token 数。压缩事件很稀疏（一个 session 里
+// 通常 0～几条），不用只看 tail，直接整份文件扫一遍字符串前过滤，代价很小。
+function getCompactionStats(path) {
+  if (!path) return null;
+  let raw;
+  try {
+    raw = fs.readFileSync(path, "utf8");
+  } catch (e) {
+    return null;
+  }
+  let count = 0;
+  let autoCount = 0;
+  let manualCount = 0;
+  let cumulativeDroppedTokens = 0;
+  for (const line of raw.split("\n")) {
+    if (!line.includes('"compact_boundary"')) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch (e) {
+      continue;
+    }
+    if (obj.type !== "system" || obj.subtype !== "compact_boundary" || obj.isSidechain === true) continue;
+    count += 1;
+    const trigger = obj.compactMetadata?.trigger;
+    if (trigger === "auto") autoCount += 1;
+    else if (trigger === "manual") manualCount += 1;
+    const dropped = obj.compactMetadata?.cumulativeDroppedTokens;
+    if (typeof dropped === "number" && dropped > cumulativeDroppedTokens) cumulativeDroppedTokens = dropped;
+  }
+  if (count === 0) return { count: 0, autoCount: 0, manualCount: 0, cumulativeDroppedTokens: 0 };
+  return { count, autoCount, manualCount, cumulativeDroppedTokens };
 }
 
 // 找 session 里第一次出现的 assistant.message.model，给 UI 展示用。
@@ -327,4 +385,4 @@ function renderEntryHtml(entry) {
   };
 }
 
-module.exports = { countLines, readEntries, readTailEntries, getModel, getTokenStats, renderEntryHtml };
+module.exports = { countLines, readEntries, readTailEntries, getModel, getTokenStats, getCompactionStats, renderEntryHtml };

@@ -170,6 +170,15 @@
   --badge-orange: #ff9d43;
 }
 
+/* 界面字体/字号——外观设置弹窗里可以改，存 localStorage，applyFont()/applyFontSize()
+   写这两个变量，body 读这两个变量，默认值就是原来写死在 body 里的那一套。 */
+:root {
+  --app-font: "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial,
+    "LXGW WenKai", "霞鹜文楷", "楷体", "STKaiti", "Kaiti SC", KaiTi, "AR PL UKai CN",
+    sans-serif;
+  --app-font-size: 14px;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -180,10 +189,8 @@ html, body {
   /* 英文用系统里好看的 UI 字体（苹果/Windows 各自的系统字体，都没有就退到 Arial）；
      中文用楷体——这些西文字体本身不带中文字形，浏览器逐字符找字体时会自然落到
      后面这几个楷体字体上，不用额外用 @font-face + unicode-range 分开处理。 */
-  font-family: "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial,
-    "LXGW WenKai", "霞鹜文楷", "楷体", "STKaiti", "Kaiti SC", KaiTi, "AR PL UKai CN",
-    sans-serif;
-  font-size: 14px;
+  font-family: var(--app-font);
+  font-size: var(--app-font-size);
 }
 
 #app { display: flex; flex-direction: column; height: 100vh; }
@@ -364,6 +371,7 @@ html, body {
 .card.accent-yellow .card-num { color: var(--yellow); }
 
 .home-columns { display: flex; gap: 16px; flex-wrap: wrap; }
+.home-credit { font-size: 12px; font-weight: 700; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; }
 .home-box {
   flex: 1 1 320px;
   background: var(--bg-panel);
@@ -749,6 +757,47 @@ html, body {
 .modal input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
+/* ---------- 外观设置弹窗（主题/字体/字号）---------- */
+.field { margin-bottom: 16px; }
+.field > span { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.field select {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.theme-swatch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.theme-swatch:hover { border-color: var(--accent); }
+.theme-swatch.active { border-color: var(--accent); border-width: 2px; font-weight: 600; }
+.theme-swatch .swatch-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+.font-preview {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: var(--app-font-size, 14px);
+  font-family: var(--app-font, inherit);
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
 /* ---------- 新建会话弹窗里的目录浏览器 ---------- */
 .cwd-input-row { display: flex; gap: 8px; align-items: flex-start; }
 .cwd-input-row input[type="text"] { flex: 1 1 auto; }
@@ -988,4 +1037,29 @@ html, body {
 .neon-bar.sev-critical { border: 1px solid color-mix(in srgb, var(--red) 55%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 45%, transparent); }
 .neon-bar.sev-critical .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, white), var(--red)); }
 .neon-bar.sev-critical ~ .neon-bar-pct { color: var(--red); }
+
+/* 状态信息/首页账号额度卡片用的加长、更饱和版本——渐变起点直接从主题色本身开始
+   （不像 limits 表格那个小号版本先掺 45% 白），发光描边也更明显。 */
+.neon-bar.neon-bar-lg { width: 220px; max-width: 100%; height: 20px; margin: 8px 0 4px; }
+.neon-bar.neon-bar-lg.sev-normal { box-shadow: 0 0 10px color-mix(in srgb, var(--green) 65%, transparent); }
+.neon-bar.neon-bar-lg.sev-normal .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--green) 75%, white), var(--green)); }
+.neon-bar.neon-bar-lg.sev-warning { box-shadow: 0 0 10px color-mix(in srgb, var(--yellow) 65%, transparent); }
+.neon-bar.neon-bar-lg.sev-warning .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--yellow) 75%, white), var(--yellow)); }
+.neon-bar.neon-bar-lg.sev-critical { box-shadow: 0 0 10px color-mix(in srgb, var(--red) 65%, transparent); }
+.neon-bar.neon-bar-lg.sev-critical .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 75%, white), var(--red)); }
+
+/* 重置时间那一栏的"窗口已过去多少"进度条——紫色，跟额度百分比那几个红黄绿的条
+   区分开（不是同一个语义，一个是用量健康度，一个是时间进度），用主题自己的
+   --magenta 变量，不是新写死的固定色。 */
+.neon-bar.sev-purple { border: 1px solid color-mix(in srgb, var(--magenta) 55%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--magenta) 45%, transparent); }
+.neon-bar.sev-purple .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--magenta) 45%, white), var(--magenta)); }
+.neon-bar.sev-purple ~ .neon-bar-pct { color: var(--magenta); }
+
+/* 沙漏——重置倒计时的可视化，沙子从上格漏到下格的比例 = 这个窗口已经过去的时间占比
+   （5 小时窗口 / 7 天周窗口，按 resetsAt 反推），跟百分比数字一起摆在卡片说明文字
+   旁边，不需要额外看文字就能感觉到"这个窗口快满了没有"。 */
+.hourglass-wrap { display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; }
+.hourglass-svg .hg-glass { fill: none; stroke: var(--text-dim); stroke-width: 1.4; stroke-linejoin: round; }
+.hourglass-svg .hg-sand { fill: var(--accent); }
+
 .dd-open-hint { color: var(--accent); font-weight: 600; white-space: nowrap; }

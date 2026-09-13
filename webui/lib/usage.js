@@ -105,13 +105,26 @@ async function fetchUsageOnce(token) {
           }
           try {
             const parsed = JSON.parse(body);
+            const rawLimits = Array.isArray(parsed.limits) ? parsed.limits : [];
+            // 有些模型（目前观察到的是 Fable）没有专门的顶层字段（不像 opus/sonnet 那样
+            // 有 seven_day_opus/seven_day_sonnet），额度只挂在 limits[] 里一条
+            // kind="weekly_scoped" 记录上，scope.model.display_name 就是模型名——
+            // 不写死"Fable"，这样以后 Anthropic 加别的按模型限额也自动跟着显示。
+            const perModelWeekly = rawLimits
+              .filter((l) => l.kind === "weekly_scoped" && l?.scope?.model?.display_name)
+              .map((l) => ({
+                model: l.scope.model.display_name,
+                utilization: typeof l.percent === "number" ? l.percent : null,
+                resetsAt: l.resets_at || null,
+              }));
             resolve({
               data: {
                 session: bucketInfo(parsed.five_hour),
                 weekly: bucketInfo(parsed.seven_day),
                 weeklySonnet: bucketInfo(parsed.seven_day_sonnet),
                 weeklyOpus: bucketInfo(parsed.seven_day_opus),
-                limits: Array.isArray(parsed.limits) ? parsed.limits.map(limitInfo) : [],
+                perModelWeekly,
+                limits: rawLimits.map(limitInfo),
                 spend: spendInfo(parsed.spend),
               },
             });

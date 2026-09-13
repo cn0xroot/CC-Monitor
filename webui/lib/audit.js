@@ -35,11 +35,45 @@ function isDeleteEvent(detailJson) {
   }
 }
 
+// GitHub 相关操作分类——跟 commandDeletesFiles 同一个思路：按 ; & | 换行 切成子命令
+// 分别看开头，而不是对整条命令文本做子串匹配（避免把 echo "git push 很危险" 这种
+// 字符串输出也算成真的执行了 git push）。一条 Bash 命令里可能好几个子命令都命中
+// （比如 `git add . && git commit -m x && git push`），按"最具体"优先返回一个分类，
+// 不是每个子命令都单独计数——跟 commandDeletesFiles 返回单个布尔值是同一个道理。
+const GITHUB_OP_ORDER = ["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"];
+function classifyGithubOp(cmd) {
+  if (!cmd) return null;
+  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^git\s+push\b/.test(seg)) found.add("push");
+    else if (/^git\s+clone\b/.test(seg)) found.add("clone");
+    else if (/^git\s+commit\b/.test(seg)) found.add("commit");
+    else if (/^git\s+(pull|fetch)\b/.test(seg)) found.add("pullFetch");
+    else if (/^gh\s+\S/.test(seg)) found.add("ghCli");
+    else if (/^git\s+\S/.test(seg)) found.add("otherGit");
+  }
+  for (const kind of GITHUB_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function githubOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyGithubOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
 function withDb(fn, fallback) {
   let db;
   try {
     db = new Database(dbPath(), { readonly: true, fileMustExist: true });
     db.function("cc_is_delete", isDeleteEvent);
+    db.function("cc_github_op", githubOpType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -216,6 +250,37 @@ function installDetails(type, limit = 300) {
          ORDER BY id DESC LIMIT ?`
       )
       .all(...rules, limit);
+  }, []);
+}
+
+// GitHub 操作统计（push/clone/commit/pull-fetch/gh CLI/其它 git 操作）——不像
+// 软件安装那样能复用 policy 规则的 matched_rule（大部分 git/gh 命令本来就不违反
+// 任何规则，压根不会被打上 matched_rule），得直接看命令文本，所以用上面注册的
+// cc_github_op() 自定义 SQL 函数分类。
+const GITHUB_OP_TYPES = ["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"];
+function githubOpsStats() {
+  return withDb((db) => {
+    const rows = db
+      .prepare(`SELECT cc_github_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
+      .all();
+    const counts = { push: 0, clone: 0, commit: 0, pullFetch: 0, ghCli: 0, otherGit: 0 };
+    for (const r of rows) {
+      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
+    }
+    return counts;
+  }, { push: 0, clone: 0, commit: 0, pullFetch: 0, ghCli: 0, otherGit: 0 });
+}
+
+function githubOpsDetails(type, limit = 300) {
+  if (!GITHUB_OP_TYPES.includes(type)) return [];
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_github_op(detail) = ?
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(type, limit);
   }, []);
 }
 
@@ -420,6 +485,8 @@ module.exports = {
   fileOpDetails,
   installStats,
   installDetails,
+  githubOpsStats,
+  githubOpsDetails,
   toolCallStats,
   toolCallBreakdown,
   mcpCallStats,

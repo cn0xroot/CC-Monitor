@@ -5,7 +5,75 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
-## [Unreleased]
+## [1.4.0] - 2026-09-13
+
+### Added
+- **Appearance settings dialog** (⚙ button in the top bar): the color theme picker is now
+  a visual swatch grid (each of the 10 themes shown as its own accent-color dot, with an
+  active highlight) instead of only a plain dropdown; added **interface font** (system
+  default / monospace / serif / rounded) and **interface font size** (12–18px slider) —
+  neither existed before. The dialog includes a live preview. Both new settings persist to
+  `localStorage` and survive a reload; the original top-bar theme dropdown still works too
+  and stays in sync, it's not a replacement.
+- **Session quota (5-hour window) now shows "remaining %"** (was "used"), colored with a
+  conky-style stepped palette — very red below 5%, very green above 85%, one fixed vivid
+  color step per 10% in between. The other quota bars (weekly all-models/Sonnet/Opus/Fable)
+  switched to a continuous red→yellow→green gradient computed from "health" (more used =
+  more red), with the three gradient anchors read live from the current theme's
+  `--red`/`--yellow`/`--green` tokens so it re-colors on a theme switch. Every quota card's
+  label now carries an explicit "Used"/"Remaining" prefix.
+- **Fable model quota**: the usage API has no dedicated top-level field for Fable (unlike
+  Opus/Sonnet, which get `seven_day_opus`/`seven_day_sonnet`) — its quota only shows up as
+  one `kind="weekly_scoped"` entry inside `limits[]`. This is now extracted dynamically by
+  model name rather than hardcoding "Fable", so any future per-model quota Anthropic adds
+  shows up automatically too.
+- **Model Usage table on the Status page**: token usage (input/output/cache/total) summed
+  per model (Sonnet/Opus/…) across every monitored session; a session that switched models
+  mid-way counts separately per model.
+- **Limits table on the Status page** (same data as the Home page's), with a longer, bolder
+  progress bar; the "Resets" column gained a purple "how far through this window" progress
+  bar.
+- **Context window usage % and Context compaction count** on each session row on the Status
+  page: the former is how much context the conversation is actually carrying right now,
+  estimated against a standard 200K context window (Claude Code only reports the exact
+  window size to its own statusLine input, which our hooks don't receive — this is an
+  approximation, called out with a hover hint); the latter is a real detection of
+  `type=system, subtype=compact_boundary` events in the transcript, with auto/manual counts
+  split out and cumulative tokens reclaimed — not an estimate.
+- **Network domain capture switched to `uprobe:libc:getaddrinfo`**: previously relied on
+  reverse DNS (a PTR lookup) after the fact, which fails for most cloud/CDN egress IPs that
+  never had a PTR record configured (confirmed on Anthropic's own API IP, among others); now
+  the actual hostname the application asked to resolve is captured the moment it calls
+  `getaddrinfo()`, keyed by pid, and looked up when the matching CONNECT event fires — the
+  domain is known before the connection even happens, regardless of whether the egress IP
+  has a PTR record (verified live against a Cloudflare-fronted IP for `example.com` using an
+  executable renamed to "claude" to simulate the real process-tree ancestry check).
+- **"Connections" is now clickable** on the Network tab, both per target-row and on the two
+  summary cards ("Total connections" / "Distinct IPs") — opens a detail list of every
+  connection's time, originating process, and PID.
+- **New "GitHub Operations" stats on the Home page**: git push / git clone / git commit /
+  git pull-fetch / gh CLI (PR/Issue/API…) / other git operations, six cards. Most git/gh
+  commands don't violate any policy rule, so they never get a `matched_rule` and couldn't
+  reuse the same trick as the install-ops stats — classification is done with a new
+  per-sub-command matcher (split on `;`/`&`/`|`/newline and check each segment's start, so
+  `echo "git push is dangerous"` doesn't get miscounted as a real `git push`), registered as
+  a SQLite custom function `cc_github_op()` used directly in the query. Each card drills down
+  to the exact session, folder, timestamp, and command (reusing the same detail rendering
+  already used by file-ops/install-ops).
+
+### Fixed
+- The limits table's "Used %" and "Severity" columns visually overlapped — the enlarged
+  progress bar used `width: 100%`, which doesn't participate in a table's automatic column
+  sizing (a percentage-width flex child contributes no intrinsic width, so the column was
+  sized far too narrow while the bar still tried to fill 100% of it), causing it to spill
+  into the next column. Switched to a fixed `220px` so neither column crowds the other.
+- The Log Audit / Claude Tap content-list containers had a leftover `max-width: 900px`
+  (despite the class being named ".wide") that left a huge dead gutter on wide screens with
+  the scrollbar stranded mid-page — removed, now fills the available width.
+- Trimmed two overly long hint captions next to "Claude Code identity check" and "Anthropic
+  account info" on the Home page.
+
+## [1.3.2] - 2026-09-12
 
 ### Added
 - **Anthropic account info now shows name/email/organization/plan**: not a new network

@@ -43,54 +43,94 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
   - **Install operation stats**: grouped by which install-type rule matched — pip / system
     package manager (apt/yum/dnf/pacman) / npm global install / other — click through for the
     exact install commands.
+  - **GitHub operation stats**: git push / git clone / git commit / git pull-fetch / gh CLI
+    (PR/Issue/API…) / other git operations, six cards, classified from the Bash command text
+    itself (most git/gh commands don't violate any policy rule, so they never get a
+    `matched_rule` and couldn't reuse the install-ops trick). Click through for the exact
+    session, folder, timestamp, and command.
   - **Anthropic account info**: name, email, organization, org role, plan type, rate-limit
     tier, billing type, and account/subscription creation dates, read straight from Claude
     Code's own local global config file (`~/.claude.json`'s `oauthAccount` field) — no
     network call, same source [ccstatusline](https://github.com/sirmalloc/ccstatusline)'s
     "Claude Account Email" widget uses. Plus account-level usage/quota (same data source as
-    the Status tab), the `limits[]` breakdown (percent — rendered as a glowing pill progress
-    bar colored from the current theme — severity, resets_at for
-    session/weekly_all/weekly_scoped) and `spend` (whether pay-as-you-go usage credits are
-    enabled, and how much has been used).
+    the Status tab — the session quota shows "remaining %" with a conky-style stepped
+    palette, weekly quotas show "used %" with a continuous red→yellow→green gradient, and
+    per-model quotas like Fable are detected dynamically rather than hardcoded), the
+    `limits[]` breakdown (a progress bar, plus a purple "how far through this window" bar
+    next to the reset time) and `spend` (whether pay-as-you-go usage credits are enabled, and
+    how much has been used).
   - **Data management**: archive the current event data (a full SQLite `backup()` snapshot)
     or clear it to start counting from zero; breakdowns by log type and risk level.
 - **Log Audit**: a full-width, live-updating audit log view (filterable by session — the session dropdown shows "folder · model · short ID" instead of an opaque ID string), reusing the same human-readable event-translation logic as the CLI.
 - **Terminal Sessions**: open a Claude Code terminal directly in the browser (a PTY spawned via `node-pty`) instead of switching to a local terminal app; rendered with `xterm.js` + the WebGL addon, GPU-accelerated when available and falling back to Canvas otherwise. The sidebar can switch to a **grid view** (herdr-style) showing every live session on one screen at once; clicking a pane routes keyboard input to it.
 - **Claude Tap**: view the **full conversation content** sent to/received from the model for a given session (not just "which tool was called") — text, thinking, tool calls, tool results, token usage, each field color-coded. The data source is Claude Code's own local transcript JSONL file (the `transcript_path` field in the hook payload) — not packet capture or MITM. CLI equivalent: `CC-Monitor tap [--session ID] [-f]`.
-- **AI Approvals**: mirrors Claude Code's "allow this action?" confirmation into the
-  Web UI — similar in spirit to [Vibe Island](https://vibeisland.app/) popping an
-  Allow/Deny card in the Mac notch, except cross-platform (a web page instead of a
-  Mac-only UI) and, for now, scoped to the operations our own rule table flags as
-  `confirm` (anything else still goes through Claude Code's own native prompt — we never
-  silently wave it through). The same request can be answered either at the terminal that
-  triggered it (y/N) or from this page — whichever answers first wins. Choosing "allow" on
-  the web page makes Claude Code skip its own native popup entirely, via the hook's
-  `permissionDecision: allow` output, instead of asking twice. Options: allow once, deny
-  once, allow and don't ask again for 10/30 minutes, or always allow (scoped to this
-  session only — other sessions running the same command still get asked). Supports browser
-  desktop notifications (the Notification API) — new requests raise a system notification
-  even when this tab isn't open, click it to jump straight back in. Every resolved request
-  (from either the web page or the terminal) stays in a **history table** below the live
-  list — the underlying table is never purged by "clear current data", so this is a genuine
-  long-term record: time, session, tool, matched rule, matched value, outcome, resolved via.
-  For `notify`-kind records (`AskUserQuestion` and friends), the history also captures the
-  user's actual answer from the terminal, not just the fact that it got answered.
-- **Status**: the same Anthropic account info (name/email/organization/plan) as the Home page, account-level usage (the 5-hour session window / weekly quota / per-model weekly quota + reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)) plus per-session model, token usage, throughput (tok/s, estimated from the transcript), a `ccstatusline`-compatible `Σ Total / Cached` token summary (same accounting: total = input+output+cached, cached = cache-read+cache-creation), cwd, git branch, uptime, and blocked-operation counts.
+- **AI Approvals**: mirrors Claude Code's "allow this action?" confirmation into the Web UI
+  — similar in spirit to [Vibe Island](https://vibeisland.app/) popping an Allow/Deny card in
+  the Mac notch, except cross-platform (a web page instead of a Mac-only UI) and, for now,
+  scoped to the operations our own rule table flags as `confirm` (anything else still goes
+  through Claude Code's own native prompt — we never silently wave it through).
+  - The same request can be answered either at the terminal that triggered it (y/N) or from
+    this page — whichever answers first wins. Choosing "allow" on the web page makes Claude
+    Code skip its own native popup entirely, via the hook's `permissionDecision: allow`
+    output, instead of asking twice.
+  - Options: allow once, deny once, allow and don't ask again for 10/30 minutes, or always
+    allow (scoped to this session only).
+  - Supports browser desktop notifications (the Notification API) — new requests raise a
+    system notification even when this tab isn't open, click it to jump straight back in.
+  - **History table**: every resolved request stays on record (the underlying table is never
+    purged by "clear current data"), with time, session, tool, matched rule, matched value,
+    outcome, and resolved-via. For `notify`-kind records (`AskUserQuestion` and friends), it
+    also captures the user's actual answer from the terminal.
+- **Status**:
+  - The same Anthropic account info (name/email/organization/plan) as the Home page, plus
+    account-level usage (the 5-hour session window / weekly quota / per-model weekly quota +
+    reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth
+    credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)).
+  - **Model Usage table**: token usage summed by model (Sonnet/Opus/…) across every
+    monitored session.
+  - Per-session model, token usage, throughput (tok/s, estimated from the transcript), and a
+    `ccstatusline`-compatible `Σ Total / Cached` token summary (same accounting: total =
+    input+output+cached, cached = cache-read+cache-creation).
+  - **Context window usage %**: estimated against a standard 200K context window (Claude
+    Code doesn't report the exact window size to our hooks, so this is an approximation).
+  - **Context compaction count**: a real detection of `compact_boundary` events in the
+    transcript, not an estimate.
+  - cwd, git branch, uptime, and blocked-operation counts.
 - **Network**: the actual network connections the Claude Code process tree has made —
-  destination IP/port, reverse-resolved hostname, upload/download byte counts, connection
-  count, plus a world map plotting roughly where those destinations are. All of this comes
-  from the system-layer probe (`cc_monitor/probe_linux.bt`, Linux + eBPF) — not packet
-  capture or MITM. The byte counts are new: added `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel
-  probes, since the existing probe only knew "connected to this IP:port," not how much data
-  moved. IP geolocation uses a local database (no per-IP third-party API calls) — either
-  MaxMind GeoLite2 or the no-signup-needed DB-IP Lite both work, see Requirements below;
-  without one, the map and location column are simply empty and the page honestly says
-  "no GeoIP database configured" instead of faking data. The
-  world map is drawn entirely in WebGL2 (equirectangular projection + a bundled low-res
-  coastline outline), following the approach from
-  [BeeEye](https://github.com/cn0xroot/BeeEye)'s `WorldMap.jsx` — no map-tile service
-  dependency. With the probe not installed or not running, this page just shows empty data.
-- **Language toggle + multiple themes**: a language button (中文/EN) and a theme dropdown (Brand/Dark/Light/Dracula/Nord/Midnight/Ocean/Forest/Sunset/Rose — the last five ported from [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search)'s color scheme) in the top bar, both persisted to `localStorage`. Translation covers UI chrome (nav, buttons, titles, empty-state hints, risk/operation/status labels) but not the data itself (raw command text, tool output, transcript content). The risk/operation-type/status badges in the audit log use fixed, highly saturated colors that don't change with the theme; high-risk rows are shown in bold red.
+  destination IP/port, hostname, upload/download byte counts, connection count, plus a world
+  map plotting roughly where those destinations are. All of this comes from the system-layer
+  probe (`cc_monitor/probe_linux.bt`, Linux + eBPF) — not packet capture or MITM.
+  - **Domain capture**: a `uprobe:libc:getaddrinfo` records the hostname the moment the
+    application resolves it, instead of reverse-DNS-ing the IP afterward — many cloud/CDN
+    egress IPs never had a PTR record configured, so reverse DNS can't recover a domain that
+    was never registered in reverse; this method isn't affected.
+  - **Byte counts**: `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes, since the probe
+    previously only knew "connected to this IP:port," not how much data moved.
+  - **IP geolocation**: a local database (no per-IP third-party API calls) — either MaxMind
+    GeoLite2 or the no-signup-needed DB-IP Lite both work, see Requirements below; without
+    one, the map and location column are simply empty and the page honestly says "no GeoIP
+    database configured" instead of faking data.
+  - **World map**: drawn entirely in WebGL2 (equirectangular projection + a bundled low-res
+    coastline outline), following the approach from
+    [BeeEye](https://github.com/cn0xroot/BeeEye)'s `WorldMap.jsx` — no map-tile service
+    dependency.
+  - **Connection detail**: "Connections" is clickable both per target row and on the two
+    summary cards ("Total connections" / "Distinct IPs") — opens every connection's time,
+    originating process, and PID.
+  - With the probe not installed or not running, this page just shows empty data.
+- **Appearance settings**: a ⚙ button in the top bar opens a settings dialog.
+  - **Color theme**: a visual swatch grid — each of the 10 themes (Brand/Dark/Light/Dracula/
+    Nord/Midnight/Ocean/Forest/Sunset/Rose, the last five ported from
+    [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search)'s color scheme) shown as its
+    own accent-color dot with an active highlight; the original top-bar theme dropdown still
+    works too and stays in sync.
+  - **Interface font** (system default / monospace / serif / rounded) and **interface font
+    size** (12–18px slider) — new settings, with a live preview, persisted to `localStorage`.
+  - **Language toggle**: translation covers UI chrome (nav, buttons, titles, empty-state
+    hints, risk/operation/status labels) but not the data itself (raw command text, tool
+    output, transcript content). The risk/operation-type/status badges in the audit log use
+    fixed, highly saturated colors that don't change with the theme; high-risk rows are shown
+    in bold red.
 
 Static assets are served with `Cache-Control: no-store` since this UI is still iterating fast — refresh the page after a code change and you'll see the latest version, no stale browser cache to worry about.
 
@@ -392,11 +432,20 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Installer: safely merges hooks into `settings.json` (global / project / custom-path modes) without touching existing config
 - [x] System-layer probe (`CC-Monitor-probe`, Linux only): eBPF tracing of the Claude Code process tree's `execve`/`connect`
 - [x] Bypass detection: fuzzy-matches what the probe observed against hook records (process tree + time window + quote-stripped substring match), flagging `hook_bypass_suspected`
-- [x] Network visibility: eBPF captures `connect()` destination IP:port + reverse DNS, no MITM proxy needed
+- [x] Network visibility: eBPF captures `connect()` destination IP:port; domain names come from
+      a `uprobe:libc:getaddrinfo` that records the hostname the moment the application resolves
+      it (reverse DNS as a fallback) — no MITM proxy needed
 - [x] Network byte-count stats: `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes, aggregated upload/download bytes per (ip, port)
-- [x] Web UI Network tab: connection detail table + GeoIP location (local MaxMind/DB-IP Lite database) + WebGL2 world map
+- [x] Web UI Network tab: connection detail table + GeoIP location (local MaxMind/DB-IP Lite database) + WebGL2 world map, with connection counts clickable for per-connection time/process/PID detail
 - [x] Claude Code identity check: cross-platform (`ps`) detection of which OS user every `claude` process runs as, flagged when it differs from the Web UI's own user
-- [x] Three new Home stat cards — tool calls, MCP calls, AI trajectory — all with click-through drilldowns
+- [x] Four Home stat cards — tool calls, MCP calls, Skill calls, AI trajectory — all with click-through drilldowns showing Session ID/folder/timestamp
+- [x] AI Approvals supports an `action: "notify"` rule type (Claude Code clarifying questions, e.g. `AskUserQuestion`) and keeps a long-term history table, capturing the user's actual terminal answer for `notify`-kind records
+- [x] Anthropic account profile (name/email/organization/plan/rate-limit tier) read from the local `~/.claude.json`, zero network calls
+- [x] Per-session `Σ Total / Cached` token summary on the Status page (same accounting as ccstatusline)
+- [x] Model Usage table, Limits table, context window usage %, and Context compaction count (real detection, not an estimate) on the Status page
+- [x] Home page GitHub Operations stats (push/clone/commit/pull-fetch/gh CLI/other git operations)
+- [x] Appearance settings dialog: color-theme swatch grid, interface font, interface font size (new settings)
+- [x] Session quota shows "remaining %" with a conky-style stepped palette; weekly quotas show "used %" with a continuous red→yellow→green gradient; per-model quotas like Fable are detected dynamically
 
 ### Not implemented / TODO
 

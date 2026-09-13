@@ -36,6 +36,7 @@ const I18N = {
     "network.col.tx": "上传",
     "network.col.rx": "下载",
     "network.col.connects": "连接次数",
+    "network.targetDrilldown.title": "连接明细：{target}",
     "network.col.lastSeen": "最近一次",
     "approvals.hint": "（跟触发它的终端是同一件事的两条路，谁先给结果就用谁的）",
     "approvals.empty": "当前没有等待处理的操作",
@@ -95,6 +96,13 @@ const I18N = {
     "home.installOps.system": "系统包管理器（apt/yum/dnf/pacman）",
     "home.installOps.npm": "npm 全局安装",
     "home.installOps.other": "其它软件安装",
+    "home.githubOps.title": "GitHub 操作统计（按 Bash 命令文本识别，非精确）",
+    "home.githubOps.push": "git push",
+    "home.githubOps.clone": "git clone",
+    "home.githubOps.commit": "git commit",
+    "home.githubOps.pullFetch": "git pull / fetch",
+    "home.githubOps.ghCli": "gh CLI（PR/Issue/API…）",
+    "home.githubOps.otherGit": "其它 git 操作",
     "home.sourceBreakdown": "日志类型分布",
     "home.riskBreakdown": "风险等级分布",
     "home.auditCtl.hint": "控制 hooks 这次要不要真的判定/拦截——暂停/停止期间 Claude Code 的操作仍会正常执行，只是 CC-Monitor 不再介入",
@@ -169,6 +177,18 @@ const I18N = {
     "modal.dirBrowser.select": "选择此文件夹",
     "modal.dirBrowser.empty": "（没有子目录，或者没有权限查看）",
     "modal.cancel": "取消",
+    "modal.close": "关闭",
+    "settings.btnTitle": "外观设置：主题/字体/字号",
+    "settings.title": "外观设置",
+    "settings.themeLabel": "主题配色",
+    "settings.fontLabel": "界面字体",
+    "settings.font.system": "系统默认",
+    "settings.font.mono": "等宽字体",
+    "settings.font.serif": "衬线字体",
+    "settings.font.rounded": "圆体",
+    "settings.sizeLabel": "界面字号",
+    "settings.previewText": "CC-Monitor 正在监控 Claude Code 的文件读写、命令执行与网络连接。",
+    "settings.reset": "恢复默认",
     "modal.confirm": "确认",
     "modal.create": "创建",
     "modal.killSession.title": "关闭这个会话？",
@@ -205,6 +225,15 @@ const I18N = {
 
     "status.usageTitle": "账号额度",
     "status.usageHint": "（跟 ccstatusline 读同一份 Claude Code 登录凭证查询，账号级别，所有会话共享）",
+    "status.modelUsageTitle": "模型使用统计",
+    "status.modelUsageHint": "（按模型汇总所有已监测会话的 token 用量，同一 session 中途换过模型的话会分开计）",
+    "status.modelUsage.empty": "暂无数据",
+    "status.modelUsage.col.model": "模型",
+    "status.modelUsage.col.sessions": "涉及会话数",
+    "status.modelUsage.col.input": "输入",
+    "status.modelUsage.col.output": "输出",
+    "status.modelUsage.col.cache": "缓存",
+    "status.modelUsage.col.total": "总计",
     "status.sessionTitle": "会话状态",
     "status.sessionHint": "（模型 / token 用量 / 吞吐速率 / cwd / git 分支 / 拦截情况）",
     "status.empty": "暂无数据——还没有 Web UI 会话，也没有监测到任何 Claude Code 会话",
@@ -213,7 +242,11 @@ const I18N = {
     "status.usage.weekly": "周额度（全部模型）",
     "status.usage.weeklySonnet": "周额度（Sonnet）",
     "status.usage.weeklyOpus": "周额度（Opus）",
+    "status.usage.weeklyModel": "周额度（{model}）",
     "status.usage.resetLabel": "重置",
+    "status.usage.windowElapsed": "本轮窗口已过去 {pct}%",
+    "status.usage.remainingLabel": "剩余",
+    "status.usage.usedLabel": "已用",
 
     "home.anthropicAccount.title": "Anthropic 账号信息",
     "home.anthropicAccount.hint": "（跟 ccstatusline 读同一份 OAuth 凭证查询，账号级别，所有会话共享）",
@@ -229,7 +262,7 @@ const I18N = {
     "home.anthropicAccount.limitsTitle": "额度明细（limits）",
     "home.anthropicAccount.spendTitle": "额外使用额度（spend）",
     "home.anthropicAccount.limitKindCol": "类型",
-    "home.anthropicAccount.percentCol": "百分比",
+    "home.anthropicAccount.percentCol": "已使用百分比",
     "home.anthropicAccount.severityCol": "级别",
     "home.anthropicAccount.resetCol": "重置时间",
     "home.anthropicAccount.activeCol": "当前生效",
@@ -254,6 +287,10 @@ const I18N = {
     "status.eventCount": "{n} 条事件",
     "status.blockedCount": "🛑 拦截 {n}",
     "status.bypassCount": "⚠ 疑似绕过 {n}",
+    "status.contextWindow.label": "上下文窗口",
+    "status.contextWindow.hint": "按 200K 标准上下文窗口估算——Claude Code 只在它自己的 statusLine 输入里才带精确的窗口大小，我们的 hooks 拿不到，这是近似值",
+    "status.compaction.label": "压缩 {n} 次",
+    "status.compaction.hint": "自动 {n} 次 / 手动 {m} 次，累计精简 {tokens} token",
 
     "drilldown.close": "关闭",
     "drilldown.liveSessions.title": "Web UI 终端会话（进行中）",
@@ -301,6 +338,7 @@ const I18N = {
     "drilldown.loading": "加载中…",
     "drilldown.fileOp.suffix": "详情",
     "drilldown.installOp.suffix": "详情",
+    "drilldown.githubOp.suffix": "详情",
 
     "decision.allowed": "放行",
     "decision.blocked": "拦截",
@@ -384,6 +422,7 @@ const I18N = {
     "network.col.tx": "Sent",
     "network.col.rx": "Received",
     "network.col.connects": "Connections",
+    "network.targetDrilldown.title": "Connection detail: {target}",
     "network.col.lastSeen": "Last seen",
     "approvals.hint": "(Same thing as answering it in the terminal that triggered it — whichever answers first wins)",
     "approvals.empty": "Nothing waiting on a decision right now",
@@ -443,6 +482,13 @@ const I18N = {
     "home.installOps.system": "System package manager (apt/yum/dnf/pacman)",
     "home.installOps.npm": "npm global installs",
     "home.installOps.other": "Other software installs",
+    "home.githubOps.title": "GitHub operations (identified from Bash command text, not exact)",
+    "home.githubOps.push": "git push",
+    "home.githubOps.clone": "git clone",
+    "home.githubOps.commit": "git commit",
+    "home.githubOps.pullFetch": "git pull / fetch",
+    "home.githubOps.ghCli": "gh CLI (PR/Issue/API…)",
+    "home.githubOps.otherGit": "Other git operations",
     "home.sourceBreakdown": "Event type breakdown",
     "home.riskBreakdown": "Risk level breakdown",
     "home.auditCtl.hint": "Controls whether hooks actually enforce/block right now — while paused or stopped, Claude Code's operations still run normally, CC-Monitor just stops intervening",
@@ -517,6 +563,18 @@ const I18N = {
     "modal.dirBrowser.select": "Select This Folder",
     "modal.dirBrowser.empty": "(no subdirectories, or no permission to view)",
     "modal.cancel": "Cancel",
+    "modal.close": "Close",
+    "settings.btnTitle": "Appearance: theme / font / size",
+    "settings.title": "Appearance",
+    "settings.themeLabel": "Color theme",
+    "settings.fontLabel": "Interface font",
+    "settings.font.system": "System default",
+    "settings.font.mono": "Monospace",
+    "settings.font.serif": "Serif",
+    "settings.font.rounded": "Rounded",
+    "settings.sizeLabel": "Interface font size",
+    "settings.previewText": "CC-Monitor is watching Claude Code's file reads/writes, command execution, and network connections.",
+    "settings.reset": "Reset to defaults",
     "modal.confirm": "Confirm",
     "modal.create": "Create",
     "modal.killSession.title": "Close this session?",
@@ -553,6 +611,15 @@ const I18N = {
 
     "status.usageTitle": "Account Quota",
     "status.usageHint": "(queried from the same Claude Code login credentials ccstatusline reads — account-wide, shared across all sessions)",
+    "status.modelUsageTitle": "Model Usage",
+    "status.modelUsageHint": "(token usage summed by model across all monitored sessions; a session that switched models mid-way counts separately per model)",
+    "status.modelUsage.empty": "No data yet",
+    "status.modelUsage.col.model": "Model",
+    "status.modelUsage.col.sessions": "Sessions",
+    "status.modelUsage.col.input": "Input",
+    "status.modelUsage.col.output": "Output",
+    "status.modelUsage.col.cache": "Cache",
+    "status.modelUsage.col.total": "Total",
     "status.sessionTitle": "Session Status",
     "status.sessionHint": "(model / token usage / throughput / cwd / git branch / block status)",
     "status.empty": "No data yet — no Web UI sessions and no Claude Code sessions detected",
@@ -561,7 +628,11 @@ const I18N = {
     "status.usage.weekly": "Weekly quota (all models)",
     "status.usage.weeklySonnet": "Weekly quota (Sonnet)",
     "status.usage.weeklyOpus": "Weekly quota (Opus)",
+    "status.usage.weeklyModel": "Weekly quota ({model})",
     "status.usage.resetLabel": "Resets",
+    "status.usage.windowElapsed": "{pct}% through this window",
+    "status.usage.remainingLabel": "Remaining",
+    "status.usage.usedLabel": "Used",
 
     "home.anthropicAccount.title": "Anthropic Account Info",
     "home.anthropicAccount.hint": "(Reads the same OAuth credential as ccstatusline — account-level, shared across all sessions)",
@@ -577,7 +648,7 @@ const I18N = {
     "home.anthropicAccount.limitsTitle": "Limit details",
     "home.anthropicAccount.spendTitle": "Extra usage credits (spend)",
     "home.anthropicAccount.limitKindCol": "Kind",
-    "home.anthropicAccount.percentCol": "Percent",
+    "home.anthropicAccount.percentCol": "Used %",
     "home.anthropicAccount.severityCol": "Severity",
     "home.anthropicAccount.resetCol": "Resets",
     "home.anthropicAccount.activeCol": "Active",
@@ -602,6 +673,10 @@ const I18N = {
     "status.eventCount": "{n} events",
     "status.blockedCount": "🛑 {n} blocked",
     "status.bypassCount": "⚠ {n} suspected bypass",
+    "status.contextWindow.label": "Context window",
+    "status.contextWindow.hint": "Estimated against a standard 200K context window — Claude Code only reports the exact window size to its own statusLine input, which our hooks don't receive, so this is an approximation",
+    "status.compaction.label": "{n} compaction(s)",
+    "status.compaction.hint": "{n} auto / {m} manual, {tokens} tokens reclaimed cumulatively",
 
     "drilldown.close": "Close",
     "drilldown.liveSessions.title": "Web UI Terminal Sessions (active)",
@@ -649,6 +724,7 @@ const I18N = {
     "drilldown.loading": "Loading…",
     "drilldown.fileOp.suffix": "Details",
     "drilldown.installOp.suffix": "Details",
+    "drilldown.githubOp.suffix": "Details",
 
     "decision.allowed": "Allowed",
     "decision.blocked": "Blocked",
@@ -745,10 +821,47 @@ function applyStaticI18n() {
 const THEMES = ["brand", "dark", "light", "dracula", "nord", "midnight", "ocean", "forest", "sunset", "rose"];
 let currentTheme = localStorage.getItem("cc_monitor_theme") || "brand";
 
+// 每个主题自己的 --accent 取值，抄自 style.css 里各个 :root[data-theme="..."] 块——
+// 纯粹给外观设置弹窗里的色块预览用，不切主题就不会真的应用这些颜色，跟 style.css
+// 里那份是两份独立的数据，改主题配色的话这里也要跟着改一下。
+const THEME_ACCENT = {
+  brand: "#4757e8", dark: "#4f8cff", light: "#2f6fed", dracula: "#bd93f9", nord: "#88c0d0",
+  midnight: "#6366f1", ocean: "#0ea5e9", forest: "#22c55e", sunset: "#f97316", rose: "#ec4899",
+};
+
 function applyTheme(theme) {
   currentTheme = THEMES.includes(theme) ? theme : "brand";
   document.documentElement.setAttribute("data-theme", currentTheme);
   localStorage.setItem("cc_monitor_theme", currentTheme);
   const select = document.getElementById("theme-select");
   if (select) select.value = currentTheme;
+  document.querySelectorAll(".theme-swatch").forEach((btn) => btn.classList.toggle("active", btn.dataset.theme === currentTheme));
+}
+
+// ---------- 界面字体/字号（外观设置弹窗） ----------
+const FONT_STACKS = {
+  system: '"Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, "LXGW WenKai", "霞鹜文楷", "楷体", "STKaiti", "Kaiti SC", KaiTi, "AR PL UKai CN", sans-serif',
+  mono: 'Menlo, Consolas, "SF Mono", "JetBrains Mono", "LXGW WenKai", "霞鹜文楷", monospace',
+  serif: 'Georgia, "Songti SC", "STSong", SimSun, "LXGW WenKai", serif',
+  rounded: '"SF Pro Rounded", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+};
+let currentFont = localStorage.getItem("cc_monitor_font") || "system";
+let currentFontSize = parseInt(localStorage.getItem("cc_monitor_font_size"), 10) || 14;
+
+function applyFont(key) {
+  currentFont = FONT_STACKS[key] ? key : "system";
+  document.documentElement.style.setProperty("--app-font", FONT_STACKS[currentFont]);
+  localStorage.setItem("cc_monitor_font", currentFont);
+  const select = document.getElementById("font-family-select");
+  if (select) select.value = currentFont;
+}
+
+function applyFontSize(px) {
+  currentFontSize = Math.max(12, Math.min(18, Number(px) || 14));
+  document.documentElement.style.setProperty("--app-font-size", currentFontSize + "px");
+  localStorage.setItem("cc_monitor_font_size", String(currentFontSize));
+  const range = document.getElementById("font-size-range");
+  const label = document.getElementById("font-size-value");
+  if (range) range.value = currentFontSize;
+  if (label) label.textContent = currentFontSize;
 }

@@ -360,6 +360,7 @@ app.get("/api/overview", async (req, res) => {
     liveSessionCount: sessions.list().filter((x) => x.alive).length,
     fileOps: audit.fileOpsStats(),
     installOps: audit.installStats(),
+    githubOps: audit.githubOpsStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
     skillCalls: audit.skillCallStats().total,
@@ -416,6 +417,33 @@ app.get("/api/drilldown/file-op/:type", (req, res) => {
     return res.status(400).json({ error: "type 必须是 read/write/edit/delete 之一" });
   }
   const rows = audit.fileOpDetails(type).map((row) => {
+    let detail = {};
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      detail = {};
+    }
+    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      toolName: row.tool_name,
+      matchedRule: row.matched_rule,
+      label,
+      summaryHtml,
+    };
+  });
+  res.json(rows);
+});
+
+app.get("/api/drilldown/github-op/:type", (req, res) => {
+  const type = req.params.type;
+  if (!["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"].includes(type)) {
+    return res.status(400).json({ error: "type 必须是 push/clone/commit/pullFetch/ghCli/otherGit 之一" });
+  }
+  const rows = audit.githubOpsDetails(type).map((row) => {
     let detail = {};
     try {
       detail = row.detail ? JSON.parse(row.detail) : {};
@@ -583,9 +611,40 @@ app.get("/api/status", (req, res) => {
       gitDirty: g.dirty,
       model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
       tokenStats,
+      compactionStats: r.transcript_path ? transcript.getCompactionStats(r.transcript_path) : null,
     };
   });
   res.json({ liveSessions, auditSessions });
+});
+
+// 不同模型的使用情况统计——把每个 session 的 transcript 已经按模型分好组的
+// token 用量（见 transcript.js 的 getTokenStats().byModel）汇总到一起，
+// 不是重新扫一遍文件，是复用 /api/status 已经在算的同一份数据。
+app.get("/api/model-usage", (req, res) => {
+  const rows = audit.listSessions(200);
+  const totals = {};
+  for (const r of rows) {
+    if (!r.transcript_path) continue;
+    const stats = transcript.getTokenStats(r.transcript_path);
+    if (!stats || !stats.byModel) continue;
+    for (const [model, b] of Object.entries(stats.byModel)) {
+      if (!totals[model]) totals[model] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turns: 0, sessionCount: 0 };
+      totals[model].inputTokens += b.inputTokens;
+      totals[model].outputTokens += b.outputTokens;
+      totals[model].cacheReadTokens += b.cacheReadTokens;
+      totals[model].cacheCreationTokens += b.cacheCreationTokens;
+      totals[model].turns += b.turns;
+      totals[model].sessionCount += 1;
+    }
+  }
+  const models = Object.entries(totals)
+    .map(([model, b]) => ({
+      model,
+      ...b,
+      totalTokens: b.inputTokens + b.outputTokens + b.cacheReadTokens + b.cacheCreationTokens,
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
+  res.json({ models, sessionsScanned: rows.length });
 });
 
 const server = http.createServer(app);
