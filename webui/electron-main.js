@@ -3,17 +3,17 @@
 // better-sqlite3）不用改一行代码，直接 require 进来就在同一个进程里跑起来了。
 // 跟"用浏览器打开网页版"的区别只是：不用自己手动 npm start + 开浏览器，双击图标
 // 就有一个独立窗口，且默认只服务给这个窗口自己（不依赖浏览器/系统代理设置）。
+//
+// root 用户运行时需要 --no-sandbox（Chromium 的沙箱机制靠 Linux 用户命名空间隔离，
+// root 本来就有完全权限，隔离对它没有意义，不加这个参数直接 FATAL 退出，见
+// https://crbug.com/638180）。这个检查发生在 Electron 原生启动阶段，比这个文件里
+// 任何一行 JS 都早执行——已经实测验证过，就算在这里最开头用 Node 自己重新拉起带
+// 这个参数的自己也来不及，因为这段 JS 本身根本没有机会在崩溃前执行到。所以这个开关
+// 必须在 spawn electron 这个二进制之前，从外部就带进真正的进程 argv 里：`npm run
+// electron` 走 scripts/electron-start.js 这个 launcher；打包出来的 AppImage/二进制
+// 走发布时一起带的 wrapper 脚本。这个文件本身不需要、也做不到处理这件事。
 const { app, BrowserWindow, Menu } = require("electron");
 const path = require("path");
-
-// Chromium 的沙箱机制靠 Linux 用户命名空间隔离，root 用户本来就有完全权限，沙箱
-// 隔离对它没有意义，Electron 干脆直接拒绝启动（"Running as root without
-// --no-sandbox is not supported"，见 https://crbug.com/638180）——`npm run electron`
-// 在 root 下直接报这个错退出，就是这个原因。只在真的是 root 的时候才降级，不影响
-// 其它身份运行时该有的沙箱保护；这个开关必须在 app ready 之前设置才生效。
-if (process.getuid && process.getuid() === 0) {
-  app.commandLine.appendSwitch("no-sandbox");
-}
 
 // 桌面版场景下没必要监听一个"给别的设备连"的端口——固定绑本机，端口选一个不常用的，
 // 减少跟用户机器上其它服务撞端口的概率（网页版默认的 9999 保持不变，互不影响，

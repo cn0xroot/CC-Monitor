@@ -5,6 +5,28 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.4.3] - 2026-09-13
+
+### 新增
+- **发布编译好的 Linux x64 二进制**：GitHub Release 现在附带打包好的
+  `CC-Monitor-*.AppImage`，配一个 `cc-monitor-start.sh` 启动包装脚本——AppImage
+  是单个可执行文件，双击/直接运行时不经过任何 npm 脚本，v1.4.2 里给 `npm run
+  electron` 用的 node launcher 在这种运行方式下用不上（那个 launcher 依赖的是
+  npm 脚本这一层，AppImage 根本不经过它）。这个脚本按运行身份决定要不要给
+  AppImage 加 `--no-sandbox --disable-gpu-sandbox`，是 root 才加，其它身份原样
+  启动，沙箱保护不受影响。已实测验证：直接双击/裸跑 AppImage 在 root 下依旧会
+  FATAL 退出，必须用这个包装脚本或者手动加这两个参数启动。
+
+### 修复
+- **`electron-main.js` 里遗留的 root 沙箱兜底代码其实完全不起作用**：v1.4.2 里
+  留了一段"就算 launcher 没生效，这里再兜底加一次 `--no-sandbox`"的代码，实测
+  验证发现这段 JS 根本没有机会在 Chromium 的原生 FATAL 检查前执行到——这个检查
+  发生在 Electron 启动的原生阶段，比 `electron-main.js` 里任何一行 JS（包括文件
+  最开头）都早，连"在最开头用 Node 自己重新拉起带参数的自己"这种自愈写法都测过，
+  同样来不及。删掉了这段无效代码，改为纯注释说明：这个开关只能从外部、在真正
+  spawn 出 electron 进程之前带入 argv，`npm run electron` 走
+  `scripts/electron-start.js`，打包后的二进制走上面新增的 `cc-monitor-start.sh`。
+
 ## [1.4.2] - 2026-09-13
 
 ### 修复

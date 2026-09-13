@@ -5,6 +5,32 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.4.3] - 2026-09-13
+
+### Added
+- **Published a compiled Linux x64 binary**: the GitHub Release now ships a built
+  `CC-Monitor-*.AppImage` alongside a `cc-monitor-start.sh` launcher wrapper.
+  An AppImage is a single self-contained executable — double-clicking or running
+  it directly bypasses any npm script, so the Node launcher added in v1.4.2 for
+  `npm run electron` (which relies on that npm-script layer) never gets a chance
+  to run for the packaged binary. This wrapper checks the caller's uid and only
+  appends `--no-sandbox --disable-gpu-sandbox` when actually running as root,
+  leaving the sandbox untouched for everyone else. Verified: running the raw
+  AppImage directly as root still FATAL-exits — the wrapper (or passing those
+  flags manually) is required.
+
+### Fixed
+- **Leftover root-sandbox fallback code in `electron-main.js` did nothing**:
+  v1.4.2 kept a "just in case the launcher didn't apply it, add `--no-sandbox`
+  here too" block. Testing showed this JS never gets a chance to run before
+  Chromium's native FATAL check fires — that check happens at Electron's native
+  startup stage, earlier than any JS in `electron-main.js`, even the very first
+  line of the file; even a self-re-exec pattern placed at the top of the file
+  was too late. Removed the dead code and replaced it with a comment explaining
+  that this flag can only be supplied from outside, before the electron process
+  is spawned — `npm run electron` goes through `scripts/electron-start.js`, and
+  the packaged binary goes through the new `cc-monitor-start.sh` above.
+
 ## [1.4.2] - 2026-09-13
 
 ### Fixed
