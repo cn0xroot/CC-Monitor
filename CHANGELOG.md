@@ -5,6 +5,20 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.4.2] - 2026-09-13
+
+### 修复
+- **`npm run electron` 在 root 下无法启动**：Chromium 在原生启动阶段就会检查是否
+  以 root 身份运行且没带 `--no-sandbox`，不满足直接 FATAL 退出——这个检查比
+  `electron-main.js` 里任何 JS 代码都先执行，运行时用 `app.commandLine.
+  appendSwitch()` 加这个开关完全没用，必须在真正 spawn electron 二进制那一刻
+  的进程参数（argv）里就带上。解决这层后又暴露第二层：GPU 进程有自己独立的
+  沙箱，root 下同样会失败（`GPU process isn't usable. Goodbye.`），还得加
+  `--disable-gpu-sandbox`。新增了一个小 launcher 脚本（`webui/scripts/
+  electron-start.js`），按 `process.getuid()` 判断身份，只有真的是 root 时才
+  附加这两个开关，非 root 用户运行时完整沙箱保护不受任何影响。已在当前 root
+  环境下用 `wmctrl`/`xdotool` 验证真实起了标题为 "CC-Monitor" 的独立窗口。
+
 ## [1.4.1] - 2026-09-13
 
 ### 修复

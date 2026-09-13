@@ -5,6 +5,22 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.4.2] - 2026-09-13
+
+### Fixed
+- **`npm run electron` failed to launch under root**: Chromium checks whether it's
+  running as root without `--no-sandbox` at native startup and FATAL-exits if so —
+  this check runs before any JS in `electron-main.js` executes, so setting the flag
+  at runtime via `app.commandLine.appendSwitch()` does nothing; it has to be present
+  in the actual process argv at the moment the electron binary is spawned. Fixing
+  that surfaced a second layer: the GPU process has its own independent sandbox and
+  fails the same way under root (`GPU process isn't usable. Goodbye.`), requiring
+  `--disable-gpu-sandbox` as well. Added a small launcher script
+  (`webui/scripts/electron-start.js`) that checks `process.getuid()` and only
+  appends these two flags when actually running as root — non-root users keep the
+  full sandbox untouched. Verified under the current root environment with
+  `wmctrl`/`xdotool` that a real window titled "CC-Monitor" comes up.
+
 ## [1.4.1] - 2026-09-13
 
 ### Fixed
