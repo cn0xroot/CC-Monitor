@@ -7,6 +7,76 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Anthropic account info now shows name/email/organization/plan**: not a new network
+  call — it's read from Claude Code's own local global config file `~/.claude.json` (the
+  `oauthAccount` field), confirmed by decompiling [ccstatusline](https://github.com/sirmalloc/ccstatusline)'s
+  "Claude Account Email" widget for the exact path and field names. New fields: name,
+  email, organization name, organization role, plan type (e.g. `claude_max`), organization
+  rate-limit tier, billing type, account creation date, subscription start date. Placed
+  below "Detected claude processes" on the Home page, and before "Account quota" on the
+  Status page.
+- **Approval history on the AI Approvals page**: the `pending_approvals` table was never
+  actually deleted from anywhere (the Home page's "clear current data" button only clears
+  the `events` table), so history was already being kept long-term — this just surfaces it:
+  time, session, tool, matched rule, matched value, outcome, resolved via. For `notify`-kind
+  records (e.g. `AskUserQuestion`), a new `resolved_value` field captures the user's actual
+  answer from the corresponding `PostToolUse` event's `tool_response.answers` — the history
+  now shows not just what was asked but what was actually answered (existing records predate
+  this and won't have it; new ones will).
+- The **limits percentage** now renders as a rounded, glowing pill-shaped progress bar,
+  colored from the current theme's accent/yellow/red tokens (not a fixed palette).
+- **Per-session token stats on the Status page**: added `Σ Total: X.XM · Cached: X.XM`,
+  matching [ccstatusline](https://github.com/sirmalloc/ccstatusline)'s TokensTotal/
+  TokensCached widgets exactly (Total = input+output+cached, Cached =
+  cache_read+cache_creation) — the previous implementation only counted cache_read, missing
+  cache_creation.
+- Session ID cells in event-detail tables (Tool/MCP/Skill call drilldowns, approval history)
+  now show the folder name in front of the ID (e.g. "webui · 6ca9e412…") instead of a bare
+  truncated UUID.
+
+### Fixed
+- CC-Monitor's own `disk_overwrite` rule regex, `\b(dd|mkfs|fdisk|parted)\b`, false-positived
+  on hyphenated CSS class names like `dd-table` (`\b` treats a hyphen as a word boundary,
+  same as whitespace) — discovered when this very feature got blocked by our own rule while
+  grepping the stylesheet. Fixed with `(?<![\w-])...(?![\w-])` so it only matches an isolated
+  command name.
+- The desktop-notification button and approval-history table on the AI Approvals page didn't
+  re-translate on a language switch (their text is set imperatively, outside the `data-i18n`
+  auto-refresh path) — wired into the language-switch refresh now.
+- The session-filter dropdown on the Log Audit / Claude Tap toolbars used `margin-left: auto`
+  to push itself right, but it sat before the autoscroll toggle in DOM order, so the toggle
+  ended up to its right instead — added `order` so it renders truly last.
+- The Home page's "Account created" / "Subscription started" dates were sliced out of
+  `toLocaleString()` output, leaving a stray trailing comma ("3/28/2026,") — switched to
+  `toLocaleDateString()`.
+
+### Changed
+- Colored card backgrounds for the file-ops/install-ops/Anthropic-account stat groups (added,
+  then re-themed to a fixed neon palette, then it turned out the theme selector already
+  covered this) were removed entirely after a few rounds of feedback — these cards are back
+  to the same plain background as every other stat card.
+
+## [1.3.1] - 2026-09-12
+
+### Added
+- **Tool Calls / MCP Calls / Skill Calls / AI Trajectory drilldowns** now include an
+  event-level list with Session ID, working directory, and timestamp (not just the
+  grouped-by-type/server/skill summary counts). AI Trajectory's connection events come from
+  the kernel-level probe and have no session concept, so those two columns show an
+  explanatory note instead, replaced with the originating process/command name (e.g. `pip3`,
+  `apt`, `curl`) as an alternative form of attribution.
+- Home page nav reordered to: Home / Status / Network / Terminal / AI Approvals / Log Audit
+  / Claude Tap / Archives.
+- File-ops / install-ops / Anthropic-account stat cards got a themed colored background
+  (later removed entirely — see "Changed" under Unreleased above).
+
+### Fixed
+- The connection-destination world map's equirectangular projection wasn't corrected for the
+  canvas's actual aspect ratio, so it stretched whenever the canvas wasn't exactly 2:1. Fixed
+  by scaling in clip space to match the canvas aspect, letterboxing/pillarboxing instead of
+  stretching to fill.
+
 ## [1.3.0] - 2026-09-12
 
 ### Added

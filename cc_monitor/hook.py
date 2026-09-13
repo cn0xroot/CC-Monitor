@@ -129,7 +129,7 @@ def handle_post(data):
     # 的"等你处理"记录（比如 AskUserQuestion 的问题终于被回答了），标成已处理，
     # 不会一直挂在"AI 审批台"上。跟这个工具是不是命中了 notify 规则完全没关系，
     # 没有对应记录的话这里就是个no-op，不需要先查一遍是不是 notify 类工具。
-    storage.resolve_pending_notify(session_id, tool_name)
+    storage.resolve_pending_notify(session_id, tool_name, tool_response)
     sys.exit(0)
 
 

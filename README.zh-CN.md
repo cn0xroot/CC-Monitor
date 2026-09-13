@@ -32,13 +32,18 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     **MCP 调用**（按 `mcp__<server>__<tool>` 命名规则识别，点开看按 server 分组的
     次数）、**AI 轨迹**（Claude Code 访问过的域名/IP，数据来自网络流量页，点开是同一份
     连接明细）。"会话总数"/"审计事件总数"/"已拦截的高危操作"/"工具调用"/"MCP 调用"/
-    "AI 轨迹"这几张卡片都能点开看下钻详情。
+    "AI 轨迹"这几张卡片都能点开查看详情。
   - **文件操作统计**：读/写/编辑/删除次数，各自可以点开看具体是哪些操作。
   - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman）
     / npm 全局安装 / 其它，点开看具体是哪些安装指令。
-  - **Anthropic 账号信息**：账号级用量/额度（跟下面"状态信息"是同一份数据源）加上
-    `limits[]` 明细（session/weekly_all/weekly_scoped 各自的百分比、severity、
-    resets_at）和 `spend`（是否开通了额度外的按量付费、已经花了多少）。
+  - **Anthropic 账号信息**：姓名、邮箱、组织、组织角色、套餐类型、额度档位、计费方式、
+    账号/订阅创建时间——直接读 Claude Code 自己维护的本地全局配置文件
+    （`~/.claude.json` 的 `oauthAccount` 字段），不发任何网络请求，跟
+    [ccstatusline](https://github.com/sirmalloc/ccstatusline) 的 "Claude Account
+    Email" 挂件同一个数据源。再加上账号级用量/额度（跟下面"状态信息"是同一份数据源）、
+    `limits[]` 明细（百分比——渲染成跟随当前配色主题的发光进度条、severity、
+    resets_at，各自对应 session/weekly_all/weekly_scoped）和 `spend`（是否开通了
+    额度外的按量付费、已经花了多少）。
   - **数据管理**：把当前事件数据持久化归档（SQLite `backup()` API 做完整快照）或者
     清空重新统计；日志类型与风险等级分布图。
 - **Log 审计**：全宽的实时审计日志查看（按会话过滤，会话下拉框显示"文件夹 · 模型 · 短ID"而不是一串看不出区别的 ID），复用 CLI 那套人类可读的事件翻译逻辑。
@@ -53,8 +58,12 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
   跳过它自己的原生弹窗，不会二次询问。选项有：允许一次、拒绝一次、批准且 10/30 分钟内
   不再询问、一直允许（仅当前 session，其它 session 跑一样的操作还是照常问）。支持浏览器
   桌面通知（Notification API），有新请求时哪怕没开着这个页面也能弹系统通知，点一下直接
-  跳回来处理。
-- **状态信息**：账号级额度（单次 5 小时窗口 / 周额度 / 分模型周额度 + 重置时间，跟 [ccstatusline](https://github.com/sirmalloc/ccstatusline) 读同一份 Claude Code OAuth 凭证查询同一个 `api.anthropic.com/api/oauth/usage` 接口）+ 每个会话的模型、token 用量、吞吐速率（tok/s，由 transcript 估算）、cwd、git 分支、活跃时长、拦截情况。
+  跳回来处理。每条处理完的请求（不管是网页点的还是终端答的）都会留在实时列表下面的
+  **历史记录表格**里——底层这张表本来就没有任何清空逻辑，"清空当前数据"按钮不会碰它，
+  所以是真正长期保存的记录：时间、Session、工具、命中规则、匹配内容、结果、处理方式。
+  对于 `notify` 类记录（`AskUserQuestion` 这类），历史记录里还会存下用户在终端里
+  实际给的答案，不只是"已回答"这个状态。
+- **状态信息**：跟首页一样的 Anthropic 账号信息（姓名/邮箱/组织/套餐）+ 账号级额度（单次 5 小时窗口 / 周额度 / 分模型周额度 + 重置时间，跟 [ccstatusline](https://github.com/sirmalloc/ccstatusline) 读同一份 Claude Code OAuth 凭证查询同一个 `api.anthropic.com/api/oauth/usage` 接口）+ 每个会话的模型、token 用量、吞吐速率（tok/s，由 transcript 估算）、跟 ccstatusline 同一套口径的 `Σ Total / Cached` token 汇总（Total = input+output+cached，Cached = cache_read+cache_creation）、cwd、git 分支、活跃时长、拦截情况。
 - **网络流量**：Claude Code 进程树实际发起过的网络连接——目标 IP/端口、反解析出来的域名、
   上传/下载字节数、连接次数，外加一张世界地图标出连接目的地的大致位置。数据完全来自系统层
   探针（`cc_monitor/probe_linux.bt`，Linux + eBPF），不是抓包/中间人：字节数是新增的
@@ -110,7 +119,7 @@ npm run dist:mac     # universal dmg（Intel + Apple Silicon 通用）
 
 ## 截图
 
-| 首页概览 | 会话列表下钻 |
+| 首页概览 | 会话列表详情 |
 |---|---|
 | ![首页](./pic/home-zh.png) | ![会话列表](./pic/home-sessions-zh.png) |
 
@@ -335,7 +344,12 @@ sudo ./bin/CC-Monitor-probe
 - [x] 网络流量字节数统计：`tcp_sendmsg`/`tcp_cleanup_rbuf` 内核探点，按 (ip, port) 聚合上传/下载字节数
 - [x] Web UI 网络流量页：连接明细表 + GeoIP 归属地（本地 MaxMind/DB-IP Lite 数据库）+ WebGL2 世界地图
 - [x] Claude Code 运行身份检测：跨平台（`ps`）识别机器上所有 `claude` 进程的运行用户，跟 Web UI 自己不一致时提示
-- [x] 首页新增工具调用/MCP 调用/AI 轨迹三张统计卡片，均支持点击下钻
+- [x] 首页新增工具调用/MCP 调用/Skill 调用/AI 轨迹四张统计卡片，均支持点击查看详情，详情
+      带 Session ID（前面带文件夹名）、文件夹路径、时间戳
+- [x] AI 审批台支持 `action: "notify"` 规则类型（Claude Code 澄清性问题，如 `AskUserQuestion`）
+- [x] AI 审批台历史记录：长期保存的已处理请求列表，notify 类记录额外存下用户实际的终端回答
+- [x] Anthropic 账号资料（姓名/邮箱/组织/套餐/额度档位），读本地 `~/.claude.json`，零网络请求
+- [x] 状态信息页每会话 `Σ Total / Cached` token 汇总统计（跟 ccstatusline 同一口径）
 
 ### 未实现 / 待办
 

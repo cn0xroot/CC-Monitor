@@ -125,7 +125,10 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
       }, 30);
     }
     if (btn.dataset.tab === "archives") refreshArchivesList();
-    if (btn.dataset.tab === "approvals") syncApprovalsNotifyBtn();
+    if (btn.dataset.tab === "approvals") {
+      syncApprovalsNotifyBtn();
+      refreshApprovalHistory();
+    }
     if (btn.dataset.tab === "network") {
       // WebGL 画布只有在容器真正可见（.view.active，非 display:none）之后
       // getBoundingClientRect() 才能量出正确尺寸，所以地图实例延到第一次真正
@@ -563,6 +566,13 @@ function folderName(cwd) {
   if (!cwd) return "(未知目录)";
   const parts = cwd.split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : cwd;
+}
+// Session ID 前面带上文件夹名——光看一串截断的 UUID 认不出是哪个会话，folderName(cwd)
+// 一般比 session_id 好记得多，两个拼一起显示（表格窄了的话完整 cwd 还有单独一列/title）
+function sessionIdCell(sessionId, cwd) {
+  const idPart = sessionId ? escapeHtml(sessionId.slice(0, 8)) + "…" : "-";
+  if (!cwd) return idPart;
+  return `${escapeHtml(folderName(cwd))} · ${idPart}`;
 }
 function modelShort(model) {
   if (!model) return "";
@@ -1232,8 +1242,96 @@ async function refreshApprovals() {
       });
       if (!result) return;
       refreshApprovals();
+      refreshApprovalHistory();
     });
   });
+}
+
+const APPROVAL_STATUS_I18N_KEY = {
+  allowed: "approvals.history.status.allowed",
+  denied: "approvals.history.status.denied",
+  always_allowed: "approvals.history.status.alwaysAllowed",
+  allowed_10m: "approvals.history.status.allowed10m",
+  allowed_30m: "approvals.history.status.allowed30m",
+  expired: "approvals.history.status.expired",
+  answered: "approvals.history.status.answered",
+};
+const APPROVAL_STATUS_CLASS = {
+  allowed: "risk low",
+  always_allowed: "risk low",
+  allowed_10m: "risk low",
+  allowed_30m: "risk low",
+  answered: "risk info",
+  denied: "risk high",
+  expired: "risk medium",
+};
+function approvalStatusLabel(status) {
+  const key = APPROVAL_STATUS_I18N_KEY[status];
+  return key ? t(key) : status || "-";
+}
+const APPROVAL_VIA_I18N_KEY = { web: "approvals.history.via.web", tty: "approvals.history.via.tty", post_tool_use: "approvals.history.via.auto" };
+function approvalViaLabel(via) {
+  const key = APPROVAL_VIA_I18N_KEY[via];
+  return key ? t(key) : via || "-";
+}
+
+// 历史记录（status != 'pending' 的全部记录，长期保存，见 approvals.js 的 listHistory()）——
+// 跟上面"待批准"列表不一样，这里不需要频繁轮询，只在真正切到这个 tab 时刷新一次。
+// resolved_value 是 notify 类记录（比如 AskUserQuestion）在终端里被回答之后，hook.py
+// 从对应 PostToolUse 的 tool_response.answers 里摘出来存的——{问题文本: 回答文本} 的
+// JSON，这里只取回答文本本身（问题已经在"匹配内容"那一列显示过了，不用重复）。
+function formatAnswerValue(resolvedValue) {
+  if (!resolvedValue) return null;
+  try {
+    const answers = JSON.parse(resolvedValue);
+    if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+      const vals = Object.values(answers);
+      if (vals.length) return vals.join("; ");
+    }
+  } catch (e) {
+    // 不是预期的 JSON 格式，原样显示
+  }
+  return resolvedValue;
+}
+
+async function refreshApprovalHistory() {
+  const rows = await api("/api/approvals/history?limit=200");
+  const wrap = document.getElementById("approvals-history-wrap");
+  if (!rows) return;
+  if (rows.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">${t("approvals.history.empty")}</div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="dd-table">
+      <thead><tr>
+        <th>${t("drilldown.col.time")}</th>
+        <th>${t("drilldown.col.sessionId")}</th>
+        <th>${t("approvals.history.col.tool")}</th>
+        <th>${t("approvals.history.col.rule")}</th>
+        <th>${t("approvals.history.col.value")}</th>
+        <th>${t("approvals.history.col.status")}</th>
+        <th>${t("approvals.history.col.answer")}</th>
+        <th>${t("approvals.history.col.via")}</th>
+      </tr></thead>
+      <tbody>
+        ${rows
+          .map((r) => {
+            const answer = formatAnswerValue(r.resolved_value);
+            return `<tr>
+          <td class="dd-mono">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19))}</td>
+          <td class="dd-mono">${sessionIdCell(r.session_id, r.cwd)}</td>
+          <td>${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : ""}</td>
+          <td>${escapeHtml(r.matched_rule || "-")}</td>
+          <td class="dd-mono" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
+          <td><span class="${APPROVAL_STATUS_CLASS[r.status] || ""}">${escapeHtml(approvalStatusLabel(r.status))}</span></td>
+          <td title="${escapeHtml(answer || "")}">${answer ? escapeHtml(answer.slice(0, 60)) : "-"}</td>
+          <td>${escapeHtml(approvalViaLabel(r.resolved_via))}</td>
+        </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>`;
 }
 // 内容部分直接复用跟"Log 审计"页一样的 renderLogItem() 渲染，看着是一致的。
 // 归档是固定不变的快照，不用轮询，事件多的话点"加载更多"往后翻页就行。
@@ -1480,7 +1578,7 @@ async function openDrilldown(kind) {
               .map(
                 (e) => `<tr>
               <td class="dd-mono">${escapeHtml((e.ts || "").slice(0, 19))}</td>
-              <td class="dd-mono">${e.session_id ? escapeHtml(e.session_id.slice(0, 8)) + "…" : "-"}</td>
+              <td class="dd-mono">${sessionIdCell(e.session_id, e.cwd)}</td>
               <td>${escapeHtml(e.cwd || "-")}</td>
               <td>${escapeHtml(eventLabel(e))}</td>
             </tr>`
@@ -1619,6 +1717,15 @@ document.querySelectorAll(".card.clickable").forEach((card) => {
 });
 
 // ---------- 状态信息页（类 ccstatusline） ----------
+// 跟 ccstatusline 的 TokensTotal/TokensCached 挂件同一个格式（"2.6M"/"30.6k"），
+// 数字本身也是同一个口径：Total = input+output+cached，Cached = cache_read+cache_creation。
+function formatTokensShort(n) {
+  if (n === null || n === undefined) return null;
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+
 function fmtDuration(fromTs, toTs) {
   try {
     const ms = new Date(toTs.replace(/T/, " ").replace(/-(\d{2}):?(\d{2})$/, "")).getTime() -
@@ -1655,8 +1762,11 @@ async function refreshStatusBoard() {
     if (ts) {
       const rate = ts.outputTokensPerSec != null ? `${ts.outputTokensPerSec.toFixed(1)} tok/s ↑` : "";
       const rateIn = ts.inputTokensPerSec != null ? `${ts.inputTokensPerSec.toFixed(1)} tok/s ↓` : "";
+      const totalShort = formatTokensShort(ts.totalTokens);
+      const cachedShort = formatTokensShort(ts.totalCachedTokens);
       tokenSegs = `
         <span class="seg">💬 in=${ts.totalInputTokens} out=${ts.totalOutputTokens}${ts.totalCacheReadTokens ? ` cache=${ts.totalCacheReadTokens}` : ""}</span>
+        ${totalShort ? `<span class="seg">Σ Total: ${totalShort}${cachedShort ? " · Cached: " + cachedShort : ""}</span>` : ""}
         ${rate ? `<span class="seg">⚡ ${rate}${rateIn ? " · " + rateIn : ""}</span>` : ""}
       `;
     }
@@ -1695,15 +1805,14 @@ function fmtResetAt(iso) {
   }
 }
 
-const USAGE_CHIP_CYCLE = ["chip-blue", "chip-cyan", "chip-green"];
-function usageCard(label, bucket, cycleIndex) {
+function usageCard(label, bucket) {
   if (!bucket || bucket.utilization === null) {
     return `<div class="card"><div class="card-num">-</div><div class="card-label">${label}</div></div>`;
   }
   const pct = Math.round(bucket.utilization);
-  const chip = pct >= 90 ? "chip-red" : pct >= 70 ? "chip-yellow" : USAGE_CHIP_CYCLE[cycleIndex % USAGE_CHIP_CYCLE.length];
+  const accent = pct >= 90 ? "accent-red" : pct >= 70 ? "accent-yellow" : "";
   return `
-    <div class="card ${chip}">
+    <div class="card ${accent}">
       <div class="card-num">${pct}%</div>
       <div class="card-label">${label}<br>${bucket.resetsAt ? t("status.usage.resetLabel") + ": " + fmtResetAt(bucket.resetsAt) : ""}</div>
     </div>`;
@@ -1719,10 +1828,10 @@ async function refreshUsageBoard() {
   }
   const d = result.data;
   el.innerHTML = [
-    usageCard(t("status.usage.session"), d.session, 0),
-    usageCard(t("status.usage.weekly"), d.weekly, 1),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, 2),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, 0),
+    usageCard(t("status.usage.session"), d.session),
+    usageCard(t("status.usage.weekly"), d.weekly),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
   ].join("");
 }
 
@@ -1735,7 +1844,65 @@ function limitKindLabel(kind) {
   return t("home.anthropicAccount.limitKind." + kind) || kind || "-";
 }
 
+const SEVERITY_BAR_CLASS = { normal: "sev-normal", warning: "sev-warning", critical: "sev-critical" };
+function neonPercentBar(percent, severity) {
+  if (percent === null || percent === undefined) return "-";
+  const pct = Math.max(0, Math.min(100, percent));
+  const sevClass = SEVERITY_BAR_CLASS[severity] || "sev-normal";
+  return `
+    <div class="neon-bar ${sevClass}">
+      <div class="neon-bar-fill" style="width:${pct}%"></div>
+    </div>
+    <span class="neon-bar-pct">${percent}%</span>`;
+}
+
+function fmtAccountDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString();
+  } catch (e) {
+    return iso;
+  }
+}
+
+let accountInfoCache = null;
+async function fetchAccountInfo() {
+  accountInfoCache = await api("/api/account");
+  return accountInfoCache;
+}
+
+function renderAccountProfileInto(boxId, listId, info) {
+  const box = document.getElementById(boxId);
+  const list = document.getElementById(listId);
+  if (!box || !list) return;
+  if (!info || (!info.email && !info.displayName)) {
+    box.hidden = true;
+    return;
+  }
+  const rows = [];
+  if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: escapeHtml(info.displayName) });
+  if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: escapeHtml(info.email) });
+  if (info.organizationName) rows.push({ label: t("home.anthropicAccount.profile.org"), value: escapeHtml(info.organizationName) });
+  if (info.organizationRole) rows.push({ label: t("home.anthropicAccount.profile.role"), value: escapeHtml(info.organizationRole) });
+  if (info.organizationType) rows.push({ label: t("home.anthropicAccount.profile.plan"), value: escapeHtml(info.organizationType) });
+  if (info.organizationRateLimitTier) rows.push({ label: t("home.anthropicAccount.profile.rateLimitTier"), value: escapeHtml(info.organizationRateLimitTier) });
+  if (info.billingType) rows.push({ label: t("home.anthropicAccount.profile.billing"), value: escapeHtml(info.billingType) });
+  const createdAt = fmtAccountDate(info.accountCreatedAt);
+  if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: createdAt });
+  const subCreatedAt = fmtAccountDate(info.subscriptionCreatedAt);
+  if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: subCreatedAt });
+  box.hidden = rows.length === 0;
+  list.innerHTML = rows.map((r) => `<div class="bar-row"><span class="name">${r.label}</span><span>${r.value}</span></div>`).join("");
+}
+
+async function refreshAccountProfile() {
+  const info = await fetchAccountInfo();
+  renderAccountProfileInto("anthropic-profile-box", "anthropic-profile-info", info);
+  renderAccountProfileInto("status-profile-box", "status-profile-info", info);
+}
+
 async function refreshHomeAnthropicInfo() {
+  refreshAccountProfile();
   const result = await api("/api/usage");
   const cardsEl = document.getElementById("anthropic-usage-cards");
   const limitsBox = document.getElementById("anthropic-limits-box");
@@ -1751,10 +1918,10 @@ async function refreshHomeAnthropicInfo() {
   }
   const d = result.data;
   cardsEl.innerHTML = [
-    usageCard(t("status.usage.session"), d.session, 0),
-    usageCard(t("status.usage.weekly"), d.weekly, 1),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, 2),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, 0),
+    usageCard(t("status.usage.session"), d.session),
+    usageCard(t("status.usage.weekly"), d.weekly),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus),
   ].join("");
 
   if (d.limits && d.limits.length > 0) {
@@ -1771,7 +1938,7 @@ async function refreshHomeAnthropicInfo() {
               (l) => `
             <tr>
               <td>${escapeHtml(limitKindLabel(l.kind))}${l.scopeModel ? ` (${escapeHtml(l.scopeModel)})` : ""}</td>
-              <td>${l.percent === null ? "-" : l.percent + "%"}</td>
+              <td class="neon-bar-cell">${neonPercentBar(l.percent, l.severity)}</td>
               <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
               <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}</td>
               <td>${l.isActive ? "●" : "-"}</td>
@@ -1945,6 +2112,7 @@ function refreshEverythingNow() {
   refreshAuditState();
   refreshRemoteAccessState();
   refreshApprovals();
+  refreshApprovalHistory();
   refreshIdentityCard();
   refreshNetworkTraffic();
 }
@@ -1963,6 +2131,7 @@ document.getElementById("theme-select").addEventListener("change", (ev) => apply
 document.getElementById("lang-toggle-btn").addEventListener("click", () => {
   setLang(currentLang === "zh" ? "en" : "zh");
   syncGridToggleBtnText();
+  syncApprovalsNotifyBtn();
   setGpuState(gpuState);
   // 静态文案已经在 setLang -> applyStaticI18n 里刷新了；已经拼好 append 到列表里的
   // 日志/Tap 条目不会自动重新翻译（是已经生成的 DOM，不是"状态"），干脆清空重新拉一遍。

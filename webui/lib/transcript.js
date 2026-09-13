@@ -170,6 +170,12 @@ function getTokenStats(path) {
   const totalIn = sum("input_tokens");
   const totalOut = sum("output_tokens");
   const totalCacheRead = sum("cache_read_input_tokens");
+  // ccstatusline 的 "Cached" 是 cache_read + cache_creation 两种一起算的，"Total" 再把
+  // input/output/cached 三个加起来——跟 Claude Code 自己那套 token 统计口径对齐，不是
+  // 我们自己发明的算法。
+  const totalCacheCreation = sum("cache_creation_input_tokens");
+  const totalCached = totalCacheRead + totalCacheCreation;
+  const totalTokens = totalIn + totalOut + totalCached;
 
   let outputTokensPerSec = null;
   let inputTokensPerSec = null;
@@ -187,6 +193,9 @@ function getTokenStats(path) {
     totalInputTokens: totalIn,
     totalOutputTokens: totalOut,
     totalCacheReadTokens: totalCacheRead,
+    totalCacheCreationTokens: totalCacheCreation,
+    totalCachedTokens: totalCached,
+    totalTokens,
     outputTokensPerSec,
     inputTokensPerSec,
   };

@@ -74,6 +74,20 @@
       </div>
       <div id="identity-by-user" class="bar-list" style="margin:-10px 0 22px;"></div>
 
+      <div class="box-title" style="margin:4px 0 8px;"><span data-i18n="home.anthropicAccount.title">Anthropic 账号信息</span> <span class="hint" data-i18n="home.anthropicAccount.hint">（跟 ccstatusline 读同一份 OAuth 凭证查询，账号级别，所有会话共享）</span></div>
+      <div id="anthropic-profile-box" class="home-box" style="margin-bottom:16px;" hidden>
+        <div id="anthropic-profile-info" class="bar-list"></div>
+      </div>
+      <div id="anthropic-usage-cards" class="cards"></div>
+      <div id="anthropic-limits-box" class="home-box" style="margin-bottom:22px;" hidden>
+        <div class="box-title" data-i18n="home.anthropicAccount.limitsTitle">额度明细（limits）</div>
+        <div id="anthropic-limits-list"></div>
+      </div>
+      <div id="anthropic-spend-box" class="home-box" style="margin-bottom:22px;" hidden>
+        <div class="box-title" data-i18n="home.anthropicAccount.spendTitle">额外使用额度（spend）</div>
+        <div id="anthropic-spend-info" class="bar-list"></div>
+      </div>
+
       <div class="cards">
         <div class="card clickable" data-drilldown="live-sessions">
           <div class="card-num" id="stat-live-sessions">-</div>
@@ -115,29 +129,18 @@
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.fileOps.title">文件操作统计（Claude Code 发起的）</div>
       <div class="cards">
-        <div class="card clickable chip-blue" data-drilldown="file-op-read"><div class="card-num" id="stat-file-reads">-</div><div class="card-label"><span data-i18n="home.fileOps.reads">读取</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-cyan" data-drilldown="file-op-write"><div class="card-num" id="stat-file-writes">-</div><div class="card-label"><span data-i18n="home.fileOps.writes">写入</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-green" data-drilldown="file-op-edit"><div class="card-num" id="stat-file-edits">-</div><div class="card-label"><span data-i18n="home.fileOps.edits">编辑</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-yellow" data-drilldown="file-op-delete"><div class="card-num" id="stat-file-deletes">-</div><div class="card-label"><span data-i18n="home.fileOps.deletes">删除（按命令文本近似识别，非精确）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-read"><div class="card-num" id="stat-file-reads">-</div><div class="card-label"><span data-i18n="home.fileOps.reads">读取</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-write"><div class="card-num" id="stat-file-writes">-</div><div class="card-label"><span data-i18n="home.fileOps.writes">写入</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-edit"><div class="card-num" id="stat-file-edits">-</div><div class="card-label"><span data-i18n="home.fileOps.edits">编辑</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="file-op-delete"><div class="card-num" id="stat-file-deletes">-</div><div class="card-label"><span data-i18n="home.fileOps.deletes">删除（按命令文本近似识别，非精确）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.installOps.title">软件安装统计（按命中的安装类规则识别）</div>
       <div class="cards">
-        <div class="card clickable chip-blue" data-drilldown="install-op-pip"><div class="card-num" id="stat-install-pip">-</div><div class="card-label"><span data-i18n="home.installOps.pip">pip 安装 Python 包</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-cyan" data-drilldown="install-op-system"><div class="card-num" id="stat-install-system">-</div><div class="card-label"><span data-i18n="home.installOps.system">系统包管理器（apt/yum/dnf/pacman）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-green" data-drilldown="install-op-npm"><div class="card-num" id="stat-install-npm">-</div><div class="card-label"><span data-i18n="home.installOps.npm">npm 全局安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable chip-yellow" data-drilldown="install-op-other"><div class="card-num" id="stat-install-other">-</div><div class="card-label"><span data-i18n="home.installOps.other">其它软件安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-      </div>
-
-      <div class="box-title" style="margin:4px 0 8px;"><span data-i18n="home.anthropicAccount.title">Anthropic 账号信息</span> <span class="hint" data-i18n="home.anthropicAccount.hint">（跟 ccstatusline 读同一份 OAuth 凭证查询，账号级别，所有会话共享）</span></div>
-      <div id="anthropic-usage-cards" class="cards"></div>
-      <div id="anthropic-limits-box" class="home-box" style="margin-bottom:22px;" hidden>
-        <div class="box-title" data-i18n="home.anthropicAccount.limitsTitle">额度明细（limits）</div>
-        <div id="anthropic-limits-list"></div>
-      </div>
-      <div id="anthropic-spend-box" class="home-box" style="margin-bottom:22px;" hidden>
-        <div class="box-title" data-i18n="home.anthropicAccount.spendTitle">额外使用额度（spend）</div>
-        <div id="anthropic-spend-info" class="bar-list"></div>
+        <div class="card clickable" data-drilldown="install-op-pip"><div class="card-num" id="stat-install-pip">-</div><div class="card-label"><span data-i18n="home.installOps.pip">pip 安装 Python 包</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="install-op-system"><div class="card-num" id="stat-install-system">-</div><div class="card-label"><span data-i18n="home.installOps.system">系统包管理器（apt/yum/dnf/pacman）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="install-op-npm"><div class="card-num" id="stat-install-npm">-</div><div class="card-label"><span data-i18n="home.installOps.npm">npm 全局安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="install-op-other"><div class="card-num" id="stat-install-other">-</div><div class="card-label"><span data-i18n="home.installOps.other">其它软件安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="home-columns">
@@ -173,6 +176,10 @@
       <div class="panel-title"><span data-i18n="nav.approvals">AI 审批台</span><span class="hint" data-i18n="approvals.hint">（跟触发它的终端是同一件事的两条路，谁先给结果就用谁的）</span></div>
       <button id="approvals-notify-btn" class="btn-secondary" style="margin-bottom:10px;" hidden></button>
       <div id="approvals-list" class="approvals-list"></div>
+
+      <div class="box-title" style="margin:22px 0 8px;" data-i18n="approvals.history.title">审批历史记录</div>
+      <div class="hint" style="margin-bottom:10px;" data-i18n="approvals.history.hint">已经处理过的记录，长期保存在数据库里，不会因为清空当前数据而丢失</div>
+      <div id="approvals-history-wrap"></div>
     </section>
 
     <!-- 终端会话：多会话对话 + 输入 -->
@@ -222,6 +229,11 @@
 
     <!-- 状态信息：类似 ccstatusline，展示账号额度 + 每个会话的实时状态 -->
     <section id="view-status" class="view">
+      <div class="panel-title"><span data-i18n="home.anthropicAccount.title">Anthropic 账号信息</span></div>
+      <div id="status-profile-box" class="home-box" style="margin-bottom:16px;" hidden>
+        <div id="status-profile-info" class="bar-list"></div>
+      </div>
+
       <div class="panel-title"><span data-i18n="status.usageTitle">账号额度</span><span class="hint" data-i18n="status.usageHint">（跟 ccstatusline 读同一份 Claude Code 登录凭证查询，账号级别，所有会话共享）</span></div>
       <div id="usage-board" class="cards"></div>
 

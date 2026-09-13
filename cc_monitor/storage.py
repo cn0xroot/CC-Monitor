@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     status TEXT NOT NULL DEFAULT 'pending',
     resolved_at TEXT,
     resolved_via TEXT,
-    kind TEXT NOT NULL DEFAULT 'confirm'
+    kind TEXT NOT NULL DEFAULT 'confirm',
+    resolved_value TEXT
 );
 
 -- "一直允许"是按 session 生效的，不是改全局规则——同一个 session 里这条规则
@@ -92,6 +93,10 @@ def _connect():
         pass  # 列已经存在（老数据库升级过一次之后）
     try:
         conn.execute("ALTER TABLE pending_approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'confirm'")
+    except sqlite3.OperationalError:
+        pass  # 列已经存在（老数据库升级过一次之后）
+    try:
+        conn.execute("ALTER TABLE pending_approvals ADD COLUMN resolved_value TEXT")
     except sqlite3.OperationalError:
         pass  # 列已经存在（老数据库升级过一次之后）
     return conn
@@ -193,22 +198,32 @@ def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_va
         conn.close()
 
 
-def resolve_pending_notify(session_id, tool_name):
+def resolve_pending_notify(session_id, tool_name, tool_response=None):
     """action='notify' 那类记录（比如 AskUserQuestion）没有 tty/网页两条路可 resolve——
     唯一能"结束等待"的信号就是对应的 PostToolUse 事件真的来了（说明用户已经在触发它
     的那个终端里选完了）。同一个 session 同一个工具短时间内理论上可能连续问好几次，
     只挑最新的那条'pending'状态的记录标掉，不会把更早、可能是别的原因还没处理完的
     记录也捎带手误标了。
+
+    tool_response（PostToolUse 自带的、这个工具调用真正的返回值）对 AskUserQuestion
+    来说带着 `answers`：{问题文本: 用户实际选的答案} ——原样存成 JSON 到 resolved_value，
+    这样"审批历史记录"里不止看得到当时问了什么（matched_value），也看得到用户到底
+    答了什么。其它工具/tool_response 里没有这个字段的话就留空，不是错误。
     """
+    resolved_value = None
+    if isinstance(tool_response, dict):
+        answers = tool_response.get("answers")
+        if answers:
+            resolved_value = json.dumps(answers, ensure_ascii=False)
     conn = _connect()
     try:
         with conn:
             cur = conn.execute(
-                "UPDATE pending_approvals SET status = 'answered', resolved_at = ?, resolved_via = 'post_tool_use' "
+                "UPDATE pending_approvals SET status = 'answered', resolved_at = ?, resolved_via = 'post_tool_use', resolved_value = ? "
                 "WHERE id = (SELECT id FROM pending_approvals "
                 "            WHERE session_id = ? AND tool_name = ? AND kind = 'notify' AND status = 'pending' "
                 "            ORDER BY id DESC LIMIT 1)",
-                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name),
+                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), resolved_value, session_id, tool_name),
             )
             return cur.rowcount > 0
     finally:

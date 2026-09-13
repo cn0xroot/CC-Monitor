@@ -43,8 +43,13 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
   - **Install operation stats**: grouped by which install-type rule matched — pip / system
     package manager (apt/yum/dnf/pacman) / npm global install / other — click through for the
     exact install commands.
-  - **Anthropic account info**: account-level usage/quota (same data source as the Status
-    tab) plus the `limits[]` breakdown (percent, severity, resets_at for
+  - **Anthropic account info**: name, email, organization, org role, plan type, rate-limit
+    tier, billing type, and account/subscription creation dates, read straight from Claude
+    Code's own local global config file (`~/.claude.json`'s `oauthAccount` field) — no
+    network call, same source [ccstatusline](https://github.com/sirmalloc/ccstatusline)'s
+    "Claude Account Email" widget uses. Plus account-level usage/quota (same data source as
+    the Status tab), the `limits[]` breakdown (percent — rendered as a glowing pill progress
+    bar colored from the current theme — severity, resets_at for
     session/weekly_all/weekly_scoped) and `spend` (whether pay-as-you-go usage credits are
     enabled, and how much has been used).
   - **Data management**: archive the current event data (a full SQLite `backup()` snapshot)
@@ -64,8 +69,13 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
   once, allow and don't ask again for 10/30 minutes, or always allow (scoped to this
   session only — other sessions running the same command still get asked). Supports browser
   desktop notifications (the Notification API) — new requests raise a system notification
-  even when this tab isn't open, click it to jump straight back in.
-- **Status**: account-level usage (the 5-hour session window / weekly quota / per-model weekly quota + reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)) plus per-session model, token usage, throughput (tok/s, estimated from the transcript), cwd, git branch, uptime, and blocked-operation counts.
+  even when this tab isn't open, click it to jump straight back in. Every resolved request
+  (from either the web page or the terminal) stays in a **history table** below the live
+  list — the underlying table is never purged by "clear current data", so this is a genuine
+  long-term record: time, session, tool, matched rule, matched value, outcome, resolved via.
+  For `notify`-kind records (`AskUserQuestion` and friends), the history also captures the
+  user's actual answer from the terminal, not just the fact that it got answered.
+- **Status**: the same Anthropic account info (name/email/organization/plan) as the Home page, account-level usage (the 5-hour session window / weekly quota / per-model weekly quota + reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)) plus per-session model, token usage, throughput (tok/s, estimated from the transcript), a `ccstatusline`-compatible `Σ Total / Cached` token summary (same accounting: total = input+output+cached, cached = cache-read+cache-creation), cwd, git branch, uptime, and blocked-operation counts.
 - **Network**: the actual network connections the Claude Code process tree has made —
   destination IP/port, reverse-resolved hostname, upload/download byte counts, connection
   count, plus a world map plotting roughly where those destinations are. All of this comes

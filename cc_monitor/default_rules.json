@@ -13,7 +13,7 @@
     "action": "block",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(dd|mkfs|fdisk|parted)\\b"
+    "pattern": "(?<![\\w-])(dd|mkfs|fdisk|parted)(?![\\w-])"
   },
   {
     "id": "curl_pipe_shell",

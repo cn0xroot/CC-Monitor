@@ -7,6 +7,65 @@
 
 ## [未发布]
 
+### 新增
+- **Anthropic 账号信息新增姓名/邮箱/组织/套餐**：不是新的网络请求，是 Claude Code
+  自己维护的本地全局配置文件 `~/.claude.json`（`oauthAccount` 字段）——反编译
+  [ccstatusline](https://github.com/sirmalloc/ccstatusline) 的 "Claude Account
+  Email" 挂件确认的路径和字段名。新增字段：姓名、邮箱、组织名称、组织角色、套餐类型
+  （比如 `claude_max`）、组织额度档位、计费方式、账号创建时间、订阅开始时间。首页放在
+  "检测到的 claude 进程"下面，状态信息页放在"账号额度"前面。
+- **AI 审批台新增历史记录**：`pending_approvals` 表本来就没有任何清空逻辑（首页"清空
+  当前数据"按钮只清 `events` 表），所以历史记录天然就是长期保存的，这次只是把它显示
+  出来——时间、Session、工具、命中规则、匹配内容、结果、处理方式。对于 `notify` 类
+  记录（比如 `AskUserQuestion`），新增 `resolved_value` 字段，从对应 `PostToolUse`
+  事件的 `tool_response.answers` 里把用户在终端里实际选的答案摘出来存下，历史记录里
+  不止看得到当时问了什么，也看得到最后答了什么（旧记录没有这个数据，新产生的才有）。
+- **额度明细（limits）百分比**换成圆角胶囊 + 发光描边的进度条样式，颜色跟着当前配色
+  主题的 accent/yellow/red 变量联动（不是写死的固定色）。
+- **状态信息页会话状态**新增 `Σ Total: X.XM · Cached: X.XM` 每会话 token 统计，跟
+  [ccstatusline](https://github.com/sirmalloc/ccstatusline) 的 TokensTotal/
+  TokensCached 挂件同一个计算口径（Total = input+output+cached，Cached =
+  cache_read+cache_creation），之前只统计了 cache_read，漏了 cache_creation。
+- 事件明细表格（工具调用/MCP 调用/Skill 调用统计的下钻、审批历史记录）的 Session ID
+  前面统一带上文件夹名（比如 "webui · 6ca9e412…"），比一串截断的 UUID 好认。
+
+### 修复
+- CC-Monitor 自己的 `disk_overwrite` 规则正则表达式 `\b(dd|mkfs|fdisk|parted)\b`
+  会把 `dd-table` 这种带连字符的 CSS 类名误判成 `dd` 磁盘命令拦截（正则的 `\b` 词
+  边界把连字符当成了单词分隔符）——开发这次功能时被自己的规则拦了才发现，改成用
+  `(?<![\w-])...(?![\w-])` 精确匹配独立的命令名。
+- AI 审批台的桌面通知按钮、审批历史记录表格，切换中英文界面语言时不会重新翻译（imperative
+  设置的 `textContent`，不在 `data-i18n` 的自动刷新范围内），已经把它们接进语言切换
+  时的刷新流程。
+- Log 审计 / Claude Tap 工具栏的会话筛选下拉框之前用 `margin-left: auto` 想推到最
+  右边，但它在 DOM 里排在自动滚动开关前面，实际效果是开关跑到了它右边——加上
+  `order` 让它排到真正最后。
+- 首页账号信息的"账号创建时间"/"订阅开始时间"用 `toLocaleString().slice(0, 10)`
+  截取日期部分，截出来的字符串带了个多余的逗号（"3/28/2026,"），改用
+  `toLocaleDateString()`。
+
+### 变更
+- 之前给文件操作统计/软件安装统计/Anthropic 账号信息这几组统计卡片加过整卡片背景
+  染色（先是跟随主题色，后来改成固定的霓虹配色，又发现忘了主题选择器本来就能改这个
+  颜色），来回几轮后按最新反馈整体去掉了，卡片恢复成跟其它统计一样的纯色背景。
+
+## [1.3.1] - 2026-09-12
+
+### 新增
+- **工具调用 / MCP 调用 / Skill 调用 / AI 轨迹下钻明细**新增 Session ID、文件夹路径、
+  时间戳的事件级列表（不只是按类型/server/skill 分组的汇总数字）。AI 轨迹的连接
+  事件来自内核层探针，没有 Session 概念，这两列改成显示说明文字，换成显示发起连接
+  的进程/命令名（比如 `pip3`、`apt`、`curl`）做替代的归因方式。
+- 首页导航栏顺序调整为：首页 / 状态信息 / 网络流量 / 终端会话 / AI 审批台 / Log 审计
+  / Claude Tap / 历史数据。
+- 文件操作统计 / 软件安装统计 / Anthropic 账号信息这几组统计卡片背景改成跟随当前
+  配色主题的彩色底色（后续版本里又整体去掉了，见上面"未发布"的"变更"）。
+
+### 修复
+- 连接目的地世界地图的等距柱状投影没有按画布实际宽高比缩放，画布不是标准 2:1 比例
+  时地图会被拉伸变形；改成按画布宽高比在 clip space 里补一次缩放，多出来的部分用
+  留白而不是拉伸填满。
+
 ## [1.3.0] - 2026-09-12
 
 ### 新增

@@ -13,6 +13,7 @@ const fmt = require("./lib/format");
 const status = require("./lib/status");
 const transcript = require("./lib/transcript");
 const usage = require("./lib/usage");
+const account = require("./lib/account");
 const archives = require("./lib/archives");
 const auditState = require("./lib/auditState");
 const browse = require("./lib/browse");
@@ -195,6 +196,11 @@ app.post("/api/pending-approvals/:id/resolve", (req, res) => {
   res.json(result);
 });
 
+app.get("/api/approvals/history", (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || "200", 10), 2000);
+  res.json(approvals.listHistory(limit));
+});
+
 // ---- REST API: claude 进程运行身份检测（Web UI 和你终端里的 claude 是不是同一个
 // 操作系统用户——不是同一个用户的话，两边各写各的 ~/.cc-monitor/ 数据库，这个接口
 // 就是用来把这种情况暴露出来的） ----
@@ -303,6 +309,10 @@ app.get("/api/transcript/all", (req, res) => {
 app.get("/api/usage", async (req, res) => {
   const result = await usage.getUsage();
   res.json(result);
+});
+
+app.get("/api/account", (req, res) => {
+  res.json(account.getAccountInfo());
 });
 
 app.get("/api/logs", (req, res) => {

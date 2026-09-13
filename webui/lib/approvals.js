@@ -29,6 +29,20 @@ function listPending() {
   }, []);
 }
 
+// 历史记录——status 从 'pending' 变成别的之后这条记录并不会被删（没有任何地方对
+// pending_approvals 做 DELETE，包括首页"清空当前数据"按钮，那个只清 events 表），
+// 所以这里直接查非 pending 的全部记录就是完整的历史，天然长期保存。
+function listHistory(limit = 200) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind, resolved_at, resolved_via, resolved_value
+         FROM pending_approvals WHERE status != 'pending' ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 const DECISION_TO_STATUS = {
   allow: "allowed",
   deny: "denied",
@@ -51,4 +65,4 @@ function resolve(id, decision) {
   }, { ok: false, error: "数据库不可写" });
 }
 
-module.exports = { listPending, resolve };
+module.exports = { listPending, resolve, listHistory };

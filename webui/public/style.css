@@ -363,19 +363,6 @@ html, body {
 .card.accent-red .card-num { color: var(--red); }
 .card.accent-yellow .card-num { color: var(--yellow); }
 
-/* 彩色数字块——logo 用的那套 Signal/Scan/Watch 配色搬过来，染的是整张卡片的
-   底色（不是只在数字外面包一个小色块），同一组统计里每张卡片用不同颜色，一眼分得清 */
-.card.chip-blue { background: color-mix(in srgb, var(--accent) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
-.card.chip-cyan { background: color-mix(in srgb, var(--cyan) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--cyan) 40%, var(--border)); }
-.card.chip-green { background: color-mix(in srgb, var(--green) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--green) 40%, var(--border)); }
-.card.chip-yellow { background: color-mix(in srgb, var(--yellow) 26%, var(--bg-panel)); border-color: color-mix(in srgb, var(--yellow) 45%, var(--border)); }
-.card.chip-red { background: color-mix(in srgb, var(--red) 22%, var(--bg-panel)); border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
-.card.chip-blue .card-num { color: var(--accent); }
-.card.chip-cyan .card-num { color: var(--cyan); }
-.card.chip-green .card-num { color: var(--green); }
-.card.chip-yellow .card-num { color: var(--yellow); }
-.card.chip-red .card-num { color: var(--red); }
-
 .home-columns { display: flex; gap: 16px; flex-wrap: wrap; }
 .home-box {
   flex: 1 1 320px;
@@ -405,7 +392,7 @@ html, body {
 /* 跟 Claude Tap 那边保持一致的布局：允许换行，会话筛选下拉推到工具栏最右边，
    标题和自动滚动开关留在左边一组。 */
 #view-logs .logs-toolbar { flex-wrap: wrap; }
-#view-logs #log-session-filter { margin-left: auto; }
+#view-logs #log-session-filter { margin-left: auto; order: 1; }
 /* 自动滚动开关：视觉上是个 iOS 风格的滑动开关，底层还是原生 <input type="checkbox">——
    只是把它缩到看不见（依然占位、依然可以被 <label> 点击/键盘聚焦），旁边这两个 <span>
    纯粹是画出来的轨道+圆点，用 :checked 同级选择器联动样式，不用额外写 JS。 */
@@ -440,7 +427,7 @@ html, body {
 .autoscroll-toggle .switch-input:checked + .switch-track { background: var(--accent); }
 .autoscroll-toggle .switch-input:checked + .switch-track .switch-thumb { transform: translateX(14px); }
 .autoscroll-toggle .switch-input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
-.log-list.wide { max-width: 900px; }
+.log-list.wide { flex: 1 1 auto; min-height: 0; }
 
 /* ---------- 终端会话 ---------- */
 #sidebar {
@@ -819,7 +806,7 @@ html, body {
    meta 信息（行数 + transcript 完整路径，可能很长）单独占一整行、超宽就省略号截断，
    完整路径放 title 属性，鼠标悬停能看到。 */
 #view-tap .logs-toolbar { flex-wrap: wrap; }
-#view-tap #tap-session-select { margin-left: auto; }
+#view-tap #tap-session-select { margin-left: auto; order: 1; }
 #tap-meta {
   flex: 1 1 100%;
   min-width: 0;
@@ -843,7 +830,6 @@ html, body {
    就被卷到看不见的地方去了——这就是"选择其它会话的按钮被顶开"这个 bug。 */
 #view-tap.active { display: flex; flex-direction: column; }
 .tap-list {
-  max-width: 900px;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -977,4 +963,29 @@ html, body {
 .dd-group-title { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .dd-group-title .n { color: var(--accent); }
 .dd-row-clickable { cursor: pointer; }
+
+/* 额度百分比进度条——参考用户给的霓虹进度条图：圆角胶囊 + 发光描边 + 渐变填充，
+   颜色跟着 severity 走（normal/warning/critical），三个主题色变量各自出一个渐变，
+   不是新引入的固定色，跟着当前配色主题联动。 */
+.neon-bar-cell { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.neon-bar {
+  position: relative;
+  width: 96px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.neon-bar-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
+.neon-bar-pct { font-family: Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 600; }
+.neon-bar.sev-normal { border: 1px solid color-mix(in srgb, var(--green) 55%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--green) 45%, transparent); }
+.neon-bar.sev-normal .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--green) 45%, white), var(--green)); }
+.neon-bar.sev-normal ~ .neon-bar-pct { color: var(--green); }
+.neon-bar.sev-warning { border: 1px solid color-mix(in srgb, var(--yellow) 55%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--yellow) 45%, transparent); }
+.neon-bar.sev-warning .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--yellow) 45%, white), var(--yellow)); }
+.neon-bar.sev-warning ~ .neon-bar-pct { color: var(--yellow); }
+.neon-bar.sev-critical { border: 1px solid color-mix(in srgb, var(--red) 55%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 45%, transparent); }
+.neon-bar.sev-critical .neon-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, white), var(--red)); }
+.neon-bar.sev-critical ~ .neon-bar-pct { color: var(--red); }
 .dd-open-hint { color: var(--accent); font-weight: 600; white-space: nowrap; }
