@@ -20,6 +20,7 @@
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
     "https-proxy-agent": "^9.1.0",
+    "maxmind": "^5.0.7",
     "node-pty": "^1.1.0",
     "ws": "^8.21.3",
     "xterm": "^5.3.0",
@@ -34,14 +35,29 @@
   "build": {
     "appId": "dev.cn0xroot.cc-monitor",
     "productName": "CC-Monitor",
-    "files": ["**/*", "!test/**", "!cdp-*.js"],
-    "directories": { "output": "dist" },
+    "files": [
+      "**/*",
+      "!test/**",
+      "!cdp-*.js"
+    ],
+    "directories": {
+      "output": "dist"
+    },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Development"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
       "category": "public.app-category.developer-tools"
     }
   }

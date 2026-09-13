@@ -56,6 +56,22 @@ def handle_pre(data):
                 approved = notify.confirm(tool_name, rule, matched_value, session_id=session_id, cwd=cwd)
                 decision = "allowed" if approved else "blocked"
                 handled_via_confirm = approved
+        elif action == "notify":
+            # 不是"要不要允许"的问题（比如 AskUserQuestion 这种 Claude Code 自己在问
+            # 用户问题的工具，压根没有 allow/deny 语义），只是把"现在有个事在等你"这个
+            # 状态暴露到网页上——不阻塞、不弹 tty 确认框，Claude Code 该怎么原生交互
+            # 还怎么交互，我们只是在旁边记一笔"这个终端正等着"，对应的 PostToolUse
+            # 一来就自动标掉（见 handle_post 里的 resolve_pending_notify）。
+            decision = "allowed"
+            storage.create_pending_approval(
+                session_id=session_id,
+                tool_name=tool_name,
+                cwd=cwd,
+                matched_rule=rule["id"],
+                matched_value=matched_value,
+                risk=risk,
+                kind="notify",
+            )
         else:  # "log"
             decision = "allowed"
 
@@ -109,6 +125,11 @@ def handle_post(data):
         decision="completed",
         transcript_path=transcript_path,
     )
+    # 工具调用真的跑完了——如果这个 (session, tool_name) 之前建过一条 kind='notify'
+    # 的"等你处理"记录（比如 AskUserQuestion 的问题终于被回答了），标成已处理，
+    # 不会一直挂在"AI 审批台"上。跟这个工具是不是命中了 notify 规则完全没关系，
+    # 没有对应记录的话这里就是个no-op，不需要先查一遍是不是 notify 类工具。
+    storage.resolve_pending_notify(session_id, tool_name)
     sys.exit(0)
 
 

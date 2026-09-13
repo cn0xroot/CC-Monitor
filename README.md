@@ -19,7 +19,36 @@ npm install
 node server.js          # listens on http://127.0.0.1:9999 by default, localhost-only
 ```
 
-- **Home**: overview stats — live terminal session count, total Claude Code sessions detected, total audit events, blocked/suspected-bypass counts, file read/write/edit/delete counts, and breakdowns by log type and risk level. The "total sessions" / "total events" / "blocked high-risk operations" cards are clickable for drilldown detail (session list, per-event-type breakdown with owning session, and the full list of blocked operations, respectively).
+- **Home**:
+  - **Audit control**: a three-state toggle — running / paused / stopped (merged into one
+    button plus a separate stop button). `paused` still evaluates rules and logs normally,
+    but never actually blocks or asks for confirmation; `stopped` doesn't intervene at all —
+    no evaluation, no logging. A persistent status pill sits in the top bar.
+  - **Claude Code identity check**: detects which OS user every running `claude` process
+    belongs to (cross-platform, implemented via `ps`), and flags it prominently when that
+    differs from the Web UI's own user — the Web UI and the hooks each resolve
+    `~/.cc-monitor/` from their own process's `$HOME`, so a mismatch means the two sides
+    silently write to completely different databases; this card makes that otherwise-
+    invisible situation visible. Click through for each process's PID/user/working directory.
+  - **Overview stats**: live terminal session count, total Claude Code sessions detected,
+    total audit events (`hook_pre` + `hook_post` + system-layer events combined),
+    blocked/suspected-bypass counts, **tool calls** (counts `hook_pre` only — a more direct
+    "how many tool invocations actually happened" number than the raw event total), **MCP
+    calls** (identified via the `mcp__<server>__<tool>` naming convention, click through for
+    a per-server breakdown), and **AI trajectory** (domains/IPs Claude Code has visited,
+    backed by the same data as the Network tab). The "total sessions" / "total events" /
+    "blocked operations" / "tool calls" / "MCP calls" / "AI trajectory" cards are all
+    clickable for drilldown detail.
+  - **File operation stats**: read/write/edit/delete counts, each clickable for detail.
+  - **Install operation stats**: grouped by which install-type rule matched — pip / system
+    package manager (apt/yum/dnf/pacman) / npm global install / other — click through for the
+    exact install commands.
+  - **Anthropic account info**: account-level usage/quota (same data source as the Status
+    tab) plus the `limits[]` breakdown (percent, severity, resets_at for
+    session/weekly_all/weekly_scoped) and `spend` (whether pay-as-you-go usage credits are
+    enabled, and how much has been used).
+  - **Data management**: archive the current event data (a full SQLite `backup()` snapshot)
+    or clear it to start counting from zero; breakdowns by log type and risk level.
 - **Log Audit**: a full-width, live-updating audit log view (filterable by session — the session dropdown shows "folder · model · short ID" instead of an opaque ID string), reusing the same human-readable event-translation logic as the CLI.
 - **Terminal Sessions**: open a Claude Code terminal directly in the browser (a PTY spawned via `node-pty`) instead of switching to a local terminal app; rendered with `xterm.js` + the WebGL addon, GPU-accelerated when available and falling back to Canvas otherwise. The sidebar can switch to a **grid view** (herdr-style) showing every live session on one screen at once; clicking a pane routes keyboard input to it.
 - **Claude Tap**: view the **full conversation content** sent to/received from the model for a given session (not just "which tool was called") — text, thinking, tool calls, tool results, token usage, each field color-coded. The data source is Claude Code's own local transcript JSONL file (the `transcript_path` field in the hook payload) — not packet capture or MITM. CLI equivalent: `CC-Monitor tap [--session ID] [-f]`.
@@ -37,6 +66,20 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
   desktop notifications (the Notification API) — new requests raise a system notification
   even when this tab isn't open, click it to jump straight back in.
 - **Status**: account-level usage (the 5-hour session window / weekly quota / per-model weekly quota + reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)) plus per-session model, token usage, throughput (tok/s, estimated from the transcript), cwd, git branch, uptime, and blocked-operation counts.
+- **Network**: the actual network connections the Claude Code process tree has made —
+  destination IP/port, reverse-resolved hostname, upload/download byte counts, connection
+  count, plus a world map plotting roughly where those destinations are. All of this comes
+  from the system-layer probe (`cc_monitor/probe_linux.bt`, Linux + eBPF) — not packet
+  capture or MITM. The byte counts are new: added `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel
+  probes, since the existing probe only knew "connected to this IP:port," not how much data
+  moved. IP geolocation uses a local database (no per-IP third-party API calls) — either
+  MaxMind GeoLite2 or the no-signup-needed DB-IP Lite both work, see Requirements below;
+  without one, the map and location column are simply empty and the page honestly says
+  "no GeoIP database configured" instead of faking data. The
+  world map is drawn entirely in WebGL2 (equirectangular projection + a bundled low-res
+  coastline outline), following the approach from
+  [BeeEye](https://github.com/cn0xroot/BeeEye)'s `WorldMap.jsx` — no map-tile service
+  dependency. With the probe not installed or not running, this page just shows empty data.
 - **Language toggle + multiple themes**: a language button (中文/EN) and a theme dropdown (Brand/Dark/Light/Dracula/Nord/Midnight/Ocean/Forest/Sunset/Rose — the last five ported from [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search)'s color scheme) in the top bar, both persisted to `localStorage`. Translation covers UI chrome (nav, buttons, titles, empty-state hints, risk/operation/status labels) but not the data itself (raw command text, tool output, transcript content). The risk/operation-type/status badges in the audit log use fixed, highly saturated colors that don't change with the theme; high-risk rows are shown in bold red.
 
 Static assets are served with `Cache-Control: no-store` since this UI is still iterating fast — refresh the page after a code change and you'll see the latest version, no stale browser cache to worry about.
@@ -179,6 +222,25 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   itself declares in its `package.json` `engines` field (`express` only needs Node ≥ 18, but
   `better-sqlite3` requires 22; an older Node will likely fail during install or at startup).
   Check `node --version` before installing, e.g. via [nvm](https://github.com/nvm-sh/nvm).
+- **GeoIP location on the Network tab (optional)**: uses the `maxmind` npm package to read a
+  local database file, which isn't shipped in this repo. Without one, the Network tab still
+  works — the location column and map just have no data, and the page says so honestly
+  rather than affecting the connection/byte-count stats. Two ways to get a database:
+  - **No account needed (recommended)**: [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
+    republishes DB-IP Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+    city-level accuracy) as ready-to-use `.mmdb` files, updated automatically:
+    ```bash
+    curl -L -o ~/.cc-monitor/dbip-city.mmdb \
+      https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.mmdb
+    ```
+  - **Official MaxMind GeoLite2**: usually more accurate, but requires signing up for a free
+    account at [MaxMind](https://www.maxmind.com/en/geolite2/signup), generating a license
+    key, and manually downloading `GeoLite2-City.mmdb` to
+    `~/.cc-monitor/GeoLite2-City.mmdb`.
+
+  The two databases use different field layouts (MaxMind nests fields, DB-IP Lite is flat) —
+  `geoip.js` recognizes both, no extra configuration needed either way. `CC_MONITOR_GEOIP_DB`
+  can point at a different path than the defaults above.
 
 **Verified working environment** (not the only one that works — just the one this has
 actually been tested and confirmed on): Ubuntu 24.04 LTS (kernel 7.0, x86_64), AMD Ryzen 9
@@ -321,6 +383,10 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] System-layer probe (`CC-Monitor-probe`, Linux only): eBPF tracing of the Claude Code process tree's `execve`/`connect`
 - [x] Bypass detection: fuzzy-matches what the probe observed against hook records (process tree + time window + quote-stripped substring match), flagging `hook_bypass_suspected`
 - [x] Network visibility: eBPF captures `connect()` destination IP:port + reverse DNS, no MITM proxy needed
+- [x] Network byte-count stats: `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes, aggregated upload/download bytes per (ip, port)
+- [x] Web UI Network tab: connection detail table + GeoIP location (local MaxMind/DB-IP Lite database) + WebGL2 world map
+- [x] Claude Code identity check: cross-platform (`ps`) detection of which OS user every `claude` process runs as, flagged when it differs from the Web UI's own user
+- [x] Three new Home stat cards — tool calls, MCP calls, AI trajectory — all with click-through drilldowns
 
 ### Not implemented / TODO
 
@@ -360,4 +426,12 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
   system load the probe's processing can lag a few seconds, so `CC-Monitor verify` may need a moment
   before showing the latest results.
 - The network layer only sees IP:port, not the real hostname (best-effort reverse DNS, not always
-  accurate).
+  accurate). Byte-count stats only cover IPv4 TCP connections (`skc_family == AF_INET`); IPv6
+  and UDP traffic still show up on the CONNECT timeline but aren't counted toward
+  upload/download totals.
+- The world map / location data depends on you configuring a MaxMind GeoLite2 database
+  yourself — with none configured, this data is simply empty, not a bug. Even configured,
+  accuracy is whatever GeoLite2's free tier gives you (coarser than the paid GeoIP2 database,
+  especially for mobile/CDN egress IPs that often resolve to a carrier's datacenter rather
+  than the user's actual location) — an inherent limitation of IP geolocation, not something
+  CC-Monitor can fix.

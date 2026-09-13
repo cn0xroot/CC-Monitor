@@ -18,6 +18,7 @@
       <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
       <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">Claude Tap</button>
       <button class="tab-btn" data-tab="status" data-i18n="nav.status">状态信息</button>
+      <button class="tab-btn" data-tab="network" data-i18n="nav.network">网络流量</button>
       <button class="tab-btn" data-tab="archives" data-i18n="nav.archives">历史数据</button>
     </nav>
     <select id="theme-select" class="pill-select" title="Theme">
@@ -93,6 +94,18 @@
         <div class="card accent-yellow">
           <div class="card-num" id="stat-bypass">-</div>
           <div class="card-label" data-i18n="home.card.bypass">疑似绕过监测</div>
+        </div>
+        <div class="card clickable" data-drilldown="tool-calls">
+          <div class="card-num" id="stat-tool-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.toolCalls">工具调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card clickable" data-drilldown="mcp-calls">
+          <div class="card-num" id="stat-mcp-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.mcpCalls">MCP 调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card clickable" data-drilldown="ai-trajectory">
+          <div class="card-num" id="stat-ai-trajectory">-</div>
+          <div class="card-label"><span data-i18n="home.card.aiTrajectory">AI 轨迹（访问过的域名/IP）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
         </div>
       </div>
 
@@ -212,6 +225,23 @@
       <div id="status-board" class="status-board"></div>
     </section>
 
+    <!-- 网络流量：系统层探针（eBPF，Linux 专属）观测到的连接与字节数 -->
+    <section id="view-network" class="view">
+      <div class="panel-title">
+        <span data-i18n="network.title">Claude Code 网络流量</span>
+        <span class="hint" data-i18n="network.hint">（数据来自系统层探针 `CC-Monitor probe`，只有 Linux + eBPF 且探针在运行时才有数据；不是抓包/中间人，只看得到 Claude Code 进程树自己发起的连接）</span>
+      </div>
+      <div id="network-geo-badge" class="geo-acc-badge" hidden></div>
+      <div id="network-summary" class="cards"></div>
+      <div class="box-title" style="margin:16px 0 8px;"><span data-i18n="network.mapTitle">连接目的地世界地图</span></div>
+      <div id="network-map-wrap">
+        <canvas id="network-map-canvas"></canvas>
+        <div id="network-map-empty" class="empty-state" hidden></div>
+      </div>
+      <div class="box-title" style="margin:16px 0 8px;"><span data-i18n="network.tableTitle">按目标地址明细</span></div>
+      <div id="network-table-wrap"></div>
+    </section>
+
     <!-- 历史数据：之前归档过的事件数据快照列表 -->
     <section id="view-archives" class="view">
       <div class="panel-title"><span data-i18n="archives.title">历史数据记录</span><span class="hint" data-i18n="archives.hint">（首页"持久化归档"生成的快照，每份都是归档那一刻的完整事件数据）</span></div>
@@ -290,6 +320,7 @@
 <script src="/vendor/xterm/lib/xterm.js"></script>
 <script src="/vendor/xterm-addon-fit/xterm-addon-fit.js"></script>
 <script src="/vendor/xterm-addon-webgl/xterm-addon-webgl.js"></script>
+<script src="/network-map.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

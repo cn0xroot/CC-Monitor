@@ -1,5 +1,15 @@
 "use strict";
 
+// toLocaleTimeString() 不传参数的话是不是 12 小时制（"7:48:25 PM"）取决于浏览器的
+// locale 设置，不受这个应用自己的中英文切换控制——不管界面语言选的是中文还是英文，
+// 都统一用 24 小时制，不跟着浏览器/系统 locale 飘。
+function fmtTime24(date) {
+  return date.toLocaleTimeString(undefined, { hour12: false });
+}
+function fmtDateTime24(date) {
+  return date.toLocaleString(undefined, { hour12: false });
+}
+
 const RISK_COLOR = { high: "var(--red)", medium: "var(--yellow)", low: "var(--green)", info: "var(--cyan)", "-": "var(--text-dim)" };
 const KNOWN_TOOLS = new Set([
   "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",
@@ -116,6 +126,13 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     }
     if (btn.dataset.tab === "archives") refreshArchivesList();
     if (btn.dataset.tab === "approvals") syncApprovalsNotifyBtn();
+    if (btn.dataset.tab === "network") {
+      // WebGL 画布只有在容器真正可见（.view.active，非 display:none）之后
+      // getBoundingClientRect() 才能量出正确尺寸，所以地图实例延到第一次真正
+      // 切进这个 tab 时才创建，创建完立刻按当前数据刷新一次。
+      ensureNetworkMap();
+      refreshNetworkTraffic();
+    }
   });
 });
 
@@ -199,7 +216,7 @@ async function refreshSessionList() {
     el.innerHTML = `
       <div class="cwd">${s.alive ? `<span class="status-dot status-${status}" title="${escapeHtml(t("terminal.status." + status))}"></span>` : ""}${escapeHtml(s.cwd)}</div>
       <div class="meta">
-        <span>${new Date(s.createdAt).toLocaleTimeString()} ${s.alive ? "" : t("terminal.exited")}</span>
+        <span>${fmtTime24(new Date(s.createdAt))} ${s.alive ? "" : t("terminal.exited")}</span>
         <span class="kill-btn" data-id="${s.id}">${t("terminal.close")}</span>
       </div>`;
     el.addEventListener("click", (ev) => {
@@ -751,7 +768,7 @@ tapSelect.addEventListener("change", () => {
 function renderTapEntry(entry) {
   const el = document.createElement("div");
   el.className = "tap-entry tap-kind-" + entry.kind;
-  const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString() : "";
+  const ts = entry.ts ? fmtTime24(new Date(entry.ts)) : "";
   // "全部会话"合并视图下每条都带 sessionId，需要标出是哪个会话的，
   // 单会话视图（entry.sessionId 不存在）不显示这个标签。
   const sessionTag = entry.sessionId
@@ -835,6 +852,9 @@ async function refreshOverview() {
   document.getElementById("stat-total-events").textContent = s.total;
   document.getElementById("stat-blocked").textContent = s.blockedTotal;
   document.getElementById("stat-bypass").textContent = s.bypassTotal;
+  document.getElementById("stat-tool-calls").textContent = s.toolCalls;
+  document.getElementById("stat-mcp-calls").textContent = s.mcpCalls;
+  document.getElementById("stat-ai-trajectory").textContent = s.aiTrajectory;
 
   if (s.fileOps) {
     document.getElementById("stat-file-reads").textContent = s.fileOps.reads;
@@ -1102,13 +1122,23 @@ document.getElementById("approvals-notify-btn").addEventListener("click", async 
   syncApprovalsNotifyBtn();
 });
 
+function plainTextSummary(r) {
+  if (r.kind !== "notify") return r.matched_value;
+  try {
+    const questions = JSON.parse(r.matched_value);
+    return questions.map((q) => q.question || "").join(" / ") || r.matched_value;
+  } catch (e) {
+    return r.matched_value;
+  }
+}
+
 function notifyNewApprovals(rows) {
   if (!approvalsNotifySupported() || Notification.permission !== "granted") return;
   for (const r of rows) {
     if (notifiedApprovalIds.has(r.id)) continue;
     notifiedApprovalIds.add(r.id);
-    const n = new Notification(t("approvals.notify.title"), {
-      body: `${toolLabel(r.tool_name, r.tool_name)} · ${folderName(r.cwd)}\n${r.matched_value}`.slice(0, 200),
+    const n = new Notification(r.kind === "notify" ? t("approvals.notify.questionTitle") : t("approvals.notify.title"), {
+      body: `${toolLabel(r.tool_name, r.tool_name)} · ${folderName(r.cwd)}\n${plainTextSummary(r)}`.slice(0, 200),
       tag: `cc-monitor-approval-${r.id}`,
     });
     n.onclick = () => {
@@ -1122,6 +1152,25 @@ function notifyNewApprovals(rows) {
   const stillPending = new Set(rows.map((r) => r.id));
   for (const id of notifiedApprovalIds) {
     if (!stillPending.has(id)) notifiedApprovalIds.delete(id);
+  }
+}
+
+// kind='notify' 的记录（比如 AskUserQuestion）matched_value 存的是 questions 字段
+// 原样 JSON.stringify 之后的样子（一个数组，每个元素有 question/header/options）——
+// 解析出来排版成"问题 + 选项列表"，解析失败（万一以后 tools 字段形状变了）就照原样
+// 转义显示，不让页面直接崩掉。
+function formatQuestionValue(matchedValue) {
+  try {
+    const questions = JSON.parse(matchedValue);
+    if (!Array.isArray(questions)) throw new Error("not an array");
+    return questions
+      .map((q) => {
+        const opts = (q.options || []).map((o) => `<li>${escapeHtml(o.label)}${o.description ? ` — ${escapeHtml(o.description)}` : ""}</li>`).join("");
+        return `<div class="approval-question">${escapeHtml(q.header ? q.header + "：" : "")}${escapeHtml(q.question || "")}</div><ul class="approval-question-options">${opts}</ul>`;
+      })
+      .join("");
+  } catch (e) {
+    return escapeHtml(matchedValue);
   }
 }
 
@@ -1139,25 +1188,31 @@ async function refreshApprovals() {
     return;
   }
   list.innerHTML = rows
-    .map(
-      (r) => `
-    <div class="approval-item" data-id="${r.id}">
+    .map((r) => {
+      const isNotify = r.kind === "notify";
+      return `
+    <div class="approval-item${isNotify ? " approval-item-notify" : ""}" data-id="${r.id}">
       <div class="row1">
         <span class="ts">${escapeHtml(r.ts)}</span>
         <span class="risk ${r.risk}">${escapeHtml(riskLabel(r.risk))}</span>
         <span class="session-tag">📁 ${escapeHtml(folderName(r.cwd))} · ${r.session_id ? escapeHtml(r.session_id.slice(0, 8)) + "…" : "-"}</span>
       </div>
       <div class="approval-rule">${escapeHtml(r.matched_rule || "-")} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}</div>
-      <div class="approval-value">${escapeHtml(r.matched_value)}</div>
-      <div class="approval-actions">
-        <button class="btn-primary approval-allow" data-id="${r.id}">${t("approvals.allowOnce")}</button>
-        <button class="btn-danger approval-deny" data-id="${r.id}">${t("approvals.denyOnce")}</button>
-        <button class="btn-secondary approval-allow10" data-id="${r.id}">${t("approvals.allow10m")}</button>
-        <button class="btn-secondary approval-allow30" data-id="${r.id}">${t("approvals.allow30m")}</button>
-        <button class="btn-secondary approval-always" data-id="${r.id}">${t("approvals.alwaysAllow")}</button>
-      </div>
-    </div>`
-    )
+      ${
+        isNotify
+          ? `<div class="approval-value">${formatQuestionValue(r.matched_value)}</div>
+             <div class="approval-notify-hint">${t("approvals.notify.goToTerminal")}</div>`
+          : `<div class="approval-value">${escapeHtml(r.matched_value)}</div>
+             <div class="approval-actions">
+               <button class="btn-primary approval-allow" data-id="${r.id}">${t("approvals.allowOnce")}</button>
+               <button class="btn-danger approval-deny" data-id="${r.id}">${t("approvals.denyOnce")}</button>
+               <button class="btn-secondary approval-allow10" data-id="${r.id}">${t("approvals.allow10m")}</button>
+               <button class="btn-secondary approval-allow30" data-id="${r.id}">${t("approvals.allow30m")}</button>
+               <button class="btn-secondary approval-always" data-id="${r.id}">${t("approvals.alwaysAllow")}</button>
+             </div>`
+      }
+    </div>`;
+    })
     .join("");
   const DECISION_BY_CLASS = {
     "approval-allow": "allow",
@@ -1386,6 +1441,66 @@ async function openDrilldown(kind) {
     return;
   }
 
+  if (kind === "tool-calls" || kind === "mcp-calls") {
+    const isMcp = kind === "mcp-calls";
+    title.textContent = isMcp ? t("drilldown.mcpCalls.title") : t("drilldown.toolCalls.title");
+    const rows = await api(`/api/drilldown/${kind}`);
+    if (!rows) return;
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${isMcp ? t("drilldown.mcpCalls.server") : t("drilldown.toolCalls.tool")}</th>
+          <th>${t("drilldown.toolCalls.count")}</th>
+        </tr></thead>
+        <tbody>
+          ${rows
+            .map((r) => `<tr><td>${escapeHtml(isMcp ? r.server : toolLabel(r.tool_name, r.tool_name))}</td><td>${r.n}</td></tr>`)
+            .join("")}
+        </tbody>
+      </table>`;
+    return;
+  }
+
+  if (kind === "ai-trajectory") {
+    title.textContent = t("drilldown.aiTrajectory.title");
+    const result = await api("/api/network-traffic?limit=500");
+    if (!result) return;
+    const rows = result.rows;
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("network.col.target")}</th><th>${t("network.col.location")}</th>
+          <th>${t("network.col.tx")}</th><th>${t("network.col.rx")}</th>
+          <th>${t("network.col.connects")}</th>
+        </tr></thead>
+        <tbody>
+          ${rows
+            .map((r) => {
+              const target = r.host ? `${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}:${r.port}</span>` : `<span class="dd-mono">${escapeHtml(r.ip)}:${r.port}</span>`;
+              const countryLabel = r.geo ? r.geo.country || r.geo.countryCode : null;
+              const loc = r.geo ? escapeHtml([r.geo.city, countryLabel].filter(Boolean).join(", ") || "-") : `<span class="hint">${t("network.noLocation")}</span>`;
+              return `<tr>
+                <td>${target}</td>
+                <td>${loc}</td>
+                <td>${formatBytes(r.txBytes)}</td>
+                <td>${formatBytes(r.rxBytes)}</td>
+                <td>${r.connectCount}</td>
+              </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>`;
+    return;
+  }
+
   if (kind === "blocked") {
     title.textContent = t("drilldown.blocked.title");
     const rows = await api("/api/drilldown/blocked");
@@ -1514,10 +1629,15 @@ function fmtResetAt(iso) {
   if (!iso) return "";
   try {
     const d = new Date(iso);
-    const diffMs = d.getTime() - Date.now();
-    const hours = diffMs / 3600000;
-    const when = hours < 48 ? t("status.hoursLater", { n: Math.max(0, Math.round(hours)) }) : t("status.daysLater", { n: Math.round(hours / 24) });
-    return `${when} (${d.toLocaleString()})`;
+    // 之前这里用 Math.round(hours) 只精确到小时，"4.98 小时后"和"4.02 小时后"
+    // 显示出来都是"5 小时后"，差了快一小时看不出来——重置时间这种东西差几分钟
+    // 就可能是"还没刷新"和"已经刷新"的区别，改成精确到分钟。
+    const totalMinutes = Math.max(0, Math.round((d.getTime() - Date.now()) / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const when = days > 0 ? t("status.daysHoursLater", { d: days, h: hours }) : t("status.hoursMinutesLater", { h: hours, m: minutes });
+    return `${when} (${fmtDateTime24(d)})`;
   } catch (e) {
     return iso;
   }
@@ -1663,6 +1783,101 @@ async function refreshIdentityCard() {
   }
 }
 
+// ---------- Claude Code 网络流量 ----------
+function formatBytes(n) {
+  if (n === null || n === undefined) return "-";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+}
+
+let networkMap = null;
+function ensureNetworkMap() {
+  if (networkMap || !window.NetworkWorldMap) return;
+  const canvas = document.getElementById("network-map-canvas");
+  networkMap = new NetworkWorldMap(canvas);
+  if (!networkMap.ok) {
+    document.getElementById("network-map-empty").hidden = false;
+    document.getElementById("network-map-empty").textContent = t("network.mapNoWebgl");
+    return;
+  }
+  networkMap.loadLand("/world.geo.json");
+}
+
+async function refreshNetworkTraffic() {
+  const [trafficResult, geoResult] = await Promise.all([
+    api("/api/network-traffic?limit=200"),
+    api("/api/network-traffic/geopairs?limit=500"),
+  ]);
+  if (!trafficResult) return;
+
+  const badge = document.getElementById("network-geo-badge");
+  const geo = trafficResult.geo;
+  if (geo.available) {
+    badge.hidden = false;
+    badge.className = "geo-acc-badge geo-acc-" + geo.accuracy;
+    badge.textContent = geo.accuracy === "city" ? t("network.geoCity") : t("network.geoCountry");
+    badge.title = geo.dbPath;
+  } else {
+    badge.hidden = false;
+    badge.className = "geo-acc-badge geo-acc-none";
+    badge.textContent = t("network.geoNone");
+    badge.title = t("network.geoNoneHint");
+  }
+
+  const s = trafficResult.summary;
+  document.getElementById("network-summary").innerHTML = `
+    <div class="card"><div class="card-num">${formatBytes(s.txBytes)}</div><div class="card-label">${t("network.totalTx")}</div></div>
+    <div class="card"><div class="card-num">${formatBytes(s.rxBytes)}</div><div class="card-label">${t("network.totalRx")}</div></div>
+    <div class="card"><div class="card-num">${s.connectCount}</div><div class="card-label">${t("network.totalConnects")}</div></div>
+    <div class="card"><div class="card-num">${s.distinctIps}</div><div class="card-label">${t("network.distinctIps")}</div></div>
+  `;
+
+  const rows = trafficResult.rows;
+  const tableWrap = document.getElementById("network-table-wrap");
+  if (rows.length === 0) {
+    tableWrap.innerHTML = `<div class="empty-state">${t("network.empty")}</div>`;
+  } else {
+    tableWrap.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("network.col.target")}</th><th>${t("network.col.location")}</th>
+          <th>${t("network.col.tx")}</th><th>${t("network.col.rx")}</th>
+          <th>${t("network.col.connects")}</th><th>${t("network.col.lastSeen")}</th>
+        </tr></thead>
+        <tbody>
+          ${rows
+            .map((r) => {
+              const target = r.host ? `${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}:${r.port}</span>` : `<span class="dd-mono">${escapeHtml(r.ip)}:${r.port}</span>`;
+              const countryLabel = r.geo ? r.geo.country || r.geo.countryCode : null;
+              const loc = r.geo ? escapeHtml([r.geo.city, countryLabel].filter(Boolean).join(", ") || "-") : `<span class="hint">${t("network.noLocation")}</span>`;
+              return `<tr>
+                <td>${target}</td>
+                <td>${loc}</td>
+                <td>${formatBytes(r.txBytes)}</td>
+                <td>${formatBytes(r.rxBytes)}</td>
+                <td>${r.connectCount}</td>
+                <td class="dd-mono">${escapeHtml((r.lastSeen || "").slice(0, 19))}</td>
+              </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
+  if (networkMap && networkMap.ok && geoResult) {
+    document.getElementById("network-map-empty").hidden = geoResult.pairs.length > 0;
+    if (geoResult.pairs.length === 0) document.getElementById("network-map-empty").textContent = t("network.mapEmpty");
+    networkMap.setData(geoResult.pairs);
+  }
+}
+
 // ---------- 启动 ----------
 function refreshEverythingNow() {
   refreshSessionList();
@@ -1678,6 +1893,7 @@ function refreshEverythingNow() {
   refreshRemoteAccessState();
   refreshApprovals();
   refreshIdentityCard();
+  refreshNetworkTraffic();
 }
 
 // 浏览器会把后台标签页的 setInterval 大幅节流（甚至几分钟才跑一次）来省电，
@@ -1739,5 +1955,6 @@ async function bootstrap() {
   setInterval(refreshRemoteAccessState, 15000); // 安全相关但很少变，不用跟审计状态一样勤
   setInterval(refreshIdentityCard, 15000); // 进程身份也不会频繁变，跟远程访问开关一个节奏
   setInterval(refreshApprovals, 2000); // 这几个是卡着等结果的，轮询间隔比其它都短
+  setInterval(refreshNetworkTraffic, 10000);
 }
 bootstrap();

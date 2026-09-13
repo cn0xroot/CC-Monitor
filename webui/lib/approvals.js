@@ -22,7 +22,7 @@ function listPending() {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status
+        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind
          FROM pending_approvals WHERE status = 'pending' ORDER BY id ASC`
       )
       .all();

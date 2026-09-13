@@ -7,6 +7,62 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-12
+
+### Added
+- **Claude Code Network Traffic tab** (before "History" in the nav): a connection detail
+  table (destination IP/port, reverse-resolved hostname, upload/download byte counts,
+  connection count, location) plus summary cards and a WebGL2 world map (equirectangular
+  projection + a bundled low-res coastline outline, following the approach from
+  [BeeEye](https://github.com/cn0xroot/BeeEye)'s `WorldMap.jsx` — no map-tile service
+  dependency). The system-layer probe gained `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes
+  to aggregate real upload/download byte counts per `(ip, port)` (the existing probe only
+  knew "connected to this IP:port," not how much data moved), written to a new
+  `network_traffic` table.
+- **IP geolocation** (`webui/lib/geoip.js`): local database lookups, no per-IP third-party
+  API calls. Supports two sources: official MaxMind GeoLite2 (requires signing up) or
+  [DB-IP Lite](https://github.com/sapics/ip-location-db) (CC BY 4.0, no signup, ready-to-use
+  `.mmdb` download) — both field layouts (nested/flat) are recognized. Without a database
+  configured, it honestly reports "not configured" instead of faking data.
+- **Three new Home stat cards**: tool calls (counts `hook_pre` only — more intuitive than
+  the raw event total), MCP calls (identified via the `mcp__<server>__<tool>` naming
+  convention, drills down per-server), and AI trajectory (domains/IPs visited, backed by the
+  Network tab's data) — all clickable for drilldown.
+- **Claude Code identity check** (Home page card + drilldown): cross-platform (`ps`)
+  detection of which OS user every running `claude` process belongs to, flagged prominently
+  when it differs from the Web UI's own user — each side resolves `~/.cc-monitor/` from its
+  own process's `$HOME`, so a mismatch silently makes one side's confirmation
+  prompts/audit events invisible to the other; this makes that otherwise-invisible situation
+  visible.
+- **AI Approvals now supports Claude Code's clarifying questions**: a new `action: "notify"`
+  rule type (distinct from `confirm`) — tools like `AskUserQuestion`, where Claude Code is
+  asking the user something with no allow/deny semantics, never block or trigger a tty
+  prompt; they just surface a "something's waiting for you" notice on the web page (full
+  question + options, styled distinctly in blue). The answer can only be given in the
+  terminal that triggered it, and the notice disappears automatically once the matching
+  `PostToolUse` event arrives.
+
+### Fixed
+- A race condition in `geoip.js`: when `getStatus()`/`lookup()` were called concurrently in
+  the same request via `Promise.all`, the second call could see "already loading" and return
+  before `reader` was actually assigned (still `null`), reporting `available: false` even
+  though the database had loaded successfully. Fixed by having all callers await the same
+  in-flight loading promise.
+- `probe.py`'s bpftrace-not-found error previously suggested installing via `brew`, but this
+  probe depends on Linux's eBPF subsystem, which has no macOS equivalent — the message was
+  misleading and now says so explicitly.
+- Quota reset times on Home / Status were previously rounded to the nearest hour ("in 5
+  hours"), losing minutes that can matter — now precise to the minute.
+- Event timestamps (terminal session creation time, Claude Tap timestamps, the absolute
+  reset time) are now consistently 24-hour format, instead of possibly rendering 12-hour
+  depending on the browser/OS locale.
+
+### Changed
+- Both READMEs' "Home" feature description was badly out of date — several already-shipped
+  features (audit control, identity check, Anthropic account info, install-op stats) had
+  never been written up; backfilled now, along with matching entries in the "Implemented"
+  roadmap checklist.
+
 ## [1.2.2] - 2026-09-12
 
 ### Fixed

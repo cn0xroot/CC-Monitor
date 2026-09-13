@@ -17,7 +17,30 @@ npm install
 node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localhost
 ```
 
-- **首页**：概览统计——进行中的终端会话数、监测到的 Claude Code 会话总数、审计事件总数、拦截/疑似绕过次数、文件读/写/编辑/删除次数、日志类型与风险等级分布。"会话总数"/"审计事件总数"/"已拦截的高危操作"三张卡片可以点开看下钻详情（分别是会话列表、按事件类型+所属 session 的明细、被拦截操作的完整列表）。
+- **首页**：
+  - **审计开关**：开始 / 暂停 / 停止三态切换（合并成一个按钮 + 一个独立的停止按钮）。
+    `暂停`时规则照常判定、正常记录，但从不真的拦截或弹确认框；`停止`时完全不介入，
+    不判定也不记录。顶栏常驻一个状态指示灯。
+  - **Claude Code 运行身份检测**：检测机器上所有 `claude` 进程分别是什么操作系统用户
+    在跑（跨平台，`ps` 实现），跟 Web UI 自己的运行用户不一致时会有醒目提示——Web UI
+    和 hook 各自按自己进程的 `$HOME` 找 `~/.cc-monitor/`，不是同一个用户的话两边写的
+    是完全不相干的数据库，这个功能就是把这种"看起来正常、实际互相看不到"的情况变得
+    看得见。点卡片能看每个进程的 PID/用户/工作目录明细。
+  - **概览统计**：进行中的终端会话数、监测到的 Claude Code 会话总数、审计事件总数
+    （`hook_pre`+`hook_post`+系统层事件全部加一起）、拦截/疑似绕过次数、**工具调用**
+    （只数 `hook_pre`，比"审计事件总数"更贴近"到底调用了多少次工具"这个直觉）、
+    **MCP 调用**（按 `mcp__<server>__<tool>` 命名规则识别，点开看按 server 分组的
+    次数）、**AI 轨迹**（Claude Code 访问过的域名/IP，数据来自网络流量页，点开是同一份
+    连接明细）。"会话总数"/"审计事件总数"/"已拦截的高危操作"/"工具调用"/"MCP 调用"/
+    "AI 轨迹"这几张卡片都能点开看下钻详情。
+  - **文件操作统计**：读/写/编辑/删除次数，各自可以点开看具体是哪些操作。
+  - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman）
+    / npm 全局安装 / 其它，点开看具体是哪些安装指令。
+  - **Anthropic 账号信息**：账号级用量/额度（跟下面"状态信息"是同一份数据源）加上
+    `limits[]` 明细（session/weekly_all/weekly_scoped 各自的百分比、severity、
+    resets_at）和 `spend`（是否开通了额度外的按量付费、已经花了多少）。
+  - **数据管理**：把当前事件数据持久化归档（SQLite `backup()` API 做完整快照）或者
+    清空重新统计；日志类型与风险等级分布图。
 - **Log 审计**：全宽的实时审计日志查看（按会话过滤，会话下拉框显示"文件夹 · 模型 · 短ID"而不是一串看不出区别的 ID），复用 CLI 那套人类可读的事件翻译逻辑。
 - **终端会话**：直接在浏览器里开一个 Claude Code 终端对话（node-pty 起 PTY），不用再切到本地终端软件；用 `xterm.js` + WebGL 插件渲染，有 GPU 就用 GPU 加速，没有自动退化成 Canvas。侧边栏可以切换到**网格视图**（herdr 风格），同屏显示所有进行中的会话，点哪个面板就给哪个发键盘输入。
 - **Claude Tap**：查看某个会话发给/收到模型的**完整对话内容**（不只是"调用了哪个工具"）——文本、思考、工具调用、工具结果、token 用量，按字段分色渲染。数据来源是 Claude Code 自己写在本地的 transcript JSONL 文件（hook payload 里的 `transcript_path`），不是抓包/MITM。CLI 等价命令：`CC-Monitor tap [--session ID] [-f]`。
@@ -32,6 +55,17 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
   桌面通知（Notification API），有新请求时哪怕没开着这个页面也能弹系统通知，点一下直接
   跳回来处理。
 - **状态信息**：账号级额度（单次 5 小时窗口 / 周额度 / 分模型周额度 + 重置时间，跟 [ccstatusline](https://github.com/sirmalloc/ccstatusline) 读同一份 Claude Code OAuth 凭证查询同一个 `api.anthropic.com/api/oauth/usage` 接口）+ 每个会话的模型、token 用量、吞吐速率（tok/s，由 transcript 估算）、cwd、git 分支、活跃时长、拦截情况。
+- **网络流量**：Claude Code 进程树实际发起过的网络连接——目标 IP/端口、反解析出来的域名、
+  上传/下载字节数、连接次数，外加一张世界地图标出连接目的地的大致位置。数据完全来自系统层
+  探针（`cc_monitor/probe_linux.bt`，Linux + eBPF），不是抓包/中间人：字节数是新增的
+  `tcp_sendmsg`/`tcp_cleanup_rbuf` 内核探点统计的，之前的探针只知道"连过哪个 IP:port"，
+  不知道传了多少数据。IP 归属地用本地数据库查（不逐个 IP 发第三方 API 请求）——MaxMind
+  GeoLite2 或者不用注册账号的 DB-IP Lite 都行，具体见下面"环境要求"——没配置的话地图和
+  归属地列就是空的，页面上会诚实
+  标"未配置 GeoIP 数据库"，不会拿假数据充数。世界地图是纯 WebGL2 自绘（等距柱状投影 +
+  本地打包的低精度海岸线轮廓），参考的是 [BeeEye](https://github.com/cn0xroot/BeeEye)
+  项目里 `WorldMap.jsx` 的做法，不依赖任何地图瓦片服务。没装探针/探针没在跑的时候这个
+  页面如实显示空数据。
 - **中英文切换 + 多主题**：右上角语言按钮（中文/EN）和主题下拉（标准配色/深色/浅色/Dracula/Nord/Midnight/Ocean/Forest/Sunset/Rose，后 5 个移植自 [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search) 的配色方案），选择存 `localStorage`。翻译范围是界面文案（导航、按钮、标题、空状态提示、风险/操作/状态标签），不翻译数据本身（命令文本、工具输出、transcript 对话原文）。审计日志的风险/操作类型/状态徽章用固定的高饱和配色（不随主题变化），高危操作整行标红加粗。
 
 因为这个 UI 还在快速迭代，静态资源都设了 `Cache-Control: no-store`——改完代码直接刷新页面就能看到最新效果，不用担心浏览器缓存旧版本。
@@ -154,6 +188,21 @@ CC-Monitor 是双层监测架构：
   Node ≥ 18，但 `better-sqlite3` 卡在 22，装了低于这个版本的 Node 大概率会在装依赖
   或者启动阶段直接报错）。用 [nvm](https://github.com/nvm-sh/nvm) 之类工具确认一下
   `node --version` 再装。
+- **网络流量页的 GeoIP 归属地（可选）**：装了 `maxmind` 这个 npm 包读本地数据库文件，
+  数据库本身不随仓库分发。不配置的话网络流量页照样能用，只是归属地列和世界地图上的点
+  没有数据，页面上会诚实标出来，不影响连接明细/字节数统计。两种拿数据库的方式：
+  - **不用注册账号（推荐）**：[sapics/ip-location-db](https://github.com/sapics/ip-location-db)
+    项目每天/每月自动转出 DB-IP Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 开放许可，city 级精度），直接下载现成的 `.mmdb`：
+    ```bash
+    curl -L -o ~/.cc-monitor/dbip-city.mmdb \
+      https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.mmdb
+    ```
+  - **MaxMind 官方 GeoLite2**：精度通常更高，但要去 [MaxMind 官网](https://www.maxmind.com/en/geolite2/signup)
+    注册免费账号、生成 license key、手动下载 `GeoLite2-City.mmdb`，放到
+    `~/.cc-monitor/GeoLite2-City.mmdb`。
+
+  两种数据库字段格式不一样（MaxMind 是嵌套字段，DB-IP Lite 是平铺字段），`geoip.js`
+  里两种都识别，不用额外配置区分。也可以用 `CC_MONITOR_GEOIP_DB` 环境变量指定其它路径。
 
 **已验证可以正常运行的环境**（不代表其它环境跑不了，只是这是实际测过、确认没问题的）：
 Ubuntu 24.04 LTS（内核 7.0，x86_64）、AMD Ryzen 9 9950X（Zen 5 架构）、Node.js
@@ -283,6 +332,10 @@ sudo ./bin/CC-Monitor-probe
 - [x] 系统层探针（`CC-Monitor-probe`，仅 Linux）：eBPF 跟踪 Claude Code 进程树的 `execve`/`connect`
 - [x] 绕过检测：探针观测到的命令与 hook 记录模糊比对（进程树 + 时间窗口 + 去引号子串匹配），标记 `hook_bypass_suspected`
 - [x] 网络层可视化：eBPF 直接抓 `connect()` 目标 IP:port + 反向 DNS，不用 MITM 代理
+- [x] 网络流量字节数统计：`tcp_sendmsg`/`tcp_cleanup_rbuf` 内核探点，按 (ip, port) 聚合上传/下载字节数
+- [x] Web UI 网络流量页：连接明细表 + GeoIP 归属地（本地 MaxMind/DB-IP Lite 数据库）+ WebGL2 世界地图
+- [x] Claude Code 运行身份检测：跨平台（`ps`）识别机器上所有 `claude` 进程的运行用户，跟 Web UI 自己不一致时提示
+- [x] 首页新增工具调用/MCP 调用/AI 轨迹三张统计卡片，均支持点击下钻
 
 ### 未实现 / 待办
 
@@ -308,7 +361,13 @@ sudo ./bin/CC-Monitor-probe
 - `confirm` 依赖 `/dev/tty`，无交互终端（CI/无头环境）时直接拒绝。
 - 探针的绕过检测是模糊匹配，不是精确语义分析；系统负载高、探针处理有延迟时，`CC-Monitor verify`
   可能需要稍等片刻才能看到最新结果。
-- 网络层只看 IP:port，看不到真实域名（靠反向 DNS 尽力还原，不一定准）。
+- 网络层只看 IP:port，看不到真实域名（靠反向 DNS 尽力还原，不一定准）。字节数统计
+  只认 IPv4 TCP 连接（`skc_family == AF_INET` 才处理），IPv6 和 UDP 流量目前不计入
+  上传/下载统计（能被 CONNECT 那条时间线记录到，只是没有字节数）。
+- 世界地图/归属地信息依赖你自己配置的 MaxMind GeoLite2 数据库，没配的话这部分数据
+  是空的，不是 bug；配了以后精度也只到 GeoLite2 免费版本身的精度（比付费的 GeoIP2
+  数据库粗一些，尤其是移动网络/CDN 出口 IP 经常定位到运营商机房而不是用户实际位置，
+  这是 IP 地理定位技术本身的局限，不是 CC-Monitor 能修的）。
 - Claude Tap 的"思考"内容在部分模型下永远是空的——这是 Anthropic API 的 `display`
   参数决定的，不是 CC-Monitor 的问题：Sonnet 5 / Opus 5 / Opus 4.8 / Opus 4.7 这些
   较新模型默认 `display: "omitted"`，思考正文根本不会出现在 API 响应里，Claude Code

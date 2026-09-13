@@ -19,6 +19,8 @@ const browse = require("./lib/browse");
 const remoteAccess = require("./lib/remoteAccess");
 const approvals = require("./lib/approvals");
 const processScan = require("./lib/processScan");
+const network = require("./lib/network");
+const geoip = require("./lib/geoip");
 
 // 这个进程里活着好几个终端 PTY 会话——任何一个请求/WS 消息里冒出来的未捕获异常，
 // Node 默认行为是直接把整个进程干掉，等于所有终端会话（不管跟那个异常有没有关系）
@@ -202,6 +204,25 @@ app.get("/api/claude-processes", async (req, res) => {
   res.json(processScan.summarize(procs, os.userInfo().username));
 });
 
+// ---- REST API: Claude Code 网络流量（数据来自系统层探针，Linux + eBPF 才有；
+// 没装/没在跑探针的话这几个接口如实返回空数据，不是 bug） ----
+
+app.get("/api/network-traffic", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || "200", 10), 2000);
+  const [rows, sum, geoStatus] = await Promise.all([network.listTraffic(limit), network.summary(), geoip.getStatus()]);
+  res.json({ rows, summary: sum, geo: geoStatus });
+});
+
+app.get("/api/network-traffic/geopairs", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || "500", 10), 2000);
+  const pairs = await network.geoPairs(limit);
+  res.json({ pairs });
+});
+
+app.get("/api/geoip-status", async (req, res) => {
+  res.json(await geoip.getStatus());
+});
+
 // ---- REST API: 审计日志 ----
 
 app.get("/api/log-sessions", (req, res) => {
@@ -321,13 +342,17 @@ app.get("/api/stats", (req, res) => {
 
 // ---- REST API: 首页概览 + 状态信息面板 ----
 
-app.get("/api/overview", (req, res) => {
+app.get("/api/overview", async (req, res) => {
   const s = audit.stats();
+  const netSummary = await network.summary();
   res.json({
     ...s,
     liveSessionCount: sessions.list().filter((x) => x.alive).length,
     fileOps: audit.fileOpsStats(),
     installOps: audit.installStats(),
+    toolCalls: audit.toolCallStats().total,
+    mcpCalls: audit.mcpCallStats().total,
+    aiTrajectory: netSummary.distinctIps,
   });
 });
 
@@ -426,6 +451,14 @@ app.get("/api/drilldown/install-op/:type", (req, res) => {
     };
   });
   res.json(rows);
+});
+
+app.get("/api/drilldown/tool-calls", (req, res) => {
+  res.json(audit.toolCallBreakdown());
+});
+
+app.get("/api/drilldown/mcp-calls", (req, res) => {
+  res.json(audit.mcpCallBreakdown());
 });
 
 // ---- REST API: 数据归档（把当前事件数据存档）/ 清空当前事件数据 / 历史归档列表 ----

@@ -34,7 +34,13 @@ def _extract(tool_input, field):
     for key in FIELD_CANDIDATES.get(field, [field]):
         value = tool_input.get(key)
         if value is not None:
-            return str(value)
+            if isinstance(value, str):
+                return value
+            # 不是字符串的字段（比如 AskUserQuestion 的 questions 是个列表）——用
+            # json.dumps 而不是 str()，后者是 Python repr（单引号、True/False 大写
+            # 那一套），前端拿到手没法当 JSON 解析；已有规则的 field 全是字符串
+            # （command/file_path/url），这个分支不会改变它们的行为。
+            return json.dumps(value, ensure_ascii=False)
     return None
 
 

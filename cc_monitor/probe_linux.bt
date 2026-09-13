@@ -42,6 +42,50 @@ tracepoint:syscalls:sys_enter_connect
     }
 }
 
+// 流量字节数统计——上面的 CONNECT 只知道"连过哪个 IP:port"，不知道传了多少数据。
+// TCP 收发字节数就得靠这两个内核函数：tcp_sendmsg 是发送路径（第三个参数是这次
+// 要发的字节数），tcp_cleanup_rbuf 是应用层从内核收包缓冲区取数据时回调的（第二个
+// 参数是这次取走的字节数，取不到数据/纯 ACK 之类场景会传 0 或负数，负数必须转成
+// 有符号 int32 判断，否则 bpftrace 默认按无符号 64 位读会把负数看成天文数字）。
+// 两个探点都直接从 `struct sock` 上取目的地址——内核里这个 socket 早就知道自己在
+// 跟谁通信，不需要像 CONNECT 事件那样另外记 fd→目的地址的映射。
+// 不逐个包上报（量太大），攒 2 秒钟合并一次再吐出来，跟 top 类工具一个思路。
+kprobe:tcp_sendmsg
+/@watch[pid]/
+{
+    $sk = (struct sock *)arg0;
+    if ($sk->__sk_common.skc_family == 2) {
+        $size = (int32)arg2;
+        if ($size > 0) {
+            $dport_raw = $sk->__sk_common.skc_dport;
+            $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
+            @tx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($size);
+        }
+    }
+}
+
+kprobe:tcp_cleanup_rbuf
+/@watch[pid]/
+{
+    $sk = (struct sock *)arg0;
+    if ($sk->__sk_common.skc_family == 2) {
+        $copied = (int32)arg1;
+        if ($copied > 0) {
+            $dport_raw = $sk->__sk_common.skc_dport;
+            $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
+            @rx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($copied);
+        }
+    }
+}
+
+interval:s:2
+{
+    print(@tx_bytes);
+    print(@rx_bytes);
+    clear(@tx_bytes);
+    clear(@rx_bytes);
+}
+
 tracepoint:sched:sched_process_exit
 /@watch[pid]/
 {

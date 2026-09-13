@@ -254,5 +254,13 @@
     "tools": ["WebSearch"],
     "field": "query",
     "pattern": ".*"
+  },
+  {
+    "id": "user_clarifying_question",
+    "risk": "info",
+    "action": "notify",
+    "tools": ["AskUserQuestion"],
+    "field": "questions",
+    "pattern": ".*"
   }
 ]

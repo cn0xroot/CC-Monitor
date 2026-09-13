@@ -219,6 +219,79 @@ function installDetails(type, limit = 300) {
   }, []);
 }
 
+// 工具调用统计——"审计事件总数"是 hook_pre + hook_post + os_net 全部加一起的，
+// 同一次工具调用至少算两条（pre 一条、post 一条），这里只数 hook_pre，对应的是
+// "Claude Code 真的发起过多少次工具调用"这个更直观的数字。
+function toolCallStats() {
+  return withDb((db) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre'`).get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+// 首页"工具调用"卡片下钻：按工具名分组的次数明细（不是每条事件平铺列出来——
+// 光是"调用过多少次 Bash"这种数字，比翻一屏事件列表更有信息量）。
+function toolCallBreakdown(limit = 100) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT tool_name, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre'
+         GROUP BY tool_name ORDER BY n DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+// MCP 工具调用——Claude Code 给 MCP server 提供的工具统一命名成
+// `mcp__<server>__<tool>` 这个格式，不用另外维护一份 MCP server 列表，直接按
+// tool_name 前缀识别就行。
+const MCP_TOOL_PATTERN = "mcp\\_\\_%";
+
+function mcpCallStats() {
+  return withDb((db) => {
+    const total = db
+      .prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name LIKE ? ESCAPE '\\'`)
+      .get(MCP_TOOL_PATTERN).n;
+    return { total };
+  }, { total: 0 });
+}
+
+// 首页"MCP 调用"卡片下钻：按 MCP server 分组（从 tool_name 里 mcp__<server>__<tool>
+// 这个约定格式解析出 server 名字），而不是按具体工具名——同一个 server 底下可能有
+// 十几个工具，按 server 汇总更容易看出"到底在跟哪个 MCP 服务打交道"。
+function mcpCallBreakdown(limit = 100) {
+  return withDb((db) => {
+    const rows = db
+      .prepare(`SELECT tool_name, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name LIKE ? ESCAPE '\\' GROUP BY tool_name`)
+      .all(MCP_TOOL_PATTERN);
+    const byServer = new Map();
+    for (const r of rows) {
+      const m = /^mcp__([^_]+(?:_[^_]+)*?)__/.exec(r.tool_name);
+      const server = m ? m[1] : r.tool_name;
+      byServer.set(server, (byServer.get(server) || 0) + r.n);
+    }
+    return [...byServer.entries()]
+      .map(([server, n]) => ({ server, n }))
+      .sort((a, b) => b.n - a.n)
+      .slice(0, limit);
+  }, []);
+}
+
+// 工具调用/MCP 调用卡片下钻里点进某个具体工具名之后的事件明细，跟 fileOpDetails/
+// installDetails 是同一个套路。
+function toolCallDetails(toolName, limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND tool_name = ?
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(toolName, limit);
+  }, []);
+}
+
 // "审计事件总数"下钻：按 工具/来源 分组，并且列出每个分组具体是哪些 session 产生的。
 function eventTypeBreakdown(limit = 500) {
   return withDb((db) => {
@@ -267,6 +340,11 @@ module.exports = {
   fileOpDetails,
   installStats,
   installDetails,
+  toolCallStats,
+  toolCallBreakdown,
+  mcpCallStats,
+  mcpCallBreakdown,
+  toolCallDetails,
   eventTypeBreakdown,
   blockedDetails,
 };

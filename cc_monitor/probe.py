@@ -201,10 +201,27 @@ def _handle_connect_line(fields):
         matched_rule=None,
         decision="observed",
     )
+    storage.record_network_connect(ip, int(port), host)
     msg = "[CC-Monitor][probe] 网络连接: pid={} comm={} -> {}:{}".format(
         pid, col.c(comm, color="cyan"), col.c(target, color="blue"), port
     )
     print(msg)
+
+
+# bpftrace 打印聚合 map 用的是自己的默认格式，不是我们自己拼的 tag\t字段 这一套，
+# 得单独用正则认——比如 `@tx_bytes[160.79.104.10, 443]: 725`。
+_BYTES_MAP_LINE = re.compile(r"^@(tx_bytes|rx_bytes)\[([^,]+), (\d+)\]: (\d+)$")
+
+
+def _handle_bytes_line(line):
+    m = _BYTES_MAP_LINE.match(line)
+    if not m:
+        return False
+    direction, ip, port, num_bytes = m.groups()
+    tx = int(num_bytes) if direction == "tx_bytes" else 0
+    rx = int(num_bytes) if direction == "rx_bytes" else 0
+    storage.record_network_bytes(ip, int(port), tx_bytes=tx, rx_bytes=rx)
+    return True
 
 
 def run():
@@ -248,6 +265,12 @@ def run():
         for raw_line in proc.stdout:
             line = raw_line.rstrip("\n")
             if not line or line.startswith("Attaching"):
+                continue
+            # @tx_bytes[...]/@rx_bytes[...] 是 bpftrace 自己 print() 一个 map 时的
+            # 默认格式，没有 \t，跟 EXEC/CONNECT 那套 tag\t字段 的格式完全不是一回事——
+            # 必须在按 \t 切分、判断多行续接之前先认出来单独处理，不然会被误当成
+            # 正在组装的上一条 EXEC 记录的续行，把命令内容污染掉。
+            if _handle_bytes_line(line):
                 continue
             fields = line.split("\t")
             if fields[0] in known_tags:

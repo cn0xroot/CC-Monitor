@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS events (
 -- action=confirm 的操作既可以在触发它的那个终端里直接按 y/N，也可以在 Web UI 的
 -- "待批准"页面点按钮——两条路谁先写进这张表、谁的结果就算数（status 从 'pending'
 -- 变成别的值之后，另一条路的 UPDATE 因为 WHERE status='pending' 不成立而不会生效）。
+-- kind='confirm' 是原来那种"是否允许执行"的确认框——网页/终端两条路谁先给结果
+-- 算谁的。kind='notify' 是后来加的："Claude Code 在问用户一个澄清性问题"这类
+-- 压根没有 allow/deny 语义的交互（AskUserQuestion 之类）：hook 只是把它记下来
+-- 给网页看"现在有个问题在等你"，从不阻塞、从不弹确认框，答案只能在触发它的那个
+-- 终端里给（我们没有、也不该去帮用户瞎选一个选项）——对应的 PostToolUse 事件一来
+-- 就会把这条记录标成"已回答"，自动从"待处理"里消失。
 CREATE TABLE IF NOT EXISTS pending_approvals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -35,7 +41,8 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     risk TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     resolved_at TEXT,
-    resolved_via TEXT
+    resolved_via TEXT,
+    kind TEXT NOT NULL DEFAULT 'confirm'
 );
 
 -- "一直允许"是按 session 生效的，不是改全局规则——同一个 session 里这条规则
@@ -48,6 +55,22 @@ CREATE TABLE IF NOT EXISTS session_always_allow (
     created_at TEXT NOT NULL,
     expires_at TEXT,
     PRIMARY KEY (session_id, matched_rule)
+);
+
+-- 按 (ip, port) 聚合的流量统计——来自系统层探针新增的 tcp_sendmsg/tcp_cleanup_rbuf
+-- 内核探点，每 2 秒汇总一次字节数累加进来。跟 events 表里 source='os_net' 的单条
+-- CONNECT 记录是互补关系：那边是"什么时候连过这个地址"的时间线，这张表是"总共
+-- 传了多少字节"的累计值，只有装了 bpftrace、探针在跑的时候才会有数据。
+CREATE TABLE IF NOT EXISTS network_traffic (
+    ip TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    host TEXT,
+    tx_bytes INTEGER NOT NULL DEFAULT 0,
+    rx_bytes INTEGER NOT NULL DEFAULT 0,
+    connect_count INTEGER NOT NULL DEFAULT 0,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    PRIMARY KEY (ip, port)
 );
 """
 
@@ -65,6 +88,10 @@ def _connect():
         pass  # 列已经存在（老数据库升级过一次之后）
     try:
         conn.execute("ALTER TABLE session_always_allow ADD COLUMN expires_at TEXT")
+    except sqlite3.OperationalError:
+        pass  # 列已经存在（老数据库升级过一次之后）
+    try:
+        conn.execute("ALTER TABLE pending_approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'confirm'")
     except sqlite3.OperationalError:
         pass  # 列已经存在（老数据库升级过一次之后）
     return conn
@@ -151,17 +178,39 @@ def fetch_last(limit=200):
         conn.close()
 
 
-def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_value, risk):
+def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_value, risk, kind="confirm"):
     conn = _connect()
     try:
         with conn:
             cur = conn.execute(
                 "INSERT INTO pending_approvals "
-                "(ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status) "
-                "VALUES (?,?,?,?,?,?,?,'pending')",
-                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name, cwd, matched_rule, matched_value, risk),
+                "(ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind) "
+                "VALUES (?,?,?,?,?,?,?,'pending',?)",
+                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name, cwd, matched_rule, matched_value, risk, kind),
             )
             return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def resolve_pending_notify(session_id, tool_name):
+    """action='notify' 那类记录（比如 AskUserQuestion）没有 tty/网页两条路可 resolve——
+    唯一能"结束等待"的信号就是对应的 PostToolUse 事件真的来了（说明用户已经在触发它
+    的那个终端里选完了）。同一个 session 同一个工具短时间内理论上可能连续问好几次，
+    只挑最新的那条'pending'状态的记录标掉，不会把更早、可能是别的原因还没处理完的
+    记录也捎带手误标了。
+    """
+    conn = _connect()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE pending_approvals SET status = 'answered', resolved_at = ?, resolved_via = 'post_tool_use' "
+                "WHERE id = (SELECT id FROM pending_approvals "
+                "            WHERE session_id = ? AND tool_name = ? AND kind = 'notify' AND status = 'pending' "
+                "            ORDER BY id DESC LIMIT 1)",
+                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name),
+            )
+            return cur.rowcount > 0
     finally:
         conn.close()
 
@@ -223,5 +272,63 @@ def add_session_always_allow(session_id, matched_rule, expires_at=None):
                 "ON CONFLICT(session_id, matched_rule) DO UPDATE SET created_at = excluded.created_at, expires_at = excluded.expires_at",
                 (session_id, matched_rule, time.strftime("%Y-%m-%dT%H:%M:%S%z"), expires_at),
             )
+    finally:
+        conn.close()
+
+
+def record_network_connect(ip, port, host):
+    """CONNECT 事件（探针每次观测到新连接都调一次）：新地址就插入一行，见过的地址
+    就把 connect_count 加一、host/last_seen 更新一下（host 可能这次才反解析出来，
+    之前是 None 的话趁机补上）。
+    """
+    conn = _connect()
+    try:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        with conn:
+            conn.execute(
+                "INSERT INTO network_traffic (ip, port, host, connect_count, first_seen, last_seen) "
+                "VALUES (?,?,?,1,?,?) "
+                "ON CONFLICT(ip, port) DO UPDATE SET "
+                "host = COALESCE(excluded.host, network_traffic.host), "
+                "connect_count = network_traffic.connect_count + 1, "
+                "last_seen = excluded.last_seen",
+                (ip, port, host, now, now),
+            )
+    finally:
+        conn.close()
+
+
+def record_network_bytes(ip, port, tx_bytes=0, rx_bytes=0):
+    """字节数统计（探针每 2 秒汇总一次调用）：累加到已有的 tx/rx 总数上，不是覆盖。
+    可能是这个 (ip, port) 第一次在字节层面被观测到（比如 CONNECT 那行因为某些原因
+    没抓到，或者是同一个长连接反复收发），所以这里也用 INSERT OR UPDATE，不假设
+    行已经存在。
+    """
+    conn = _connect()
+    try:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        with conn:
+            conn.execute(
+                "INSERT INTO network_traffic (ip, port, tx_bytes, rx_bytes, first_seen, last_seen) "
+                "VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(ip, port) DO UPDATE SET "
+                "tx_bytes = network_traffic.tx_bytes + excluded.tx_bytes, "
+                "rx_bytes = network_traffic.rx_bytes + excluded.rx_bytes, "
+                "last_seen = excluded.last_seen",
+                (ip, port, tx_bytes, rx_bytes, now, now),
+            )
+    finally:
+        conn.close()
+
+
+def list_network_traffic(limit=500):
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT ip, port, host, tx_bytes, rx_bytes, connect_count, first_seen, last_seen "
+            "FROM network_traffic ORDER BY (tx_bytes + rx_bytes) DESC LIMIT ?",
+            (limit,),
+        )
+        return cur.fetchall()
     finally:
         conn.close()
