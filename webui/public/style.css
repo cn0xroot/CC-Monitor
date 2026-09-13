@@ -650,6 +650,18 @@ html, body {
   gap: 12px;
 }
 .error-banner[hidden] { display: none; }
+.identity-warning {
+  background: #3a2e10;
+  color: #ffd479;
+  border: 1px solid #6b5218;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+.identity-warning[hidden] { display: none; }
+.dd-row-mismatch { background: rgba(255, 180, 80, 0.08); }
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;

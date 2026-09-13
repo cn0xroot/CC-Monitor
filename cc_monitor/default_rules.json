@@ -246,5 +246,13 @@
     "tools": ["WebFetch"],
     "field": "url",
     "pattern": ".*"
+  },
+  {
+    "id": "web_search",
+    "risk": "low",
+    "action": "confirm",
+    "tools": ["WebSearch"],
+    "field": "query",
+    "pattern": ".*"
   }
 ]

@@ -6,6 +6,23 @@ const pty = require("node-pty");
 
 const SCROLLBACK_LIMIT = 5000;
 
+// 如果启动 CC-Monitor 这个 Node 进程本身就是在一个 Claude Code 会话里面（比如开发时
+// 直接在 claude 里跑 `node server.js`——这本来就是个很正常的用法），process.env 就会
+// 带着那个"外层"会话的 CLAUDE_CODE_SESSION_ID / CLAUDE_CODE_CHILD_SESSION 等变量。
+// 新建的终端会话如果原样继承这些变量，spawn 出来的 claude 会被当成那个外层会话的
+// "子会话"，不会把自己当独立顶层会话对待——观察到的直接后果是它根本不写自己的
+// transcript .jsonl 文件（Web UI 这边模型ID、token 用量这些依赖 transcript 的信息就永远
+// 是空的，跟目录是不是 /tmp 没关系，纯粹是环境变量污染）。建终端前把这些变量摘掉，
+// 让每个 Web UI 终端会话里跑起来的 claude 都是货真价实的独立顶层会话。
+const CLAUDE_ENV_PREFIX = /^(CLAUDE_CODE_|CLAUDECODE$|CLAUDE_PID$|CLAUDE_EFFORT$)/;
+function cleanEnv() {
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!CLAUDE_ENV_PREFIX.test(k)) env[k] = v;
+  }
+  return env;
+}
+
 // Claude Code 的信任确认框是用逐词 "ESC[<N>G"（光标绝对定位）画出来的，不是普通空格，
 // 所以原始数据流里 "Yes, I trust this folder" 根本不是连续子串。这里把 ANSI 转义序列
 // 和空白都去掉再比较，"trustthisfolder" 在去空白之后必然是连续的。
@@ -33,7 +50,7 @@ class SessionManager {
       cols,
       rows,
       cwd: workDir,
-      env: process.env,
+      env: cleanEnv(),
     });
 
     const session = {
@@ -119,7 +136,12 @@ class SessionManager {
 
   write(id, data) {
     const s = this.sessions.get(id);
-    if (s && s.alive) s.pty.write(data);
+    if (!s || !s.alive) return;
+    try {
+      s.pty.write(data);
+    } catch (e) {
+      // pty 刚好在这一瞬间退出了；不用管，onExit 回调会把 alive 标记更新掉
+    }
   }
 
   resize(id, cols, rows) {

@@ -21,6 +21,16 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
 - **Log 审计**：全宽的实时审计日志查看（按会话过滤，会话下拉框显示"文件夹 · 模型 · 短ID"而不是一串看不出区别的 ID），复用 CLI 那套人类可读的事件翻译逻辑。
 - **终端会话**：直接在浏览器里开一个 Claude Code 终端对话（node-pty 起 PTY），不用再切到本地终端软件；用 `xterm.js` + WebGL 插件渲染，有 GPU 就用 GPU 加速，没有自动退化成 Canvas。侧边栏可以切换到**网格视图**（herdr 风格），同屏显示所有进行中的会话，点哪个面板就给哪个发键盘输入。
 - **Claude Tap**：查看某个会话发给/收到模型的**完整对话内容**（不只是"调用了哪个工具"）——文本、思考、工具调用、工具结果、token 用量，按字段分色渲染。数据来源是 Claude Code 自己写在本地的 transcript JSONL 文件（hook payload 里的 `transcript_path`），不是抓包/MITM。CLI 等价命令：`CC-Monitor tap [--session ID] [-f]`。
+- **AI 审批台**：把 Claude Code 的"是否允许执行"确认框同步到网页上——效果类似 Mac 平台
+  [Vibe Island](https://vibeisland.app/) 在灵动岛里弹卡片让你点 Allow/Deny，区别是我们
+  跨平台（网页而不是 Mac 专属的 UI），而且目前只接管我们自己规则表里标为 `confirm` 的
+  那部分操作（其余工具仍然走 Claude Code 自己的原生询问，不会被我们静默放行）。同一条
+  请求既可以在触发它的终端里直接按 y/N，也可以在这个页面点按钮，谁先给结果就用谁的；
+  网页这边选"允许"会通过 hook 的 `permissionDecision: allow` 输出直接让 Claude Code
+  跳过它自己的原生弹窗，不会二次询问。选项有：允许一次、拒绝一次、批准且 10/30 分钟内
+  不再询问、一直允许（仅当前 session，其它 session 跑一样的操作还是照常问）。支持浏览器
+  桌面通知（Notification API），有新请求时哪怕没开着这个页面也能弹系统通知，点一下直接
+  跳回来处理。
 - **状态信息**：账号级额度（单次 5 小时窗口 / 周额度 / 分模型周额度 + 重置时间，跟 [ccstatusline](https://github.com/sirmalloc/ccstatusline) 读同一份 Claude Code OAuth 凭证查询同一个 `api.anthropic.com/api/oauth/usage` 接口）+ 每个会话的模型、token 用量、吞吐速率（tok/s，由 transcript 估算）、cwd、git 分支、活跃时长、拦截情况。
 - **中英文切换 + 多主题**：右上角语言按钮（中文/EN）和主题下拉（标准配色/深色/浅色/Dracula/Nord/Midnight/Ocean/Forest/Sunset/Rose，后 5 个移植自 [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search) 的配色方案），选择存 `localStorage`。翻译范围是界面文案（导航、按钮、标题、空状态提示、风险/操作/状态标签），不翻译数据本身（命令文本、工具输出、transcript 对话原文）。审计日志的风险/操作类型/状态徽章用固定的高饱和配色（不随主题变化），高危操作整行标红加粗。
 
@@ -242,6 +252,12 @@ sudo ./bin/CC-Monitor-probe
 
 ## 已知限制
 
+- **Web UI 进程和你平时跑 `claude` 的终端必须是同一个操作系统用户**，否则各写各的
+  `~/.cc-monitor/` 数据库，互相看不到彼此（终端里的确认框、审计事件，Web UI 的
+  "AI 审批台"/审计日志页面会完全是空的）——`CONFIG_DIR` 是按当前进程的 `$HOME` 算的，
+  不是全局共享的路径。启动 Web UI 时如果用了 `sudo`/root 而你平时跑 `claude` 是普通
+  账号，会命中这个问题；`start.sh` 检测到用 root 启动会打印提醒，Web UI 自己启动时
+  也会在日志里打出当前运行用户，方便核对。
 - `confirm` 依赖 `/dev/tty`，无交互终端（CI/无头环境）时直接拒绝。
 - 探针的绕过检测是模糊匹配，不是精确语义分析；系统负载高、探针处理有延迟时，`CC-Monitor verify`
   可能需要稍等片刻才能看到最新结果。

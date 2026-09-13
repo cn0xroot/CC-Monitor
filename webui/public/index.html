@@ -14,7 +14,7 @@
     <nav id="tabs">
       <button class="tab-btn active" data-tab="home" data-i18n="nav.home">首页</button>
       <button class="tab-btn" data-tab="logs" data-i18n="nav.logs">Log 审计</button>
-      <button class="tab-btn" data-tab="approvals"><span data-i18n="nav.approvals">待批准</span><span id="approvals-badge" class="nav-badge" hidden>0</span></button>
+      <button class="tab-btn" data-tab="approvals"><span data-i18n="nav.approvals">AI 审批台</span><span id="approvals-badge" class="nav-badge" hidden>0</span></button>
       <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
       <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">Claude Tap</button>
       <button class="tab-btn" data-tab="status" data-i18n="nav.status">状态信息</button>
@@ -62,6 +62,17 @@
         </label>
       </div>
       <div id="remote-access-note" class="hint" style="display:block;margin:-8px 0 14px;"></div>
+
+      <div class="box-title" style="margin:4px 0 8px;"><span data-i18n="home.identity.title">Claude Code 运行身份检测</span> <span class="hint" data-i18n="home.identity.hint">（Web UI 和你终端里的 claude 如果不是同一个操作系统用户，两边各写各的 ~/.cc-monitor/ 数据库，互相看不到彼此）</span></div>
+      <div id="identity-mismatch-banner" class="identity-warning" hidden></div>
+      <div class="cards" style="margin-bottom:22px;">
+        <div class="card clickable" data-drilldown="claude-processes">
+          <div class="card-num" id="stat-identity-total">-</div>
+          <div class="card-label"><span data-i18n="home.identity.totalProcesses">检测到的 claude 进程</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+      </div>
+      <div id="identity-by-user" class="bar-list" style="margin:-10px 0 22px;"></div>
+
       <div class="cards">
         <div class="card clickable" data-drilldown="live-sessions">
           <div class="card-num" id="stat-live-sessions">-</div>
@@ -140,9 +151,10 @@
       <div id="log-list-full" class="log-list wide"></div>
     </section>
 
-    <!-- 待批准：action=confirm 的操作，触发它的终端里能直接按 y/N，这里也能点 -->
+    <!-- AI 审批台：action=confirm 的操作，触发它的终端里能直接按 y/N，这里也能点 -->
     <section id="view-approvals" class="view">
-      <div class="panel-title"><span data-i18n="nav.approvals">待批准</span><span class="hint" data-i18n="approvals.hint">（跟触发它的终端是同一件事的两条路，谁先给结果就用谁的）</span></div>
+      <div class="panel-title"><span data-i18n="nav.approvals">AI 审批台</span><span class="hint" data-i18n="approvals.hint">（跟触发它的终端是同一件事的两条路，谁先给结果就用谁的）</span></div>
+      <button id="approvals-notify-btn" class="btn-secondary" style="margin-bottom:10px;" hidden></button>
       <div id="approvals-list" class="approvals-list"></div>
     </section>
 

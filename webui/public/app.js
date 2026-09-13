@@ -115,6 +115,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
       }, 30);
     }
     if (btn.dataset.tab === "archives") refreshArchivesList();
+    if (btn.dataset.tab === "approvals") syncApprovalsNotifyBtn();
   });
 });
 
@@ -161,6 +162,26 @@ window.addEventListener("resize", () => {
 let currentSessionId = null;
 let currentSocket = null;
 
+// 刷新网页只是重新加载了这个 JS 运行时，PTY 会话本身在服务端还活得好好的——但
+// currentSessionId 是个普通变量，刷新一次就归零，界面上看起来就跟"会话没了"一样，
+// 得手动去侧边栏重新点一下。存一份到 localStorage，刷新后自动重连回刚才那个会话。
+const LAST_SESSION_KEY = "cc-monitor-last-session-id";
+function rememberLastSession(id) {
+  try {
+    if (id) localStorage.setItem(LAST_SESSION_KEY, id);
+    else localStorage.removeItem(LAST_SESSION_KEY);
+  } catch (e) {
+    // localStorage 不可用（隐私模式等）不影响功能，只是刷新后不会自动重连
+  }
+}
+function getLastSession() {
+  try {
+    return localStorage.getItem(LAST_SESSION_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
 async function refreshSessionList() {
   const sessions = await api("/api/sessions");
   if (!sessions) return [];
@@ -192,6 +213,7 @@ async function refreshSessionList() {
       await api("/api/sessions/" + s.id, { method: "DELETE" });
       if (currentSessionId === s.id) {
         currentSessionId = null;
+        rememberLastSession(null);
         term.reset();
         document.getElementById("terminal-empty").style.display = "flex";
         document.getElementById("terminal-statusline").innerHTML = "";
@@ -205,6 +227,7 @@ async function refreshSessionList() {
 
 function selectSession(id) {
   currentSessionId = id;
+  rememberLastSession(id);
   document.getElementById("terminal-empty").style.display = "none";
   term.reset();
   if (currentSocket) currentSocket.close();
@@ -661,11 +684,36 @@ const TAP_ALL_SESSIONS = "__all__";
 let tapNextLine = 0;
 let tapKnownSessions = [];
 
+// 跟终端会话那个"刷新页面就要重新选"是同一类问题：tapSelect.value 只是个 DOM 状态，
+// 刷新页面这个下拉框直接重新创建，之前选的会话就没了。存一份到 localStorage，
+// 下拉框第一次建好选项时（这次页面加载还没选过任何东西）就把上次选的那个带回来。
+const TAP_LAST_SESSION_KEY = "cc-monitor-last-tap-session";
+function rememberTapSession(id) {
+  try {
+    if (id) localStorage.setItem(TAP_LAST_SESSION_KEY, id);
+    else localStorage.removeItem(TAP_LAST_SESSION_KEY);
+  } catch (e) {
+    // localStorage 不可用不影响功能，只是刷新后不会自动带回来
+  }
+}
+function getLastTapSession() {
+  try {
+    return localStorage.getItem(TAP_LAST_SESSION_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+let tapOptionsBuiltOnce = false;
 function refreshTapSessionOptions(rows) {
   tapKnownSessions = rows;
   // 同样的道理：下拉框正被用户操作（focus 在它上面）的时候不要重建 <option>，
   // 不然选项会在他们眼皮底下被"刷新掉"——这正是这个开关要修的那个 bug。
   if (document.activeElement === tapSelect) return;
+  // 不能拿 tapSelect.options.length === 0 判断"是不是第一次"——HTML 里本来就写死了
+  // 一个占位 <option>，这个条件永远为 false，得自己记一个标志位。
+  const isFirstBuild = !tapOptionsBuiltOnce;
+  tapOptionsBuiltOnce = true;
   const current = tapSelect.value;
   tapSelect.innerHTML = `<option value="">${t("tap.selectPlaceholder")}</option>`;
   const hasAnyTranscript = rows.some((r) => r.has_transcript);
@@ -683,13 +731,20 @@ function refreshTapSessionOptions(rows) {
     opt.title = `${r.cwd || ""}\nID: ${r.session_id}`;
     tapSelect.appendChild(opt);
   }
-  if (current && (current === TAP_ALL_SESSIONS || rows.some((r) => r.session_id === current))) tapSelect.value = current;
+  const restoreTarget = current || (isFirstBuild ? getLastTapSession() : null);
+  if (restoreTarget && (restoreTarget === TAP_ALL_SESSIONS || rows.some((r) => r.session_id === restoreTarget && r.has_transcript))) {
+    tapSelect.value = restoreTarget;
+    // 是这次页面加载第一次带回来的（不是用户刚选的），程序设值不会触发 change 事件，
+    // 得自己手动拉一下数据，不然下拉框显示对了但内容是空的。
+    if (!current) pollTap();
+  }
 }
 
 tapSelect.addEventListener("change", () => {
   tapNextLine = 0;
   document.getElementById("tap-list").innerHTML = "";
   tapMeta.textContent = "";
+  rememberTapSession(tapSelect.value || null);
   if (tapSelect.value) pollTap();
 });
 
@@ -1003,15 +1058,80 @@ async function refreshArchivesList() {
   });
 }
 
-// ---------- 待批准：action=confirm 的操作，触发它的终端能直接按 y/N，这里也能点 ----------
+// ---------- AI 审批台：action=confirm 的操作，触发它的终端能直接按 y/N，这里也能点 ----------
 // 这几个请求都是"卡着等结果"的（hook 进程还在阻塞、Claude Code 那次工具调用还没继续），
 // 不是普通审计记录，等的时间越长对方越难受，轮询间隔比其它列表都短。
+
+// 浏览器系统通知：这个页面不在前台（切了标签页、缩小了窗口，甚至整个浏览器都在后台）
+// 时，光靠页面里刷新列表没用，人根本看不到。用 Notification API 弹一条系统级通知，
+// 点一下能直接跳回来处理。同一条请求只弹一次，不然每 2 秒轮询一次会把人烦死。
+const notifiedApprovalIds = new Set();
+const APPROVALS_NOTIFY_PREF_KEY = "cc-monitor-approvals-notify-enabled";
+
+function approvalsNotifySupported() {
+  return typeof Notification !== "undefined";
+}
+
+function syncApprovalsNotifyBtn() {
+  const btn = document.getElementById("approvals-notify-btn");
+  if (!approvalsNotifySupported()) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  if (Notification.permission === "granted") {
+    btn.textContent = t("approvals.notify.enabled");
+    btn.disabled = true;
+  } else if (Notification.permission === "denied") {
+    btn.textContent = t("approvals.notify.blocked");
+    btn.disabled = true;
+  } else {
+    btn.textContent = t("approvals.notify.enable");
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("approvals-notify-btn").addEventListener("click", async () => {
+  if (!approvalsNotifySupported()) return;
+  const perm = await Notification.requestPermission();
+  try {
+    localStorage.setItem(APPROVALS_NOTIFY_PREF_KEY, perm === "granted" ? "1" : "0");
+  } catch (e) {
+    // localStorage 不可用不影响这次授权本身，只是刷新后按钮状态可能得重新点一下
+  }
+  syncApprovalsNotifyBtn();
+});
+
+function notifyNewApprovals(rows) {
+  if (!approvalsNotifySupported() || Notification.permission !== "granted") return;
+  for (const r of rows) {
+    if (notifiedApprovalIds.has(r.id)) continue;
+    notifiedApprovalIds.add(r.id);
+    const n = new Notification(t("approvals.notify.title"), {
+      body: `${toolLabel(r.tool_name, r.tool_name)} · ${folderName(r.cwd)}\n${r.matched_value}`.slice(0, 200),
+      tag: `cc-monitor-approval-${r.id}`,
+    });
+    n.onclick = () => {
+      window.focus();
+      document.querySelector('.tab-btn[data-tab="approvals"]').click();
+      n.close();
+    };
+  }
+  // 已经处理掉的请求（同意/拒绝/过期）不会再出现在下一次轮询结果里，没必要一直占着
+  // 这个 Set——按当前这批的 id 反过来清一遍，防止长时间挂着页面导致 Set 无限变大。
+  const stillPending = new Set(rows.map((r) => r.id));
+  for (const id of notifiedApprovalIds) {
+    if (!stillPending.has(id)) notifiedApprovalIds.delete(id);
+  }
+}
+
 async function refreshApprovals() {
   const rows = await api("/api/pending-approvals");
   const badge = document.getElementById("approvals-badge");
   if (!rows) return;
   badge.hidden = rows.length === 0;
   badge.textContent = String(rows.length);
+  notifyNewApprovals(rows);
 
   const list = document.getElementById("approvals-list");
   if (rows.length === 0) {
@@ -1032,18 +1152,23 @@ async function refreshApprovals() {
       <div class="approval-actions">
         <button class="btn-primary approval-allow" data-id="${r.id}">${t("approvals.allowOnce")}</button>
         <button class="btn-danger approval-deny" data-id="${r.id}">${t("approvals.denyOnce")}</button>
+        <button class="btn-secondary approval-allow10" data-id="${r.id}">${t("approvals.allow10m")}</button>
+        <button class="btn-secondary approval-allow30" data-id="${r.id}">${t("approvals.allow30m")}</button>
         <button class="btn-secondary approval-always" data-id="${r.id}">${t("approvals.alwaysAllow")}</button>
       </div>
     </div>`
     )
     .join("");
+  const DECISION_BY_CLASS = {
+    "approval-allow": "allow",
+    "approval-deny": "deny",
+    "approval-allow10": "allow_10m",
+    "approval-allow30": "allow_30m",
+    "approval-always": "always_allow",
+  };
   list.querySelectorAll("button[data-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const decision = btn.classList.contains("approval-allow")
-        ? "allow"
-        : btn.classList.contains("approval-deny")
-        ? "deny"
-        : "always_allow";
+      const decision = Object.entries(DECISION_BY_CLASS).find(([cls]) => btn.classList.contains(cls))?.[1];
       const result = await api(`/api/pending-approvals/${btn.dataset.id}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1117,9 +1242,11 @@ async function openDrilldown(kind) {
     body.innerHTML = `
       <table class="dd-table">
         <thead><tr>
-          <th>${t("drilldown.liveSessions.cwd")}</th><th>${t("drilldown.liveSessions.status")}</th>
+          <th>${t("drilldown.liveSessions.cwd")}</th><th>${t("drilldown.sessions.sessionId")}</th>
+          <th>${t("drilldown.liveSessions.status")}</th>
           <th>${t("drilldown.liveSessions.uptime")}</th><th>${t("drilldown.liveSessions.clients")}</th>
-          <th>${t("drilldown.liveSessions.model")}</th><th>${t("drilldown.liveSessions.events")}</th><th></th>
+          <th>${t("drilldown.liveSessions.model")}</th><th>${t("drilldown.liveSessions.events")}</th>
+          <th>${t("drilldown.sessions.flags")}</th><th>${t("drilldown.sessions.range")}</th><th></th>
         </tr></thead>
         <tbody>
           ${rows
@@ -1127,11 +1254,16 @@ async function openDrilldown(kind) {
               (s) => `
             <tr class="dd-row-clickable" data-id="${escapeHtml(s.id)}">
               <td>${escapeHtml(s.cwd || "-")}</td>
+              <td class="dd-mono">${s.auditSessionId ? escapeHtml(s.auditSessionId) : "-"}</td>
               <td>${s.alive ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
               <td class="dd-mono">${formatUptime(Date.now() - s.createdAt)}</td>
               <td>${s.clientCount}</td>
               <td>${escapeHtml(modelShort(s.model) || "-")}</td>
               <td>${s.eventCount === null || s.eventCount === undefined ? "-" : s.eventCount}</td>
+              <td>${(s.blockedCount || 0) > 0 ? `🛑${s.blockedCount} ` : ""}${(s.bypassCount || 0) > 0 ? `⚠${s.bypassCount}` : ""}${
+                !s.blockedCount && !s.bypassCount ? "-" : ""
+              }</td>
+              <td class="dd-mono">${s.firstTs ? (s.firstTs || "").slice(0, 19) + " ~ " + (s.lastTs || "").slice(11, 19) : "-"}</td>
               <td>${s.alive ? `<span class="dd-open-hint">${t("drilldown.liveSessions.open")} ›</span>` : ""}</td>
             </tr>`
             )
@@ -1176,6 +1308,36 @@ async function openDrilldown(kind) {
                 r.blockedCount === 0 && r.bypassCount === 0 ? "-" : ""
               }</td>
               <td class="dd-mono">${(r.firstTs || "").slice(0, 19)} ~ ${(r.lastTs || "").slice(11, 19)}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+    return;
+  }
+
+  if (kind === "claude-processes") {
+    title.textContent = t("drilldown.identity.title");
+    const result = identityLastResult || (await api("/api/claude-processes"));
+    if (!result) return;
+    if (result.processes.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <table class="dd-table">
+        <thead><tr>
+          <th>${t("drilldown.identity.pid")}</th><th>${t("drilldown.identity.user")}</th>
+          <th>${t("drilldown.identity.cwd")}</th>
+        </tr></thead>
+        <tbody>
+          ${result.processes
+            .map(
+              (p) => `
+            <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
+              <td class="dd-mono">${p.pid}</td>
+              <td>${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
+              <td>${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
             </tr>`
             )
             .join("")}
@@ -1468,6 +1630,39 @@ async function refreshHomeAnthropicInfo() {
   }
 }
 
+// ---------- claude 进程运行身份检测 ----------
+let identityLastResult = null;
+async function refreshIdentityCard() {
+  const result = await api("/api/claude-processes");
+  if (!result) return;
+  identityLastResult = result;
+  document.getElementById("stat-identity-total").textContent = String(result.total);
+
+  const banner = document.getElementById("identity-mismatch-banner");
+  if (result.mismatchedUsers.length > 0) {
+    banner.hidden = false;
+    banner.textContent = t("home.identity.mismatchWarning", {
+      n: result.mismatchedUsers.reduce((sum, u) => sum + result.byUser[u], 0),
+      users: result.mismatchedUsers.join(", "),
+    });
+  } else {
+    banner.hidden = true;
+  }
+
+  const byUserEl = document.getElementById("identity-by-user");
+  const users = Object.keys(result.byUser);
+  if (users.length === 0) {
+    byUserEl.innerHTML = "";
+  } else {
+    byUserEl.innerHTML = users
+      .map((u) => {
+        const isCurrent = u === result.currentUser;
+        return `<div class="bar-row"><span class="name">${escapeHtml(u)}${isCurrent ? " " + t("home.identity.currentTag") : ""}</span><span>${result.byUser[u]}</span></div>`;
+      })
+      .join("");
+  }
+}
+
 // ---------- 启动 ----------
 function refreshEverythingNow() {
   refreshSessionList();
@@ -1482,6 +1677,7 @@ function refreshEverythingNow() {
   refreshAuditState();
   refreshRemoteAccessState();
   refreshApprovals();
+  refreshIdentityCard();
 }
 
 // 浏览器会把后台标签页的 setInterval 大幅节流（甚至几分钟才跑一次）来省电，
@@ -1512,8 +1708,13 @@ async function bootstrap() {
   applyTheme(currentTheme);
   applyStaticI18n();
   syncGridToggleBtnText();
+  syncApprovalsNotifyBtn();
 
-  await refreshSessionList();
+  const initialSessions = await refreshSessionList();
+  const lastId = getLastSession();
+  if (lastId && (initialSessions || []).some((s) => s.id === lastId)) {
+    selectSession(lastId);
+  }
   await refreshLogSessionOptions();
   await pollLogs();
   await refreshOverview();
@@ -1523,6 +1724,7 @@ async function bootstrap() {
   await refreshAuditState();
   await refreshRemoteAccessState();
   await refreshApprovals();
+  await refreshIdentityCard();
 
   setInterval(refreshSessionList, 4000);
   setInterval(refreshLogSessionOptions, 8000);
@@ -1535,6 +1737,7 @@ async function bootstrap() {
   setInterval(refreshTerminalStatusline, 5000);
   setInterval(refreshAuditState, 5000);
   setInterval(refreshRemoteAccessState, 15000); // 安全相关但很少变，不用跟审计状态一样勤
+  setInterval(refreshIdentityCard, 15000); // 进程身份也不会频繁变，跟远程访问开关一个节奏
   setInterval(refreshApprovals, 2000); // 这几个是卡着等结果的，轮询间隔比其它都短
 }
 bootstrap();

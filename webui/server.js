@@ -2,6 +2,7 @@
 const express = require("express");
 const fs = require("fs");
 const http = require("http");
+const os = require("os");
 const path = require("path");
 const url = require("url");
 const { WebSocketServer } = require("ws");
@@ -17,6 +18,18 @@ const auditState = require("./lib/auditState");
 const browse = require("./lib/browse");
 const remoteAccess = require("./lib/remoteAccess");
 const approvals = require("./lib/approvals");
+const processScan = require("./lib/processScan");
+
+// 这个进程里活着好几个终端 PTY 会话——任何一个请求/WS 消息里冒出来的未捕获异常，
+// Node 默认行为是直接把整个进程干掉，等于所有终端会话（不管跟那个异常有没有关系）
+// 全部瞬间消失，用户毫无预兆地"突然就没了"。这里跟 cc_monitor 的 hook.py 同一个
+// 思路："fail open"：记下来，但绝不能让一次意外把所有活着的会话陪葬。
+process.on("uncaughtException", (err) => {
+  console.error("[CC-Monitor WebUI] 未捕获异常（已忽略，继续运行）:", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[CC-Monitor WebUI] 未处理的 Promise rejection（已忽略，继续运行）:", err);
+});
 
 // 默认只绑定 localhost：这是一个能直接开终端 spawn 进程的工具，绝不能不加认证就暴露到
 // 公网/局域网。这个默认值不会被 UI 上的"允许远程访问"开关自动改掉——真要监听所有网卡，
@@ -91,18 +104,43 @@ function computeSessionStatus(s, matchedAuditSessionId, matchedLastTs, pendingSe
   return recentOutput || recentEvent ? "working" : "idle";
 }
 
+// PTY 那边记的 cwd 是我们建终端时传给 pty.spawn() 的原始字符串；hook.py 那边记的
+// cwd 是 Python os.getcwd() 的返回值——如果目录路径里带符号链接，两边即使指的是
+//同一个目录，字符串也可能不完全一样（前者不解析符号链接，后者会），导致精确字符串
+// 比较误判为"匹配不到"，从而模型/事件数这些本该有数据的字段全变成空的。用
+// realpath 兜底：能 resolve 就按 resolve 后的比，resolve 不了（目录已经不存在了）
+// 就退回原始字符串比较。
+function normCwd(p, cache) {
+  if (!p) return p;
+  if (cache.has(p)) return cache.get(p);
+  let resolved;
+  try {
+    resolved = fs.realpathSync(p);
+  } catch (e) {
+    resolved = path.normalize(p).replace(/\/+$/, "") || p;
+  }
+  cache.set(p, resolved);
+  return resolved;
+}
+
 app.get("/api/sessions", (req, res) => {
   const live = sessions.list();
   const auditRows = audit.listSessions();
   const pendingSessionIds = new Set(approvals.listPending().map((r) => r.session_id));
+  const cwdCache = new Map(); // 一次请求内，同一个路径字符串只 realpath 一次
   const enriched = live.map((s) => {
-    const candidates = auditRows.filter((r) => r.cwd === s.cwd);
+    const sCwd = normCwd(s.cwd, cwdCache);
+    const candidates = auditRows.filter((r) => normCwd(r.cwd, cwdCache) === sCwd);
     candidates.sort((a, b) => (a.last_ts < b.last_ts ? 1 : -1));
     const match = candidates[0];
     return {
       ...s,
       auditSessionId: match ? match.session_id : null,
       eventCount: match ? match.event_count : null,
+      blockedCount: match ? match.blocked_count : null,
+      bypassCount: match ? match.bypass_count : null,
+      firstTs: match ? match.first_ts : null,
+      lastTs: match ? match.last_ts : null,
       model: match && match.transcript_path ? transcript.getModel(match.transcript_path) : null,
       status: s.alive ? computeSessionStatus(s, match ? match.session_id : null, match ? match.last_ts : null, pendingSessionIds) : "dead",
     };
@@ -153,6 +191,15 @@ app.post("/api/pending-approvals/:id/resolve", (req, res) => {
   const result = approvals.resolve(parseInt(req.params.id, 10), decision);
   if (!result.ok) return res.status(400).json(result);
   res.json(result);
+});
+
+// ---- REST API: claude 进程运行身份检测（Web UI 和你终端里的 claude 是不是同一个
+// 操作系统用户——不是同一个用户的话，两边各写各的 ~/.cc-monitor/ 数据库，这个接口
+// 就是用来把这种情况暴露出来的） ----
+
+app.get("/api/claude-processes", async (req, res) => {
+  const procs = await processScan.scanClaudeProcesses();
+  res.json(processScan.summarize(procs, os.userInfo().username));
 });
 
 // ---- REST API: 审计日志 ----
@@ -549,4 +596,18 @@ server.listen(PORT, HOST, () => {
   const accessNote = HOST === "127.0.0.1" ? "（仅本机可访问）" : `（已绑定 ${HOST}，"允许远程访问"开关的实际状态见首页）`;
   console.log(`[CC-Monitor WebUI] 监听 http://${HOST}:${PORT} ${accessNote}`);
   console.log(`[CC-Monitor WebUI] 审计日志读取自: ${audit.dbPath()}`);
+  // cc_monitor 那边的 hook（Python）跟这个 Web UI 进程各自独立算自己的 ~/.cc-monitor/
+  // 目录——都是当前进程的操作系统用户的 home，不是同一个配置项。如果 Web UI 用
+  // root/sudo 启动，但你平时在终端里跑 claude 用的是自己的普通账号，两边写的完全
+  // 是两个不相干的 SQLite 文件：终端里的确认框、审计事件，"待批准"页面永远看不到。
+  // 这里把当前用户名打出来，不对的话一眼就能看出来，不用等排查半天才发现。
+  try {
+    const user = os.userInfo().username;
+    console.log(
+      `[CC-Monitor WebUI] 当前运行用户: ${user}（提醒：必须跟你平时跑 claude 的那个终端是同一个操作系统用户，` +
+        `不然两边各写各的 ~/.cc-monitor/ 数据库，互相看不到彼此——不要用 sudo/root 启动这个服务，除非你的 claude 也是用 root 跑的）`
+    );
+  } catch (e) {
+    // os.userInfo() 在极少数环境下可能拿不到（比如缺 uid/gid 映射），拿不到就算了，不影响功能
+  }
 });

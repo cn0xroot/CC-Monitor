@@ -29,6 +29,14 @@ def handle_pre(data):
     rule, matched_value = policy.evaluate(tool_name, tool_input)
     decision = "allowed"
     risk = "low"
+    # 只有真的走过我们自己的 confirm 流程（一直允许的记忆，或者这次真的问过 tty/网页）
+    # 才代表我们"接管"了这次询问——这种情况下才需要在 stdout 输出
+    # hookSpecificOutput.permissionDecision=allow，让 Claude Code 跳过它自己原生的
+    # "Do you want to proceed?" 弹窗（不然用户点了我们网页上的"允许"，终端里还得再按
+    # 一次 y，等于白问）。没有规则匹配到、或者规则本来就是 log/block 的情况完全不touch
+    # 这个字段——没被我们审查过的工具，Claude Code 自己的默认询问该弹还弹，不能因为
+    # 我们的 hook 顺手就把安全网撤了。
+    handled_via_confirm = False
 
     if rule:
         risk = rule["risk"]
@@ -43,8 +51,11 @@ def handle_pre(data):
             # 这个记忆是按 session 记的，别的 session 跑一样的命令还是照常问。
             if storage.is_session_always_allowed(session_id, rule["id"]):
                 decision = "allowed"
+                handled_via_confirm = True
             else:
-                decision = "allowed" if notify.confirm(tool_name, rule, matched_value, session_id=session_id, cwd=cwd) else "blocked"
+                approved = notify.confirm(tool_name, rule, matched_value, session_id=session_id, cwd=cwd)
+                decision = "allowed" if approved else "blocked"
+                handled_via_confirm = approved
         else:  # "log"
             decision = "allowed"
 
@@ -64,6 +75,15 @@ def handle_pre(data):
         reason = "[CC-Monitor] 操作被拦截 (规则: {}): {}".format(rule["id"], matched_value)
         print(reason, file=sys.stderr)
         sys.exit(2)
+
+    if handled_via_confirm:
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "CC-Monitor: {} 已批准".format(rule["id"]),
+            }
+        }))
     sys.exit(0)
 
 

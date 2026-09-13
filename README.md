@@ -23,6 +23,19 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
 - **Log Audit**: a full-width, live-updating audit log view (filterable by session — the session dropdown shows "folder · model · short ID" instead of an opaque ID string), reusing the same human-readable event-translation logic as the CLI.
 - **Terminal Sessions**: open a Claude Code terminal directly in the browser (a PTY spawned via `node-pty`) instead of switching to a local terminal app; rendered with `xterm.js` + the WebGL addon, GPU-accelerated when available and falling back to Canvas otherwise. The sidebar can switch to a **grid view** (herdr-style) showing every live session on one screen at once; clicking a pane routes keyboard input to it.
 - **Claude Tap**: view the **full conversation content** sent to/received from the model for a given session (not just "which tool was called") — text, thinking, tool calls, tool results, token usage, each field color-coded. The data source is Claude Code's own local transcript JSONL file (the `transcript_path` field in the hook payload) — not packet capture or MITM. CLI equivalent: `CC-Monitor tap [--session ID] [-f]`.
+- **AI Approvals**: mirrors Claude Code's "allow this action?" confirmation into the
+  Web UI — similar in spirit to [Vibe Island](https://vibeisland.app/) popping an
+  Allow/Deny card in the Mac notch, except cross-platform (a web page instead of a
+  Mac-only UI) and, for now, scoped to the operations our own rule table flags as
+  `confirm` (anything else still goes through Claude Code's own native prompt — we never
+  silently wave it through). The same request can be answered either at the terminal that
+  triggered it (y/N) or from this page — whichever answers first wins. Choosing "allow" on
+  the web page makes Claude Code skip its own native popup entirely, via the hook's
+  `permissionDecision: allow` output, instead of asking twice. Options: allow once, deny
+  once, allow and don't ask again for 10/30 minutes, or always allow (scoped to this
+  session only — other sessions running the same command still get asked). Supports browser
+  desktop notifications (the Notification API) — new requests raise a system notification
+  even when this tab isn't open, click it to jump straight back in.
 - **Status**: account-level usage (the 5-hour session window / weekly quota / per-model weekly quota + reset times, queried from the same `api.anthropic.com/api/oauth/usage` endpoint and OAuth credentials as [ccstatusline](https://github.com/sirmalloc/ccstatusline)) plus per-session model, token usage, throughput (tok/s, estimated from the transcript), cwd, git branch, uptime, and blocked-operation counts.
 - **Language toggle + multiple themes**: a language button (中文/EN) and a theme dropdown (Brand/Dark/Light/Dracula/Nord/Midnight/Ocean/Forest/Sunset/Rose — the last five ported from [AI_Web_Search](https://github.com/cn0xroot/AI_Web_Search)'s color scheme) in the top bar, both persisted to `localStorage`. Translation covers UI chrome (nav, buttons, titles, empty-state hints, risk/operation/status labels) but not the data itself (raw command text, tool output, transcript content). The risk/operation-type/status badges in the audit log use fixed, highly saturated colors that don't change with the theme; high-risk rows are shown in bold red.
 
@@ -284,6 +297,14 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 
 ## Known Limitations
 
+- **The Web UI process and the terminal(s) you normally run `claude` in must be the same OS
+  user**, or each writes to its own separate `~/.cc-monitor/` database and neither can see the
+  other's data (confirmation prompts and audit events from your terminal simply never appear on
+  the Web UI's AI Approvals / audit log pages) — `CONFIG_DIR` is derived from the current
+  process's `$HOME`, not a shared global path. This bites you if you start the Web UI with
+  `sudo`/as root while your normal `claude` usage runs under your own account; `start.sh` warns
+  when it detects a root launch, and the Web UI itself logs its effective username on startup so
+  you can double-check.
 - `confirm` requires `/dev/tty`; with no interactive terminal (CI, headless environments) it
   denies by default.
 - The probe's bypass detection is fuzzy matching, not precise semantic analysis; under heavy

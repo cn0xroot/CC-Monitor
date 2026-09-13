@@ -102,7 +102,16 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
         storage.resolve_approval(approval_id, "expired", "timeout")
         result_status = "expired"
 
-    if result_status == "always_allowed" and session_id:
-        storage.add_session_always_allow(session_id, rule["id"])
+    # allowed_10m/allowed_30m 跟"一直允许"走的是同一张 session_always_allow 表，
+    # 区别只是多带一个 expires_at——到点之后 is_session_always_allowed() 就不再认它。
+    TIMED_ALLOW_MINUTES = {"allowed_10m": 10, "allowed_30m": 30}
+    if result_status in ("always_allowed",) + tuple(TIMED_ALLOW_MINUTES) and session_id:
+        minutes = TIMED_ALLOW_MINUTES.get(result_status)
+        expires_at = (
+            time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(time.time() + minutes * 60))
+            if minutes
+            else None
+        )
+        storage.add_session_always_allow(session_id, rule["id"], expires_at=expires_at)
 
-    return result_status in ("allowed", "always_allowed")
+    return result_status in ("allowed", "always_allowed") + tuple(TIMED_ALLOW_MINUTES)

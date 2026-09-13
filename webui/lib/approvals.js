@@ -29,13 +29,19 @@ function listPending() {
   }, []);
 }
 
-const DECISION_TO_STATUS = { allow: "allowed", deny: "denied", always_allow: "always_allowed" };
+const DECISION_TO_STATUS = {
+  allow: "allowed",
+  deny: "denied",
+  always_allow: "always_allowed",
+  allow_10m: "allowed_10m",
+  allow_30m: "allowed_30m",
+};
 
 // 跟 cc_monitor/storage.py 的 resolve_approval() 是同一张表、同一套"谁先写谁算数"
 // 规则——WHERE status='pending' 保证不会跟终端那边刚好同时按/敲的结果打架。
 function resolve(id, decision) {
   const status = DECISION_TO_STATUS[decision];
-  if (!status) return { ok: false, error: "decision 必须是 allow / deny / always_allow 之一" };
+  if (!status) return { ok: false, error: "decision 必须是 allow / deny / always_allow / allow_10m / allow_30m 之一" };
   return withDb((db) => {
     const info = db
       .prepare(`UPDATE pending_approvals SET status = ?, resolved_at = ?, resolved_via = 'web' WHERE id = ? AND status = 'pending'`)

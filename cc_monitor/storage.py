@@ -39,11 +39,14 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
 );
 
 -- "一直允许"是按 session 生效的，不是改全局规则——同一个 session 里这条规则
--- 以后不用再问，别的 session（哪怕跑一模一样的命令）还是照常问。
+-- 以后不用再问，别的 session（哪怕跑一模一样的命令）还是照常问。expires_at 为空
+-- 表示真的"一直"；有值的话是"批准，N 分钟内不再询问"这种限时版本，到点之后
+-- is_session_always_allowed() 就不再认它，恢复正常询问。
 CREATE TABLE IF NOT EXISTS session_always_allow (
     session_id TEXT NOT NULL,
     matched_rule TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    expires_at TEXT,
     PRIMARY KEY (session_id, matched_rule)
 );
 """
@@ -58,6 +61,10 @@ def _connect():
     conn.executescript(SCHEMA)
     try:
         conn.execute("ALTER TABLE events ADD COLUMN transcript_path TEXT")
+    except sqlite3.OperationalError:
+        pass  # 列已经存在（老数据库升级过一次之后）
+    try:
+        conn.execute("ALTER TABLE session_always_allow ADD COLUMN expires_at TEXT")
     except sqlite3.OperationalError:
         pass  # 列已经存在（老数据库升级过一次之后）
     return conn
@@ -194,21 +201,27 @@ def is_session_always_allowed(session_id, matched_rule):
     conn = _connect()
     try:
         row = conn.execute(
-            "SELECT 1 FROM session_always_allow WHERE session_id = ? AND matched_rule = ?",
+            "SELECT expires_at FROM session_always_allow WHERE session_id = ? AND matched_rule = ?",
             (session_id, matched_rule),
         ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        expires_at = row[0]
+        # expires_at 为空是真的"一直允许"；有值就是限时版本，字符串比较当前时间——
+        # 跟 events 表其它时间戳一样都用同一个 strftime 格式/时区，直接比就行。
+        return expires_at is None or expires_at > time.strftime("%Y-%m-%dT%H:%M:%S%z")
     finally:
         conn.close()
 
 
-def add_session_always_allow(session_id, matched_rule):
+def add_session_always_allow(session_id, matched_rule, expires_at=None):
     conn = _connect()
     try:
         with conn:
             conn.execute(
-                "INSERT OR IGNORE INTO session_always_allow (session_id, matched_rule, created_at) VALUES (?,?,?)",
-                (session_id, matched_rule, time.strftime("%Y-%m-%dT%H:%M:%S%z")),
+                "INSERT INTO session_always_allow (session_id, matched_rule, created_at, expires_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(session_id, matched_rule) DO UPDATE SET created_at = excluded.created_at, expires_at = excluded.expires_at",
+                (session_id, matched_rule, time.strftime("%Y-%m-%dT%H:%M:%S%z"), expires_at),
             )
     finally:
         conn.close()
