@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/",
-    "electron": "electron electron-main.js",
+    "electron": "node scripts/electron-start.js",
     "electron:rebuild": "electron-rebuild -f -w node-pty,better-sqlite3",
     "dist:linux": "npm run electron:rebuild && electron-builder --linux AppImage --x64 --arm64",
     "dist:mac": "npm run electron:rebuild && electron-builder --mac --universal"
