@@ -287,17 +287,17 @@ yet.
 
 ## Screenshots
 
-| Home overview | Session list drilldown |
-|---|---|
-| ![Home](./pic/home-en.png) | ![Session list](./pic/home-sessions-en.png) |
+| Audit log |
+|---|
+| ![Audit log](./pic/audit-log-en.png) |
 
 | Event type breakdown | Blocked high-risk operations |
 |---|---|
 | ![Event type breakdown](./pic/home-events-en.png) | ![Blocked operations](./pic/home-blocked-en.png) |
 
-| Audit log (Chinese UI shown; language toggle available) |
-|---|
-| ![Audit log](./pic/audit-log-zh.png) |
+| Home overview | Session list drilldown |
+|---|---|
+| ![Home](./pic/home-en.png) | ![Session list](./pic/home-sessions-en.png) |
 
 ## Overview
 
