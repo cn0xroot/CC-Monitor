@@ -887,6 +887,9 @@ async function refreshOverview() {
     document.getElementById("stat-github-ghCli").textContent = s.githubOps.ghCli;
     document.getElementById("stat-github-otherGit").textContent = s.githubOps.otherGit;
   }
+  if (s.screenshotOps) {
+    document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
+  }
 
   renderBarList("source-breakdown", s.bySource.map((r) => ({
     name: sourceLabel2(r.source) || r.source || "-",
@@ -1751,6 +1754,32 @@ async function openDrilldown(kind) {
         <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")} · ${escapeHtml(
           r.matchedRule || "-"
         )}</div>
+        <div class="summary">${r.summaryHtml || ""}</div>
+      </div>`
+      )
+      .join("");
+    return;
+  }
+
+  if (kind === "screenshot") {
+    // 只有一张卡片、不分子类型，跟上面那组"file-op-/install-op-/github-op-"的
+    // 共用逻辑不一样——单独处理，直接调 /api/drilldown/screenshot，不用拼 opType。
+    title.textContent = t("home.screenshotOps.total") + " — " + t("drilldown.fileOp.suffix");
+    const rows = await api("/api/drilldown/screenshot");
+    if (!rows) return;
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = rows
+      .map(
+        (r) => `
+      <div class="log-item">
+        <div class="row1">
+          <span class="ts">${r.ts}</span>
+          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+        </div>
+        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
       )

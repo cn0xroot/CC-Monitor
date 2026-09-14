@@ -48,6 +48,17 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     itself (most git/gh commands don't violate any policy rule, so they never get a
     `matched_rule` and couldn't reuse the install-ops trick). Click through for the exact
     session, folder, timestamp, and command.
+  - **Screenshot audit**: Claude Code has no built-in "screenshot" tool, so this is identified
+    from three independent signals — a Bash command invoking a screenshot CLI (`scrot`,
+    `gnome-screenshot`, `import`, `spectacle`, `flameshot`, `maim`, `grim`, `xwd`, macOS's
+    `screencapture`, or the Wayland-typical `gdbus`/`dbus-send` call to
+    `org.freedesktop.portal.Screenshot`); the `Read` tool opening a file that's itself an image
+    (`.png`/`.jpg`/`.gif`/`.webp`/`.bmp` — deliberately broader than "screenshot," since viewing
+    an existing image counts too); or an MCP/"computer use" tool's screenshot action (a tool
+    name containing "screenshot," or a `computer` tool whose `action` field is `"screenshot"`).
+    Click through for the exact session, timestamp, and the command run or file opened —
+    **only that basic info is shown, the screenshot's own image content is never read or
+    rendered**, to avoid exposing potentially sensitive desktop content through the web page.
   - **Anthropic account info**: name, email, organization, org role, plan type, rate-limit
     tier, billing type, and account/subscription creation dates, read straight from Claude
     Code's own local global config file (`~/.claude.json`'s `oauthAccount` field) — no
@@ -507,6 +518,9 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Per-session `Σ Total / Cached` token summary on the Status page (same accounting as ccstatusline)
 - [x] Model Usage table, Limits table, context window usage %, and Context compaction count (real detection, not an estimate) on the Status page
 - [x] Home page GitHub Operations stats (push/clone/commit/pull-fetch/gh CLI/other git operations)
+- [x] Home page Screenshot Audit: identifies Bash screenshot CLI commands / image files opened
+      via Read / MCP screenshot-type tool actions; the drilldown shows only basic info (command
+      / file path), never the screenshot's own image content
 - [x] Appearance settings dialog: color-theme swatch grid, interface font, interface font size (new settings)
 - [x] Session quota shows "remaining %" with a conky-style stepped palette; weekly quotas show "used %" with a continuous red→yellow→green gradient; per-model quotas like Fable are detected dynamically
 - [x] **macOS platform support**: hooks (`PreToolUse`/`PostToolUse`/`PermissionRequest`), AI

@@ -361,6 +361,7 @@ app.get("/api/overview", async (req, res) => {
     fileOps: audit.fileOpsStats(),
     installOps: audit.installStats(),
     githubOps: audit.githubOpsStats(),
+    screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
     skillCalls: audit.skillCallStats().total,
@@ -477,6 +478,32 @@ app.get("/api/drilldown/install-op/:type", (req, res) => {
     } catch (e) {
       detail = {};
     }
+    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      toolName: row.tool_name,
+      matchedRule: row.matched_rule,
+      label,
+      summaryHtml,
+    };
+  });
+  res.json(rows);
+});
+
+app.get("/api/drilldown/screenshot", (req, res) => {
+  const rows = audit.screenshotDetails().map((row) => {
+    let detail = {};
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      detail = {};
+    }
+    // 只给"基本信息"：命令原文/文件路径这类 fmt.describe() 已经在算的摘要文本，
+    // 不读取、不 serve 截图文件本身的图像内容——截图很可能带敏感桌面信息，用户
+    // 明确要求详情页只展示路径和基本信息，不展示图内容。
     const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
     return {
       id: row.id,

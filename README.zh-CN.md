@@ -40,6 +40,16 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     （PR/Issue/API…）/ 其它 git 操作六张卡片，按 Bash 命令文本分类识别（大部分
     git/gh 命令不违反任何 policy 规则，没法像软件安装统计那样复用规则引擎判断结果），
     点开看具体是哪个 session、哪个文件夹、什么时候执行的什么命令。
+  - **截屏审计**：Claude Code 没有内置"截图"工具，识别靠三条独立信号——Bash 命令调用
+    截图类 CLI 工具（`scrot`/`gnome-screenshot`/`import`/`spectacle`/`flameshot`/`maim`/
+    `grim`/`xwd`/macOS 的 `screencapture`，以及 Wayland 下常见的 `gdbus`/`dbus-send`
+    调用 `org.freedesktop.portal.Screenshot`）、`Read` 工具打开的文件本身是图片
+    （`.png`/`.jpg`/`.gif`/`.webp`/`.bmp`，范围比纯截图宽——用户查看已有图片内容
+    也算进来）、MCP/"computer use" 类工具的截图动作（工具名带 "screenshot" 字样，
+    或 `computer` 工具 `action` 字段等于 `"screenshot"`）。点开看具体是哪个 session、
+    什么时候、执行的什么命令或打开的什么文件——**只显示命令/文件路径这类基本信息，
+    不读取、不展示截图本身的图像内容**，避免把可能包含敏感桌面信息的图片经由网页
+    暴露出去。
   - **Anthropic 账号信息**：姓名、邮箱、组织、组织角色、套餐类型、额度档位、计费方式、
     账号/订阅创建时间——直接读 Claude Code 自己维护的本地全局配置文件
     （`~/.claude.json` 的 `oauthAccount` 字段），不发任何网络请求，跟
@@ -437,6 +447,8 @@ sudo ./bin/CC-Monitor-probe
 - [x] 状态信息页新增"模型使用统计"表格、"额度明细"表格、上下文窗口使用率、Context
       compaction 次数（真实检测，非估算）
 - [x] 首页新增"GitHub 操作统计"（push/clone/commit/pull-fetch/gh CLI/其它 git 操作）
+- [x] 首页新增"截屏审计"：识别 Bash 截图 CLI 命令 / Read 打开的图片文件 / MCP 截图类工具
+      动作，点开只显示命令/文件路径等基本信息，不读取截图图像内容本身
 - [x] 网络流量页"连接次数"支持点击查看每次连接的时间/进程/PID 明细
 - [x] 外观设置弹窗：主题色块网格、界面字体、界面字号（新设置项，之前没有）
 - [x] 单次额度显示"剩余百分比"（conky 分段配色），周额度"已用百分比"用红→黄→绿连续

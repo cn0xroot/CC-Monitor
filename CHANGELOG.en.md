@@ -5,6 +5,29 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.6.0] - 2026-09-14
+
+### Added
+- **New "Screenshot Audit" card on the Home page**: Claude Code has no built-in "screenshot"
+  tool, so this is identified from three independent signals — ① a Bash command invoking a
+  screenshot CLI (`scrot`, `gnome-screenshot`, `import`, `spectacle`, `flameshot`, `maim`,
+  `grim`, `xwd`, macOS's `screencapture`, or the Wayland-typical `gdbus`/`dbus-send` call to
+  `org.freedesktop.portal.Screenshot` — matched the same way as the existing
+  `commandDeletesFiles()`: split on `;`/`&`/`|`/newlines and check each sub-command's start,
+  never a substring match against the whole text, so an `echo`'d string can't be misread as a
+  real invocation); ② the `Read` tool opening a file that's itself an image
+  (`.png`/`.jpg`/`.gif`/`.webp`/`.bmp` — deliberately broader than "screenshot," since the user
+  explicitly wanted viewing an existing image counted too); ③ an MCP/"computer use" tool's
+  screenshot action (a tool name containing "screenshot" — e.g. what browser-automation MCP
+  servers like Playwright/Puppeteer expose — or a `computer` tool whose `action` field is
+  `"screenshot"`). Added the `cc_is_screenshot` SQL custom function in `webui/lib/audit.js` and
+  a new `/api/drilldown/screenshot` endpoint. The drilldown **only shows basic info (the command
+  or file path), never reads or renders the screenshot's own image content** — an explicit scope
+  call from the user, since a screenshot can easily contain sensitive desktop content that a web
+  page shouldn't be serving. Verified end-to-end with an isolated test database and a headless
+  browser: the home card count is correct, the drilldown lists exactly the matching events, and
+  non-matching commands (`ls -la`, opening a plain text file) are correctly excluded.
+
 ## [1.5.0] - 2026-09-13
 
 ### Added

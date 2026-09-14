@@ -68,12 +68,62 @@ function githubOpType(detailJson) {
   }
 }
 
+// 截屏审计——Claude Code 没有内置"截图"工具，实际观测到的截屏行为分三种路子，
+// 判断方式各自独立、按"最可能"的信号来源分开看：
+//   1. Bash 命令调用了截图类 CLI 工具——跟 commandDeletesFiles() 一个思路，按
+//      ; & | 换行拆成子命令分别看开头，不对整条命令文本做子串匹配（避免
+//      "echo 截图完成" 这种输出内容被误判）。import 单独放宽了一点——ImageMagick
+//      的 import 命令在真实场景里绝大多数就是拿来截屏用的，虽然理论上有极小概率
+//      是别的用途，这跟规则表其它地方"近似识别，非精确"的一贯尺度是一致的。
+//      Wayland 下常见的走法是通过 xdg-desktop-portal 发 D-Bus 请求（gdbus/dbus-send
+//      调 org.freedesktop.portal.Screenshot 接口），命令行工具反而用不了，单独判断。
+//   2. Read 工具打开的文件本身就是图片——不严格等于"截屏"（也可能是用户自己的照片/
+//      设计稿），但从"Claude 看到了屏幕/图像内容"这个角度审计，用户明确要求把这种
+//      情况也算进来，接受比纯粹截图判断更宽的召回率。
+//   3. MCP/"computer use" 类工具的截图动作——工具名里带 "screenshot" 字样（常见于
+//      Playwright/Puppeteer 这类浏览器自动化 MCP server 暴露出来的工具名，比如
+//      mcp__playwright__browser_take_screenshot），或者 Anthropic Computer Use 的
+//      "computer" 工具、action 字段等于 "screenshot"。
+const SCREENSHOT_CLI_RE = /^(scrot|gnome-screenshot|spectacle|flameshot|maim|grim|xwd|deepin-screenshot|xfce4-screenshooter|screencapture|import)\b/;
+const SCREENSHOT_PORTAL_RE = /^(gdbus|dbus-send)\b/;
+const SCREENSHOT_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+
+function commandTakesScreenshot(cmd) {
+  if (!cmd) return false;
+  const segments = cmd.split(/[;&|\n]+/);
+  for (const raw of segments) {
+    const seg = raw.trim().replace(/^sudo\s+/, "");
+    if (SCREENSHOT_CLI_RE.test(seg)) return true;
+    if (SCREENSHOT_PORTAL_RE.test(seg) && /screenshot/i.test(seg)) return true;
+  }
+  return false;
+}
+
+function isScreenCaptureEvent(toolName, detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    if (toolName === "Bash") {
+      return commandTakesScreenshot(detail.command || "") ? 1 : 0;
+    }
+    if (toolName === "Read") {
+      const filePath = detail.file_path || detail.path || "";
+      return SCREENSHOT_IMAGE_EXT_RE.test(filePath) ? 1 : 0;
+    }
+    if (toolName === "computer" && detail.action === "screenshot") return 1;
+    if (toolName && toolName !== "Bash" && toolName !== "Read" && /screenshot/i.test(toolName)) return 1;
+    return 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
 function withDb(fn, fallback) {
   let db;
   try {
     db = new Database(dbPath(), { readonly: true, fileMustExist: true });
     db.function("cc_is_delete", isDeleteEvent);
     db.function("cc_github_op", githubOpType);
+    db.function("cc_is_screenshot", isScreenCaptureEvent);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -284,6 +334,28 @@ function githubOpsDetails(type, limit = 300) {
   }, []);
 }
 
+// 首页"截屏审计"卡片：单一计数，不像软件安装/GitHub 操作那样拆细分类——截屏本来
+// 就不常发生，没必要再按来源（Bash/Read/MCP）拆成好几张卡片，下钻列表里每一行的
+// 工具名本身就能看出是哪种来源。
+function screenshotStats() {
+  return withDb((db) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND cc_is_screenshot(tool_name, detail) = 1`).get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+function screenshotDetails(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND cc_is_screenshot(tool_name, detail) = 1
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 // 工具调用统计——"审计事件总数"是 hook_pre + hook_post + os_net 全部加一起的，
 // 同一次工具调用至少算两条（pre 一条、post 一条），这里只数 hook_pre，对应的是
 // "Claude Code 真的发起过多少次工具调用"这个更直观的数字。
@@ -487,6 +559,8 @@ module.exports = {
   installDetails,
   githubOpsStats,
   githubOpsDetails,
+  screenshotStats,
+  screenshotDetails,
   toolCallStats,
   toolCallBreakdown,
   mcpCallStats,

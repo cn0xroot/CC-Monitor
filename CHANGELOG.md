@@ -5,6 +5,26 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.6.0] - 2026-09-14
+
+### 新增
+- **首页新增"截屏审计"卡片**：Claude Code 没有内置"截图"工具，识别靠三条独立信号——
+  ① Bash 命令调用截图类 CLI 工具（`scrot`/`gnome-screenshot`/`import`/`spectacle`/
+  `flameshot`/`maim`/`grim`/`xwd`、macOS 的 `screencapture`，以及 Wayland 下常见的
+  `gdbus`/`dbus-send` 调用 `org.freedesktop.portal.Screenshot`，判断方式跟已有的
+  `commandDeletesFiles()` 一个思路，按 `;`/`&`/`|`/换行拆成子命令分别看开头，不对
+  整条命令文本做子串匹配，避免 `echo` 输出内容被误判）；② `Read` 工具打开的文件
+  本身是图片（`.png`/`.jpg`/`.gif`/`.webp`/`.bmp`，范围比纯截图宽——用户明确要求
+  把"查看已有图片内容"也算进来）；③ MCP/"computer use" 类工具的截图动作（工具名
+  带 `screenshot` 字样，比如 Playwright/Puppeteer 这类浏览器自动化 MCP server 暴露
+  出来的工具，或者 Anthropic Computer Use 的 `computer` 工具、`action` 字段等于
+  `"screenshot"`）。新增 `webui/lib/audit.js` 的 `cc_is_screenshot` SQL 自定义函数、
+  `/api/drilldown/screenshot` 接口。点开详情**只显示命令/文件路径等基本信息，不
+  读取、不展示截图本身的图像内容**——这是用户明确要的尺度，截图很可能带敏感桌面
+  信息，网页详情页不该把它 serve 出来。用隔离测试数据库 + 无头浏览器验证过端到端
+  链路：首页卡片计数正确、点击详情正确列出匹配事件、不匹配的普通命令（`ls -la`、
+  纯文本文件读取）正确排除在外。
+
 ## [1.5.0] - 2026-09-13
 
 ### 新增
