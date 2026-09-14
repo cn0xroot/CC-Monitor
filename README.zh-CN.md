@@ -63,7 +63,12 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     "工具调用"/"MCP 调用"/"AI 轨迹"这几张卡片都能点开查看详情。
   - **文件操作统计**：读/写/编辑/删除次数，各自可以点开看具体是哪些操作。
   - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman/brew/port）
-    / npm 全局安装 / 其它，点开看具体是哪些安装指令。
+    / npm 安装 / 其它。npm 这张卡片合并了本地（`npm install`/`npm i`，不带 `-g`，
+    只是 `log` 级别不会打扰你）和全局（带 `-g`/`--global`，`confirm` 级别）两条规则的
+    总数——两者生命周期脚本（`preinstall`/`postinstall`）的执行权限是一样的，都可能
+    是供应链投毒的入口，但全局安装会长期驻留在 `$PATH` 上、影响所有项目，风险明显
+    更大，所以只有全局的需要人工确认。点开卡片详情会分成"全局安装"/"本地安装"两组
+    分别列出，不会混在一起看不出哪些是高风险的。
   - **GitHub 操作统计**：git push / git clone / git commit / git pull-fetch / gh CLI
     （PR/Issue/API…）/ 其它 git 操作六张卡片，按 Bash 命令文本分类识别（大部分
     git/gh 命令不违反任何 policy 规则，没法像软件安装统计那样复用规则引擎判断结果），

@@ -493,7 +493,10 @@ function fileOpDetails(type, limit = 300) {
 const INSTALL_RULE_GROUPS = {
   pip: ["sudo_pip_install", "pip_install_venv_context", "pip_install_no_venv"],
   system: ["system_package_install"],
-  npm: ["npm_global_install"],
+  // 本地/全局两条规则都算进"npm 安装"这一张卡片的总数，点开详情时前端按
+  // matchedRule 再拆成"本地安装"/"全局安装"两组分别列出（见 app.js 的
+  // install-op-npm 特判），不是简单平铺一份列表。
+  npm: ["npm_global_install", "npm_local_install"],
   other: ["package_install_other"],
 };
 

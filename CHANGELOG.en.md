@@ -8,6 +8,26 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [1.6.0] - 2026-09-14
 
 ### Added
+- **npm install stats now recognize local installs, not just global ones**: added an
+  `npm_local_install` rule to `default_rules.json` (`risk: low`, `action: log`) matching
+  `npm install`/`npm i` without `-g`/`--global`, placed after the existing
+  `npm_global_install` rule (`risk: medium`, `action: confirm`) so a command the global rule
+  already claimed never double-counts on the local side. Previously a local `npm install` had
+  zero rule coverage at all — never blocked, never logged, never counted — and the Home page's
+  "npm global installs" card was a complete blind spot for it, even though `npm install`'s
+  `preinstall`/`postinstall` lifecycle scripts run with the exact same privileges as a global
+  install and are just as real a supply-chain attack surface (the `event-stream` and
+  `ua-parser-js` incidents both compromised machines at the local-install stage, not global).
+  The Home card's label changed to "npm installs" (was "npm global installs"), showing the
+  combined local+global total; clicking through no longer flattens both kinds into one list —
+  the drilldown splits into separate "Global installs"/"Local installs" groups, since risk
+  levels that aren't the same shouldn't look the same on screen. `INSTALL_RULE_GROUPS.npm` was
+  updated to the union of both rules. Verified over a real WebSocket connection and a headless
+  browser: the Home card correctly sums both, and the drilldown correctly sorts
+  `sudo npm install -g pm2` / `npm install -g ccstatusline` into "Global" and
+  `npm install` / `npm install lodash --save` / `npm i react` into "Local". An existing
+  `~/.cc-monitor/rules.json` is a copy made on first run and won't pick up the new rule
+  automatically — delete it to regenerate, or add it by hand.
 - **New "New Window" button on Terminal Sessions**: shares the same working-directory picker
   modal as "New Session" (the modal's title/hint text swap dynamically based on which button
   opened it), the only behavioral difference being it never types `claude\r` into the freshly

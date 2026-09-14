@@ -8,6 +8,23 @@
 ## [1.6.0] - 2026-09-14
 
 ### 新增
+- **npm 安装统计新增本地安装识别，不再只认全局**：`default_rules.json` 新增
+  `npm_local_install` 规则（`risk: low`, `action: log`），匹配不带 `-g`/`--global` 的
+  `npm install`/`npm i`，排在已有的 `npm_global_install`（`risk: medium`,
+  `action: confirm`）后面，全局规则先命中的命令不会重复计到本地这边。以前本地
+  `npm install` 完全没有任何规则覆盖——不拦截、不记录、不统计，首页"软件安装
+  统计"里的"npm 全局安装"卡片对本地安装是彻底的盲区，即使 `npm install` 的
+  `preinstall`/`postinstall` 生命周期脚本跟全局安装是同一个执行权限、同样是真实
+  存在的供应链投毒入口（`event-stream`、`ua-parser-js` 这些真实事件都是本地安装
+  阶段就已经中招，不需要等到全局安装那一步）。首页卡片文案改成"npm 安装"（原来是
+  "npm 全局安装"），数字是本地+全局的合计；点开详情不会把两种混在一起平铺，而是
+  分成"全局安装"/"本地安装"两组分别列出——风险等级不一样的东西不该在界面上看起来
+  一样重。`INSTALL_RULE_GROUPS.npm` 同步更新为两条规则的并集。用真实
+  WebSocket/无头浏览器验证过：首页卡片数字正确合并，点开详情两组分类完全正确
+  （`sudo npm install -g pm2`、`npm install -g ccstatusline` 归到"全局"，
+  `npm install`、`npm install lodash --save`、`npm i react` 归到"本地"）。已有用户
+  的 `~/.cc-monitor/rules.json` 是首次运行时拷的副本，不会自动更新——想要这条新
+  规则生效，删掉它让它重新生成，或者手动加进去。
 - **"终端会话"新增"新建窗口"按钮**：跟"新建会话"共用同一个选工作目录的弹窗
   （弹窗标题/说明文字跟着按钮动态换），唯一的行为区别是不会自动往新建的 PTY 里
   敲 `claude\r`——原来"新建会话"打开的窗口固定会自动进 Claude Code 会话，单纯

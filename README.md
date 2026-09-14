@@ -75,8 +75,13 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     "AI trajectory" cards are all clickable for drilldown detail.
   - **File operation stats**: read/write/edit/delete counts, each clickable for detail.
   - **Install operation stats**: grouped by which install-type rule matched — pip / system
-    package manager (apt/yum/dnf/pacman/brew/port) / npm global install / other — click through for the
-    exact install commands.
+    package manager (apt/yum/dnf/pacman/brew/port) / npm installs / other. The npm card combines
+    two rules' totals: local (`npm install`/`npm i` without `-g`, log-level, never intrusive)
+    and global (with `-g`/`--global`, confirm-level). Both run the same lifecycle scripts
+    (`preinstall`/`postinstall`) with the same privileges, and both are a real supply-chain
+    attack surface, but a global install sticks around on `$PATH` across every project, so only
+    the global case asks for confirmation. Clicking the card splits the drilldown into separate
+    "Global installs"/"Local installs" groups instead of flattening them together.
   - **GitHub operation stats**: git push / git clone / git commit / git pull-fetch / gh CLI
     (PR/Issue/API…) / other git operations, six cards, classified from the Bash command text
     itself (most git/gh commands don't violate any policy rule, so they never get a

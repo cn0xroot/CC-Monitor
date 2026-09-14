@@ -1860,9 +1860,10 @@ async function openDrilldown(kind) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
       return;
     }
-    body.innerHTML = rows
-      .map(
-        (r) => `
+    const renderLogItems = (list) =>
+      list
+        .map(
+          (r) => `
       <div class="log-item">
         <div class="row1">
           <span class="ts">${r.ts}</span>
@@ -1871,8 +1872,26 @@ async function openDrilldown(kind) {
         <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
-      )
-      .join("");
+        )
+        .join("");
+
+    if (apiKind === "install-op" && opType === "npm") {
+      // "npm 安装"这张卡片背后是两条不同风险等级的规则（本地 log 级、全局 confirm
+      // 级），合并成一个总数好过一眼看出"到底装了多少次 npm 包"，但点开详情不能把
+      // 两种混在一起平铺——按 matchedRule 分成两组，各自一个小标题，风险等级不同的
+      // 东西不该看起来一样重。
+      const local = rows.filter((r) => r.matchedRule === "npm_local_install");
+      const global = rows.filter((r) => r.matchedRule === "npm_global_install");
+      body.innerHTML = `
+        <div class="box-title" style="margin:0 0 8px;">${t("drilldown.installOp.npmGlobal")}</div>
+        ${global.length ? renderLogItems(global) : `<div class="empty-state">${t("drilldown.empty")}</div>`}
+        <div class="box-title" style="margin:18px 0 8px;">${t("drilldown.installOp.npmLocal")}</div>
+        ${local.length ? renderLogItems(local) : `<div class="empty-state">${t("drilldown.empty")}</div>`}
+      `;
+      return;
+    }
+
+    body.innerHTML = renderLogItems(rows);
     return;
   }
 }

@@ -168,6 +168,14 @@
     "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\s+.*(-g\\b|--global\\b)"
   },
   {
+    "id": "npm_local_install",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\b"
+  },
+  {
     "id": "package_install_other",
     "risk": "low",
     "action": "log",
