@@ -342,11 +342,24 @@ additionally verified to crash on startup on this CPU with the originally-pinned
 33.x, and to run correctly after upgrading to 44.x (see the Desktop app section below) — which
 is why that version isn't pinned back down.
 
-**In a hurry?** Run `./install.sh` to do it all in one step (ccstatusline + hook registration +
-Web UI dependencies + GeoIP database download — `--skip-ccstatusline`/`--skip-geoip`, or the
-matching `CC_MONITOR_SKIP_CCSTATUSLINE=1`/`CC_MONITOR_SKIP_GEOIP=1` env vars, skip either one
-independently), then `./start.sh` to launch the Web UI (it installs dependencies on first run
-if needed). For more control, the manual steps are below.
+**In a hurry?** `./install.sh` runs these 5 steps in order:
+
+1. **ccstatusline** (optional terminal statusline): installs it globally via npm if missing,
+   then wires it into `~/.claude/settings.json`'s `statusLine` field if that key isn't already
+   set — `--skip-ccstatusline` / `CC_MONITOR_SKIP_CCSTATUSLINE=1` skips both
+2. **Registers hooks** into Claude Code's `settings.json` (`python3 install.py`, see the manual
+   steps below for details)
+3. **Installs Web UI dependencies** (`cd webui && npm install`; skipped, Web UI only, if npm
+   isn't found)
+4. **Checks whether the system-layer probe can run**: on Linux, whether `bpftrace` is
+   installed; on macOS, nothing extra is needed (uses the built-in `nettop`) — this step only
+   detects and prints a hint, missing `bpftrace` never aborts the install
+5. **GeoIP database** (optional, for the Network tab's location column): downloads DB-IP Lite
+   to `~/.cc-monitor/dbip-city.mmdb` by default — `--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1`
+   skips it
+
+Then run `./start.sh` to launch the Web UI (it installs dependencies on first run if needed).
+For more control, the manual steps are below.
 
 There are two ways to install it, with identical end results — pick whichever fits:
 

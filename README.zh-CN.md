@@ -288,10 +288,20 @@ Electron 33.x 在这颗 CPU 上打包出来的应用启动即崩溃（详见下�
 44.x 后正常——这也是为什么 `webui/package.json` 里 Electron 版本没有随便往回调的
 原因。
 
-**赶时间的话**：`./install.sh` 一键装好（ccstatusline 状态栏 + hooks 注册 + Web UI 依赖 +
-GeoIP 数据库下载，`--skip-ccstatusline`/`--skip-geoip`，或者对应的 `CC_MONITOR_SKIP_CCSTATUSLINE=1`/
-`CC_MONITOR_SKIP_GEOIP=1` 环境变量可以分别跳过这两步），装完用 `./start.sh` 一键启动
-Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，往下看手动步骤。
+**赶时间的话**：`./install.sh` 一键按顺序做完这 5 件事：
+
+1. **ccstatusline**（可选，终端状态栏）：没装就 `npm install -g ccstatusline`，装好后如果
+   `~/.claude/settings.json` 里还没有 `statusLine` 配置就自动接上——`--skip-ccstatusline` /
+   `CC_MONITOR_SKIP_CCSTATUSLINE=1` 跳过
+2. **注册 hooks** 到 Claude Code 的 `settings.json`（`python3 install.py`，见下方手动步骤）
+3. **安装 Web UI 依赖**（`cd webui && npm install`，没装 npm 就跳过、只影响 Web UI）
+4. **检测系统层探针**能不能用：Linux 看有没有装 `bpftrace`，macOS 不用装任何东西（用系统
+   自带 `nettop`）——只是检测和提示，没装 bpftrace 不会中断安装
+5. **GeoIP 数据库**（可选，网络流量页归属地用）：默认下载 DB-IP Lite 到
+   `~/.cc-monitor/dbip-city.mmdb`——`--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` 跳过
+
+装完用 `./start.sh` 一键启动 Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，
+往下看手动步骤。
 
 有两种装法，效果一样，选一种就行：
 
