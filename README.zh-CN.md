@@ -190,7 +190,7 @@ CC-Monitor 是双层监测架构：
 
 - **应用层（Claude Code Hooks）**：注册 `PreToolUse`/`PostToolUse` hook，拿到每次工具调用的
   语义信息（工具名、命令、文件路径），按规则判定放行/拦截/需要确认。这是主力，成本低、覆盖面广。
-- **系统层（eBPF 探针，Linux）**：`CC-Monitor-probe` 用 `bpftrace` 独立于 Claude Code 之外，直接在
+- **系统层（Linux 用 eBPF，macOS 用 nettop）**：`CC-Monitor-probe` 用 `bpftrace` 独立于 Claude Code 之外，直接在
   内核层跟踪 `claude` 进程派生出的整棵子孙进程树的 `execve`/`connect`，交叉验证应用层 hooks
   有没有被绕过或篡改——这是第二道防线，即使 hooks 配置被破坏也能兜底发现异常。
   - **macOS**：同一个 `CC-Monitor-probe` 命令自动切到 `cc_monitor/probe_darwin.py`——用系统
@@ -408,7 +408,7 @@ sudo ./bin/CC-Monitor-probe
 - [x] Bash 命令语法高亮（命令名/参数/字符串/变量/管道重定向分色）
 - [x] 终端确认（`/dev/tty` 交互）+ 桌面通知（`notify-send`/`osascript`）
 - [x] 安装脚本：安全合并 hooks 到 `settings.json`（全局/项目/自定义路径三种模式），不覆盖已有配置
-- [x] 系统层探针（`CC-Monitor-probe`，仅 Linux）：eBPF 跟踪 Claude Code 进程树的 `execve`/`connect`
+- [x] 系统层探针（`CC-Monitor-probe`，Linux 用 eBPF）：跟踪 Claude Code 进程树的 `execve`/`connect`（macOS 上只覆盖网络部分，用 nettop，见下方）
 - [x] 绕过检测：探针观测到的命令与 hook 记录模糊比对（进程树 + 时间窗口 + 去引号子串匹配），标记 `hook_bypass_suspected`
 - [x] 网络层可视化：eBPF 直接抓 `connect()` 目标 IP:port，域名靠 `uprobe:libc:getaddrinfo`
       在应用层解析域名的那一刻记下来（反向 DNS 兜底），不用 MITM 代理
@@ -419,6 +419,9 @@ sudo ./bin/CC-Monitor-probe
       带 Session ID（前面带文件夹名）、文件夹路径、时间戳
 - [x] AI 审批台支持 `action: "notify"` 规则类型（Claude Code 澄清性问题，如 `AskUserQuestion`）
 - [x] AI 审批台历史记录：长期保存的已处理请求列表，notify 类记录额外存下用户实际的终端回答
+- [x] AI 审批台接管 Claude Code 原生 `PermissionRequest` 确认框：没命中规则表、但 Claude
+      Code 自己要弹 "Do you want to proceed?" 的操作也会同步到网页（`kind='permission'`），
+      90 秒无人应答或终端敲回车就静默交还原生确认框，不会因为装了 CC-Monitor 就把安全网撤了
 - [x] Anthropic 账号资料（姓名/邮箱/组织/套餐/额度档位），读本地 `~/.claude.json`，零网络请求
 - [x] 状态信息页每会话 `Σ Total / Cached` token 汇总统计（跟 ccstatusline 同一口径）
 - [x] 状态信息页新增"模型使用统计"表格、"额度明细"表格、上下文窗口使用率、Context
@@ -445,7 +448,6 @@ sudo ./bin/CC-Monitor-probe
 - [ ] **`CC-Monitor-probe` 常驻化**：目前需要手动 `sudo` 启动，没有 systemd unit / 开机自启，需要用户自己决定要不要装成常驻服务
 - [ ] **审计日志防篡改**：日志和被监测进程同一用户权限，理论上可被同用户进程删除/篡改；异地转发、只追加权限（`chattr +a`）等加固手段还没做
 - [ ] **多机日志集中上报 / 规则库社区化**（Phase 3）：目前是纯本地单机工具
-- [ ] **高危操作的图形化确认弹窗**：目前只有终端 tty 文本确认，没有可点击的 GUI 允许/拒绝对话框
 - [ ] **规则语义化判断**：目前纯正则匹配，没有轻量模型辅助判断命令意图（比如识别用自然语言描述的等价危险操作）
 - [ ] **打包为单文件可执行程序**：目前依赖系统 Python 环境直接跑，没有用 PyInstaller/Nuitka 之类打包
 

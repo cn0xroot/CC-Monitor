@@ -221,16 +221,16 @@ CC-Monitor has a two-layer architecture:
 - **Application layer (Claude Code Hooks)**: registers `PreToolUse`/`PostToolUse` hooks to get
   semantic info on every tool call (tool name, command, file path), then allows/blocks/asks based
   on configurable rules. This is the primary layer — cheap and broad coverage.
-- **System layer (eBPF probe, Linux only)**: `CC-Monitor-probe` uses `bpftrace` to independently trace,
-  at the kernel level, every `execve`/`connect` made by the entire process subtree spawned by the
-  `claude` process — completely independent of Claude Code's own cooperation. This is the second
-  line of defense: it can still catch anomalies even if the hooks config itself gets tampered with
+- **System layer (eBPF on Linux, nettop on macOS)**: `CC-Monitor-probe` uses `bpftrace` to
+  independently trace, at the kernel level, every `execve`/`connect` made by the entire process
+  subtree spawned by the `claude` process — completely independent of Claude Code's own
+  cooperation. This is the second line of defense: it can still catch anomalies even if the
+  hooks config itself gets tampered with or bypassed.
   - **macOS**: the same `CC-Monitor-probe` command switches to `cc_monitor/probe_darwin.py`, which
     samples the claude process tree's connections and byte counts every 2s with the built-in
     `nettop` — **no root needed**. Network only (traffic page / world map / AI trajectory): there
     is no `execve` observation (the bypass detection behind `CC-Monitor verify` stays Linux-only)
     and hostnames fall back to reverse DNS.
-  or bypassed.
 
 Capabilities:
 
@@ -475,7 +475,7 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Bash command syntax highlighting (command name / flags / strings / variables / pipes & redirects, each colored separately)
 - [x] Terminal confirmation (`/dev/tty` interaction) + desktop notification (`notify-send`/`osascript`)
 - [x] Installer: safely merges hooks into `settings.json` (global / project / custom-path modes) without touching existing config
-- [x] System-layer probe (`CC-Monitor-probe`, Linux only): eBPF tracing of the Claude Code process tree's `execve`/`connect`
+- [x] System-layer probe (`CC-Monitor-probe`, eBPF on Linux): tracing of the Claude Code process tree's `execve`/`connect` (network-only coverage on macOS via nettop, see below)
 - [x] Bypass detection: fuzzy-matches what the probe observed against hook records (process tree + time window + quote-stripped substring match), flagging `hook_bypass_suspected`
 - [x] Network visibility: eBPF captures `connect()` destination IP:port; domain names come from
       a `uprobe:libc:getaddrinfo` that records the hostname the moment the application resolves
@@ -485,6 +485,11 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Claude Code identity check: cross-platform (`ps`) detection of which OS user every `claude` process runs as, flagged when it differs from the Web UI's own user
 - [x] Four Home stat cards — tool calls, MCP calls, Skill calls, AI trajectory — all with click-through drilldowns showing Session ID/folder/timestamp
 - [x] AI Approvals supports an `action: "notify"` rule type (Claude Code clarifying questions, e.g. `AskUserQuestion`) and keeps a long-term history table, capturing the user's actual terminal answer for `notify`-kind records
+- [x] AI Approvals also covers Claude Code's native `PermissionRequest` dialog: operations that
+      matched no rule but that Claude Code's own permission system wants to ask "Do you want to
+      proceed?" about now show up on the page too (`kind='permission'`); a 90s timeout or
+      pressing Enter at the terminal silently hands the request back to the native dialog —
+      installing CC-Monitor never removes that safety net
 - [x] Anthropic account profile (name/email/organization/plan/rate-limit tier) read from the local `~/.claude.json`, zero network calls
 - [x] Per-session `Σ Total / Cached` token summary on the Status page (same accounting as ccstatusline)
 - [x] Model Usage table, Limits table, context window usage %, and Context compaction count (real detection, not an estimate) on the Status page
@@ -517,8 +522,6 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
       forwarding, append-only permissions via `chattr +a`, etc.) is not done yet
 - [ ] **Cross-machine log aggregation / a shared rule-set community** (Phase 3): currently a
       purely local, single-machine tool
-- [ ] **A graphical confirmation dialog** for high-risk operations: currently only a text-based
-      tty confirmation, no clickable GUI allow/deny dialog
 - [ ] **Semantic rule matching**: currently pure regex; no lightweight-model-assisted intent
       detection (e.g. recognizing an equivalently dangerous operation phrased differently)
 - [ ] **Packaging as a single-file executable**: currently runs directly against the system Python
