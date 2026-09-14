@@ -41,7 +41,7 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     clickable for drilldown detail.
   - **File operation stats**: read/write/edit/delete counts, each clickable for detail.
   - **Install operation stats**: grouped by which install-type rule matched — pip / system
-    package manager (apt/yum/dnf/pacman) / npm global install / other — click through for the
+    package manager (apt/yum/dnf/pacman/brew/port) / npm global install / other — click through for the
     exact install commands.
   - **GitHub operation stats**: git push / git clone / git commit / git pull-fetch / gh CLI
     (PR/Issue/API…) / other git operations, six cards, classified from the Bash command text

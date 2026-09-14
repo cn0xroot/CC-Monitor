@@ -30,6 +30,13 @@
   失败只提示不中断。`--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` 跳过，`CC_MONITOR_GEOIP_URL`
   换镜像。
 
+- **`system_package_install` 规则覆盖 macOS 的包管理器**：`brew install/reinstall/uninstall/
+  remove/rm/upgrade/tap/untap/bundle`（含 `brew cask …`）和 MacPorts 的 `port [-flags]
+  install/uninstall/upgrade/activate/deactivate/selfupdate`（`port installed`、`lsof -i :port`
+  这类不会误命中）。首页"软件安装统计"的"系统包管理器"卡片标签同步。顺手修了 `pacman
+  -Syu` 不命中的问题（原正则要求 S/R 是最后一个字母）。已有用户的 `~/.cc-monitor/rules.json`
+  是首次运行时拷的副本，不会自动更新——想要新规则的话删掉它让它重新生成，或者手动改。
+
 ### 修复
 - **桌面版（Electron）在 macOS 上 AI 审批台完全没有提醒**：页面里走的是浏览器 Notification
   API，Electron 渲染进程里 `Notification.permission` 永远是 "granted"、`new Notification()`

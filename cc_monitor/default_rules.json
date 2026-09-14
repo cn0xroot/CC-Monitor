@@ -133,7 +133,7 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-[A-Za-z]*[SR]\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b"
+    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-(?-i:[A-Za-z]*[SRU][A-Za-z]*)\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b|\\bbrew\\s+(cask\\s+)?(install|reinstall|uninstall|remove|rm|upgrade|tap|untap|bundle)\\b|\\bport\\s+(-[A-Za-z]+\\s+)*(install|uninstall|upgrade|activate|deactivate|selfupdate)\\b"
   },
   {
     "id": "sudo_usage",

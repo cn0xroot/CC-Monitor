@@ -36,6 +36,15 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   download warns without aborting. `--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` skips it,
   `CC_MONITOR_GEOIP_URL` points at a mirror.
 
+- **`system_package_install` rule now covers macOS package managers**: `brew
+  install/reinstall/uninstall/remove/rm/upgrade/tap/untap/bundle` (incl. `brew cask …`) and
+  MacPorts `port [-flags] install/uninstall/upgrade/activate/deactivate/selfupdate` (things
+  like `port installed` or `lsof -i :port` don't match). The "system package manager" card on
+  the home page is relabelled accordingly. Also fixed `pacman -Syu` not matching (the old
+  regex required S/R to be the last flag letter). Note that an existing
+  `~/.cc-monitor/rules.json` is a copy made on first run and is not updated automatically —
+  delete it to regenerate, or edit it by hand.
+
 ### Fixed
 - **Desktop app (Electron) on macOS gave no alert at all for AI Approvals**: the page used
   the browser Notification API; in an Electron renderer `Notification.permission` is always

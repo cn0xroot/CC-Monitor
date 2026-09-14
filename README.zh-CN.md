@@ -34,7 +34,7 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     连接明细）。"会话总数"/"审计事件总数"/"已拦截的高危操作"/"工具调用"/"MCP 调用"/
     "AI 轨迹"这几张卡片都能点开查看详情。
   - **文件操作统计**：读/写/编辑/删除次数，各自可以点开看具体是哪些操作。
-  - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman）
+  - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman/brew/port）
     / npm 全局安装 / 其它，点开看具体是哪些安装指令。
   - **GitHub 操作统计**：git push / git clone / git commit / git pull-fetch / gh CLI
     （PR/Issue/API…）/ 其它 git 操作六张卡片，按 Bash 命令文本分类识别（大部分
