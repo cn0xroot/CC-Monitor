@@ -121,6 +121,12 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
       this.pointBuf = gl.createBuffer();
       this.magBuf = gl.createBuffer();
       this.pointCount = 0;
+      // 推断出来的目标（命令文本解析+DNS，见 audit.js 的 commandNetworkHosts()）跟系统层
+      // 探针实测到的真实流量分开一套缓冲区/一次 drawArrays，用不同颜色画——不能跟真实
+      // 流量用同一种橙色，那样地图上完全看不出哪些点是"推断的、不保证真的连通"。
+      this.pointBufInferred = gl.createBuffer();
+      this.magBufInferred = gl.createBuffer();
+      this.pointCountInferred = 0;
 
       this._resize();
       window.addEventListener("resize", () => this._resize());
@@ -156,23 +162,34 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
       }
     }
 
-    // pairs: [{lat, lon, bytes}], 按 bytes 归一化成 0..1 的亮度/大小
+    // pairs: [{lat, lon, bytes, inferred}], 按 bytes 归一化成 0..1 的亮度/大小；
+    // inferred:true 的点单独一套缓冲区，好在 render() 里用另一种颜色画。
     setData(pairs) {
       if (!this.ok) return;
       const maxBytes = Math.max(1, ...pairs.map((p) => p.bytes || 0));
-      const verts = [];
-      const mags = [];
-      for (const p of pairs) {
-        if (typeof p.lat !== "number" || typeof p.lon !== "number") continue;
-        verts.push(p.lat, p.lon);
-        mags.push(Math.min(1, Math.log(1 + (p.bytes || 0)) / Math.log(1 + maxBytes)));
-      }
-      this.pointCount = mags.length;
+      const build = (list) => {
+        const verts = [];
+        const mags = [];
+        for (const p of list) {
+          if (typeof p.lat !== "number" || typeof p.lon !== "number") continue;
+          verts.push(p.lat, p.lon);
+          mags.push(Math.min(1, Math.log(1 + (p.bytes || 0)) / Math.log(1 + maxBytes)));
+        }
+        return { verts, mags };
+      };
+      const real = build(pairs.filter((p) => !p.inferred));
+      const inferred = build(pairs.filter((p) => p.inferred));
+      this.pointCount = real.mags.length;
+      this.pointCountInferred = inferred.mags.length;
       const gl = this.gl;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(real.verts), gl.DYNAMIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.magBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mags), gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(real.mags), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBufInferred);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(inferred.verts), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.magBufInferred);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(inferred.mags), gl.DYNAMIC_DRAW);
       this.render();
     }
 
@@ -207,6 +224,23 @@ void main() { outColor = vec4(u_col, u_alpha); }`;
         gl.uniform1f(gl.getUniformLocation(this.pointProg, "u_size"), 26 * (window.devicePixelRatio || 1));
         gl.uniform3f(gl.getUniformLocation(this.pointProg, "u_col"), 0.95, 0.55, 0.25);
         gl.drawArrays(gl.POINTS, 0, this.pointCount);
+      }
+
+      // 推断出来的目标（命令文本解析，不是探针实测）单独一次 drawArrays，颜色换成
+      // 跟表格里 .dd-badge-inferred 徽章同一个琥珀色系，视觉上跟真实流量的橙色区分开，
+      // 不会让人误以为地图上每个点都是探针确认过的连接。
+      if (this.pointCountInferred > 0) {
+        gl.useProgram(this.pointProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBufInferred);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.magBufInferred);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(gl.getUniformLocation(this.pointProg, "u_scale"), scale[0], scale[1]);
+        gl.uniform1f(gl.getUniformLocation(this.pointProg, "u_size"), 26 * (window.devicePixelRatio || 1));
+        gl.uniform3f(gl.getUniformLocation(this.pointProg, "u_col"), 1.0, 0.83, 0.47);
+        gl.drawArrays(gl.POINTS, 0, this.pointCountInferred);
       }
     }
   }

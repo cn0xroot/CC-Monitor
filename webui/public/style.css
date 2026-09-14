@@ -738,6 +738,16 @@ html, body {
 /* 命令文本推断出来的网络目标（wget/curl/git clone/ssh/scp…），不是系统层探针实测
    到的真实连接——跟真实流量数据混在同一张表/同一张地图里，靠这个小标签区分，
    不能让人误以为是探针确认过的流量。 */
+.map-legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.map-legend-dot-real { background: rgb(242, 140, 64); }
+.map-legend-dot-inferred { background: rgb(255, 212, 120); }
 .dd-badge-inferred {
   display: inline-block;
   font-size: 0.7143rem;
