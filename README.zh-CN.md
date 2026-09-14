@@ -9,6 +9,20 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 依赖了哪些第三方模块、你的数据到底存在哪——见
 [SECURITY.md](./SECURITY.md)（[English](./SECURITY.en.md)）。
 
+## 截图
+
+| 审计日志 |
+|---|
+| ![审计日志](./pic/audit-log-zh.png) |
+
+| 事件类型明细 | 被拦截的高危操作 |
+|---|---|
+| ![事件类型明细](./pic/home-events-zh.png) | ![被拦截的高危操作](./pic/home-blocked-zh.png) |
+
+| 首页概览 | 会话列表详情 |
+|---|---|
+| ![首页](./pic/home-zh.png) | ![会话列表](./pic/home-sessions-zh.png) |
+
 ## 快速安装
 
 ```bash
@@ -240,20 +254,6 @@ npm run dist:mac     # universal dmg（Intel + Apple Silicon 通用）
 新指令集的支持有 bug，不建议把这个版本号往回调。目前只在 Linux x64 上完整验证过
 "打包出来的桌面版能正常启动、内嵌服务正常监听"这条链路；macOS 和 Linux ARM64 的
 打包产物还没有做过端到端验证。
-
-## 截图
-
-| 审计日志 |
-|---|
-| ![审计日志](./pic/audit-log-zh.png) |
-
-| 事件类型明细 | 被拦截的高危操作 |
-|---|---|
-| ![事件类型明细](./pic/home-events-zh.png) | ![被拦截的高危操作](./pic/home-blocked-zh.png) |
-
-| 首页概览 | 会话列表详情 |
-|---|---|
-| ![首页](./pic/home-zh.png) | ![会话列表](./pic/home-sessions-zh.png) |
 
 ## 功能介绍
 

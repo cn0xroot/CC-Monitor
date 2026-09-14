@@ -11,6 +11,20 @@ Everything is audit-logged. The technical design doc is available in
 carries, what third-party modules it depends on, and where your data actually goes, see
 [SECURITY.md](./SECURITY.en.md) ([Chinese](./SECURITY.md)).
 
+## Screenshots
+
+| Audit log |
+|---|
+| ![Audit log](./pic/audit-log-en.png) |
+
+| Event type breakdown | Blocked high-risk operations |
+|---|---|
+| ![Event type breakdown](./pic/home-events-en.png) | ![Blocked operations](./pic/home-blocked-en.png) |
+
+| Home overview | Session list drilldown |
+|---|---|
+| ![Home](./pic/home-en.png) | ![Session list](./pic/home-sessions-en.png) |
+
 ## Quick Install
 
 ```bash
@@ -284,20 +298,6 @@ compatibility bug in that older Electron release, so don't roll the version back
 the "packaged app starts and its embedded server listens correctly" path has been verified
 end-to-end on Linux x64; the macOS and Linux ARM64 builds haven't been validated end-to-end
 yet.
-
-## Screenshots
-
-| Audit log |
-|---|
-| ![Audit log](./pic/audit-log-en.png) |
-
-| Event type breakdown | Blocked high-risk operations |
-|---|---|
-| ![Event type breakdown](./pic/home-events-en.png) | ![Blocked operations](./pic/home-blocked-en.png) |
-
-| Home overview | Session list drilldown |
-|---|---|
-| ![Home](./pic/home-en.png) | ![Session list](./pic/home-sessions-en.png) |
 
 ## Overview
 
