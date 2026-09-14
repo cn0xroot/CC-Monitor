@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- CC-Monitor logo: an eye ("watching" what Claude Code does) with an
+       abstract four-point spark as the pupil, in Claude's signature warm
+       terracotta/orange -- an original mark, not Anthropic's asterisk. -->
+  <defs>
+    <linearGradient id="spark" x1="176" y1="146" x2="366" y2="366" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9d43"/>
+      <stop offset="1" stop-color="#ec5615"/>
+    </linearGradient>
+  </defs>
+  <path d="M 46 256 Q 256 76 466 256 Q 256 436 46 256 Z"
+        fill="none" stroke="#201f3a" stroke-width="26" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="86" fill="none" stroke="#4757e8" stroke-width="10" opacity="0.35"/>
+  <path d="M 256 150 Q 269 243 362 256 Q 269 269 256 362 Q 243 269 150 256 Q 243 243 256 150 Z"
+        fill="url(#spark)"/>
+</svg>

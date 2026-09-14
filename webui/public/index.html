@@ -4,13 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CC-Monitor</title>
+<link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <div class="brand" data-i18n="brand.title">CC-Monitor</div>
+    <div class="brand">
+      <svg class="brand-logo" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="brand-logo-spark" x1="176" y1="146" x2="366" y2="366" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#ff9d43"/>
+            <stop offset="1" stop-color="#ec5615"/>
+          </linearGradient>
+        </defs>
+        <path d="M 46 256 Q 256 76 466 256 Q 256 436 46 256 Z" fill="none" stroke="currentColor" stroke-width="30" stroke-linejoin="round"/>
+        <circle cx="256" cy="256" r="86" fill="none" stroke="var(--accent)" stroke-width="12" opacity="0.4"/>
+        <path d="M 256 150 Q 269 243 362 256 Q 269 269 256 362 Q 243 269 150 256 Q 243 243 256 150 Z" fill="url(#brand-logo-spark)"/>
+      </svg>
+      <span data-i18n="brand.title">CC-Monitor</span>
+    </div>
     <nav id="tabs">
       <button class="tab-btn active" data-tab="home" data-i18n="nav.home">首页</button>
       <button class="tab-btn" data-tab="status" data-i18n="nav.status">状态信息</button>

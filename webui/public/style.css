@@ -222,7 +222,8 @@ html, body {
   background: var(--bg-panel);
   flex: 0 0 auto;
 }
-.brand { font-weight: 700; font-size: 1.0714rem; flex: 0 0 auto; }
+.brand { font-weight: 700; font-size: 1.0714rem; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; color: var(--text); }
+.brand-logo { width: 24px; height: 24px; flex: 0 0 auto; color: var(--text); }
 
 #tabs { display: flex; gap: 4px; flex: 1 1 auto; flex-wrap: wrap; }
 .tab-btn {

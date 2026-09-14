@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Same mark as logo.svg, recolored for dark backgrounds (GitHub dark mode). -->
+  <defs>
+    <linearGradient id="spark" x1="176" y1="146" x2="366" y2="366" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9d43"/>
+      <stop offset="1" stop-color="#ec5615"/>
+    </linearGradient>
+  </defs>
+  <path d="M 46 256 Q 256 76 466 256 Q 256 436 46 256 Z"
+        fill="none" stroke="#d8dce6" stroke-width="26" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="86" fill="none" stroke="#4f8cff" stroke-width="10" opacity="0.4"/>
+  <path d="M 256 150 Q 269 243 362 256 Q 269 269 256 362 Q 243 269 150 256 Q 243 243 256 150 Z"
+        fill="url(#spark)"/>
+</svg>
