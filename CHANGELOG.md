@@ -8,6 +8,30 @@
 ## [1.6.0] - 2026-09-14
 
 ### 新增
+- **首页新增"SSH 操作统计"和"下载行为统计"**：SSH 操作拆成 ssh（远程登录/执行）/
+  scp（文件复制）/ sftp（文件传输）/ 密钥管理（`ssh-keygen`/`ssh-copy-id`/`ssh-add`/
+  `ssh-agent`）/ 其它（`autossh`/`sshpass`）五张卡片；下载行为拆成 wget / curl（只在
+  带 `-o`/`-O`/`--output` 落盘参数时才算，裸 curl 调 API 不算）/ aria2 / 其它
+  （`axel`/`lftp`/`ftp`/`http`）四张卡片。识别方式跟已有的 GitHub 操作统计
+  （`classifyGithubOp`）完全一致：按 `;`/`&`/`|`/换行拆成子命令，只看子命令开头，
+  不对整条命令文本做子串匹配。新增 `webui/lib/audit.js` 的 `cc_ssh_op`/
+  `cc_download_op` SQL 自定义函数，`/api/drilldown/ssh-op/:type`、
+  `/api/drilldown/download-op/:type` 接口。
+- **"AI 轨迹"卡片和世界地图新增命令文本推断的网络目标**：之前"AI 轨迹"完全依赖
+  系统层探针（eBPF/nettop）的实测数据，很多人从没手动启动过探针（需要额外
+  `sudo ./bin/CC-Monitor-probe`），即使 Claude 明明执行过一堆 wget/curl/git clone/
+  ssh/scp 这类联网命令，这张卡片和世界地图也一直是空的。现在会从这些命令的文本里
+  提取目标主机名（`extractCommandHosts()`：URL 里的 host、`user@host` 形式、
+  `host:path` 形式，特意不认裸主机名——第一版曾经把 `curl -o out.tar.gz ...` 的
+  输出文件名、`scp file.txt user@host:/path` 的本地源文件名都当成了"主机名"，因为
+  这些字符串本身也是带点的、后面跟着空白，形状上没法用纯正则跟真主机名区分开，
+  收紧成"必须有 `@` 前缀或紧跟冒号"两种明确写法后才不再误判），惰性 DNS 解析
+  （`dnscache.js`，带缓存和超时，不在 hook 里做——避免拖慢每次 Bash 调用）+ 查
+  GeoIP，跟探针实测数据合并进同一套 `network.js` 的 `listTraffic()`/`summary()`/
+  `geoPairs()` 管线，用 `inferred:true` 标记，前端渲染成"推断"徽章（不会冒充成
+  探针确认过的真实流量——命令有没有真的连通、字节数多少都无法得知）。已实测验证
+  完整链路：真实 DNS 解析 github.com/example.com 到正确 IP、GeoIP 查到 Toronto/
+  Singapore、"AI 轨迹"下钻里 Session/文件夹信息正确关联到发起命令的会话。
 - **首页新增"截屏审计"卡片**：Claude Code 没有内置"截图"工具，识别靠三条独立信号——
   ① Bash 命令调用截图类 CLI 工具（`scrot`/`gnome-screenshot`/`import`/`spectacle`/
   `flameshot`/`maim`/`grim`/`xwd`、macOS 的 `screencapture`，以及 Wayland 下常见的

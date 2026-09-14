@@ -735,6 +735,20 @@ html, body {
 .geo-acc-badge.geo-acc-city { background: rgba(80, 200, 120, 0.15); color: #6fe0a0; border: 1px solid rgba(80, 200, 120, 0.35); }
 .geo-acc-badge.geo-acc-country { background: rgba(255, 200, 80, 0.15); color: #ffd479; border: 1px solid rgba(255, 200, 80, 0.35); }
 .geo-acc-badge.geo-acc-none { background: rgba(150, 150, 150, 0.15); color: #aaa; border: 1px solid rgba(150, 150, 150, 0.35); }
+/* 命令文本推断出来的网络目标（wget/curl/git clone/ssh/scp…），不是系统层探针实测
+   到的真实连接——跟真实流量数据混在同一张表/同一张地图里，靠这个小标签区分，
+   不能让人误以为是探针确认过的流量。 */
+.dd-badge-inferred {
+  display: inline-block;
+  font-size: 0.7143rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 200, 80, 0.15);
+  color: #ffd479;
+  border: 1px solid rgba(255, 200, 80, 0.35);
+  vertical-align: middle;
+  cursor: help;
+}
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;

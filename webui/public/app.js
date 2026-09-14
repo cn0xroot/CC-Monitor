@@ -887,6 +887,19 @@ async function refreshOverview() {
     document.getElementById("stat-github-ghCli").textContent = s.githubOps.ghCli;
     document.getElementById("stat-github-otherGit").textContent = s.githubOps.otherGit;
   }
+  if (s.sshOps) {
+    document.getElementById("stat-ssh-ssh").textContent = s.sshOps.ssh;
+    document.getElementById("stat-ssh-scp").textContent = s.sshOps.scp;
+    document.getElementById("stat-ssh-sftp").textContent = s.sshOps.sftp;
+    document.getElementById("stat-ssh-keyManagement").textContent = s.sshOps.keyManagement;
+    document.getElementById("stat-ssh-other").textContent = s.sshOps.other;
+  }
+  if (s.downloadOps) {
+    document.getElementById("stat-download-wget").textContent = s.downloadOps.wget;
+    document.getElementById("stat-download-curl").textContent = s.downloadOps.curl;
+    document.getElementById("stat-download-aria2").textContent = s.downloadOps.aria2;
+    document.getElementById("stat-download-other").textContent = s.downloadOps.other;
+  }
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -1691,7 +1704,8 @@ async function openDrilldown(kind) {
         <tbody>
           ${rows
             .map((r) => {
-              const target = r.host ? `${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}:${r.port}</span>` : `<span class="dd-mono">${escapeHtml(r.ip)}:${r.port}</span>`;
+              const badge = r.inferred ? `<span class="dd-badge-inferred" title="${t("network.inferredHint")}">${t("network.inferredBadge")}</span> ` : "";
+              const target = r.host ? `${badge}${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}${r.port ? ":" + r.port : ""}</span>` : `${badge}<span class="dd-mono">${escapeHtml(r.ip)}${r.port ? ":" + r.port : ""}</span>`;
               const countryLabel = r.geo ? r.geo.country || r.geo.countryCode : null;
               const loc = r.geo ? escapeHtml([r.geo.city, countryLabel].filter(Boolean).join(", ") || "-") : `<span class="hint">${t("network.noLocation")}</span>`;
               return `<tr>
@@ -1712,21 +1726,26 @@ async function openDrilldown(kind) {
           <th>${t("drilldown.col.time")}</th>
           <th>${t("drilldown.col.process")}</th>
           <th>${t("network.col.target")}</th>
+          <th>${t("drilldown.sessions.sessionId")}</th>
           <th>PID</th>
         </tr></thead>
         <tbody>
           ${
             (connectEvents || [])
               .map((e) => {
-                const target = e.host ? `${escapeHtml(e.host)}<br><span class="dd-mono hint">${escapeHtml(e.ip || "")}:${e.port ?? "-"}</span>` : `<span class="dd-mono">${escapeHtml(e.ip || "-")}:${e.port ?? "-"}</span>`;
+                const badge = e.inferred ? `<span class="dd-badge-inferred" title="${t("network.inferredHint")}">${t("network.inferredBadge")}</span> ` : "";
+                const target = e.host ? `${badge}${escapeHtml(e.host)}<br><span class="dd-mono hint">${escapeHtml(e.ip || "")}:${e.port ?? "-"}</span>` : `${badge}<span class="dd-mono">${escapeHtml(e.ip || "-")}:${e.port ?? "-"}</span>`;
+                const proc = `<span class="dd-mono">${escapeHtml((e.comm || "-").slice(0, 60))}</span>`;
+                const session = e.inferred && e.sessionId ? `${escapeHtml(folderName(e.cwd))} · ${escapeHtml(e.sessionId.slice(0, 8))}…` : `<span class="hint">-</span>`;
                 return `<tr>
                 <td class="dd-mono">${escapeHtml((e.ts || "").slice(0, 19))}</td>
-                <td class="dd-mono">${escapeHtml(e.comm || "-")}</td>
+                <td>${proc}</td>
                 <td>${target}</td>
+                <td>${session}</td>
                 <td class="dd-mono">${e.pid ?? "-"}</td>
               </tr>`;
               })
-              .join("") || `<tr><td colspan="4">${t("drilldown.empty")}</td></tr>`
+              .join("") || `<tr><td colspan="5">${t("drilldown.empty")}</td></tr>`
           }
         </tbody>
       </table>`;
@@ -1787,11 +1806,20 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind.startsWith("file-op-") || kind.startsWith("install-op-") || kind.startsWith("github-op-")) {
+  if (kind.startsWith("file-op-") || kind.startsWith("install-op-") || kind.startsWith("github-op-") || kind.startsWith("ssh-op-") || kind.startsWith("download-op-")) {
     // 文件操作（读/写/编辑/删除）、软件安装（pip/系统包/npm/其它）、GitHub 操作
-    // （push/clone/commit/pull-fetch/gh CLI/其它 git）这三组下钻详情数据形状、
+    // （push/clone/commit/pull-fetch/gh CLI/其它 git）、SSH 操作（ssh/scp/sftp/
+    // 密钥管理/其它）、下载行为（wget/curl/aria2/其它）这五组下钻详情数据形状、
     // 渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
-    const apiKind = kind.startsWith("install-op-") ? "install-op" : kind.startsWith("github-op-") ? "github-op" : "file-op";
+    const apiKind = kind.startsWith("install-op-")
+      ? "install-op"
+      : kind.startsWith("github-op-")
+        ? "github-op"
+        : kind.startsWith("ssh-op-")
+          ? "ssh-op"
+          : kind.startsWith("download-op-")
+            ? "download-op"
+            : "file-op";
     const prefix = apiKind + "-";
     const opType = kind.slice(prefix.length);
     const opLabelKey =
@@ -1799,7 +1827,11 @@ async function openDrilldown(kind) {
         ? { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" }[opType]
         : apiKind === "github-op"
           ? { push: "home.githubOps.push", clone: "home.githubOps.clone", commit: "home.githubOps.commit", pullFetch: "home.githubOps.pullFetch", ghCli: "home.githubOps.ghCli", otherGit: "home.githubOps.otherGit" }[opType]
-          : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
+          : apiKind === "ssh-op"
+            ? { ssh: "home.sshOps.ssh", scp: "home.sshOps.scp", sftp: "home.sshOps.sftp", keyManagement: "home.sshOps.keyManagement", other: "home.sshOps.other" }[opType]
+            : apiKind === "download-op"
+              ? { wget: "home.downloadOps.wget", curl: "home.downloadOps.curl", aria2: "home.downloadOps.aria2", other: "home.downloadOps.other" }[opType]
+              : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
     const suffixKey = apiKind === "install-op" ? "drilldown.installOp.suffix" : apiKind === "github-op" ? "drilldown.githubOp.suffix" : "drilldown.fileOp.suffix";
     title.textContent = t(opLabelKey) + " — " + t(suffixKey);
     const rows = await api(`/api/drilldown/${apiKind}/${opType}`);
@@ -2370,7 +2402,8 @@ async function refreshNetworkTraffic() {
         <tbody>
           ${rows
             .map((r) => {
-              const target = r.host ? `${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}:${r.port}</span>` : `<span class="dd-mono">${escapeHtml(r.ip)}:${r.port}</span>`;
+              const badge = r.inferred ? `<span class="dd-badge-inferred" title="${t("network.inferredHint")}">${t("network.inferredBadge")}</span> ` : "";
+              const target = r.host ? `${badge}${escapeHtml(r.host)}<br><span class="dd-mono hint">${escapeHtml(r.ip)}${r.port ? ":" + r.port : ""}</span>` : `${badge}<span class="dd-mono">${escapeHtml(r.ip)}${r.port ? ":" + r.port : ""}</span>`;
               const countryLabel = r.geo ? r.geo.country || r.geo.countryCode : null;
               const loc = r.geo ? escapeHtml([r.geo.city, countryLabel].filter(Boolean).join(", ") || "-") : `<span class="hint">${t("network.noLocation")}</span>`;
               return `<tr>

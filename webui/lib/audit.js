@@ -68,6 +68,149 @@ function githubOpType(detailJson) {
   }
 }
 
+// SSH 相关操作分类——跟 classifyGithubOp 完全一样的思路：按 ; & | 换行拆成子命令，
+// 只看子命令开头（`\s|$` 而不是 `\b`，是为了不把 ssh-keygen/ssh-copy-id/ssh-add/
+// ssh-agent 这些名字里带连字符的独立命令误判成 "ssh" 本身——单纯用 \b 的话
+// "ssh-keygen" 里 "ssh" 后面紧跟的 "-" 也算一次词边界，会被 /^ssh\b/ 误命中）。
+const SSH_OP_ORDER = ["ssh", "scp", "sftp", "keyManagement", "other"];
+function classifySshOp(cmd) {
+  if (!cmd) return null;
+  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^ssh(\s|$)/.test(seg)) found.add("ssh");
+    else if (/^scp(\s|$)/.test(seg)) found.add("scp");
+    else if (/^sftp(\s|$)/.test(seg)) found.add("sftp");
+    else if (/^(ssh-keygen|ssh-copy-id|ssh-add|ssh-agent)(\s|$)/.test(seg)) found.add("keyManagement");
+    else if (/^(autossh|sshpass|ssh-askpass)(\s|$)/.test(seg)) found.add("other");
+  }
+  for (const kind of SSH_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function sshOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifySshOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 下载行为分类——跟 classifyGithubOp/classifySshOp 一样按子命令开头识别，注意不要
+// 跟其它已经单独统计过的分类重叠（git clone 算 GitHub 操作、pip/npm/系统包管理器
+// 安装算软件安装统计，这里全部不再重复计数，只看专门的下载类工具）。
+// curl 单独处理：只有带了真正落盘的参数（-o/-O/--output/--remote-name）才算"下载"，
+// 裸 curl（比如 curl https://api.example.com/status）绝大多数是在调 API 看返回内容，
+// 不是在下载文件，全算成下载会把普通的接口调用也算进来，噪音太大。
+const DOWNLOAD_OP_ORDER = ["wget", "curl", "aria2", "other"];
+const CURL_OUTPUT_FLAG_RE = /(^|\s)(-O\b|--remote-name\b|-o\s|--output(\s|=))/;
+function classifyDownloadOp(cmd) {
+  if (!cmd) return null;
+  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^wget2?(\s|$)/.test(seg)) found.add("wget");
+    else if (/^curl(\s|$)/.test(seg) && CURL_OUTPUT_FLAG_RE.test(seg)) found.add("curl");
+    else if (/^aria2c?(\s|$)/.test(seg)) found.add("aria2");
+    else if (/^(axel|lftp|ftp|http|https)(\s|$)/.test(seg)) found.add("other");
+  }
+  for (const kind of DOWNLOAD_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function downloadOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyDownloadOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 从命令文本里抠目标主机名——三种写法都要认，全部要求有明确、低误判风险的语法标记，
+// 不认"看起来像域名的裸单词"：
+//   1. URL 形式：协议://[user@]host[:port]/…（wget/curl/aria2/axel/lftp/http(s)）
+//   2. user@host（ssh/sftp 的典型写法，@ 前缀是强信号，不会跟本地文件名搞混）
+//   3. host:path（scp/rsync 的远程规格，不带 user@ 也行，但一定要紧跟冒号）
+// 特意不认"裸主机名、没有 @ 也没有冒号"这种写法（比如 `ssh myserver`、或者
+// `scp file.txt user@host:/path` 里的本地源文件 file.txt）——第一版曾经用一个更宽的
+// 正则把 `-o out.tar.gz` 的输出文件名、scp 的本地源文件名都当成了"主机名"，因为
+// 这些文件名本身也是带点的字符串、后面跟着空白，形状上跟目标主机没法用纯正则区分。
+// 宁可漏掉内网短名这种真正的边缘情况，也不要把命令里随便一个带点的单词当成主机名。
+const URL_HOST_RE = /\b[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(?:[^\s@/]+@)?([^\s/:?#'"]+)/g;
+const AT_HOST_RE = /@((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}|(?:\d{1,3}\.){3}\d{1,3})/g;
+const COLON_HOST_RE = /(?:^|[\s])((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}|(?:\d{1,3}\.){3}\d{1,3}):(?=[\w~./]|$)/g;
+
+function extractCommandHosts(text) {
+  if (!text) return [];
+  const hosts = new Set();
+  let m;
+  URL_HOST_RE.lastIndex = 0;
+  while ((m = URL_HOST_RE.exec(text))) hosts.add(m[1].toLowerCase());
+  AT_HOST_RE.lastIndex = 0;
+  while ((m = AT_HOST_RE.exec(text))) hosts.add(m[1].toLowerCase());
+  COLON_HOST_RE.lastIndex = 0;
+  while ((m = COLON_HOST_RE.exec(text))) hosts.add(m[1].toLowerCase());
+  return Array.from(hosts);
+}
+
+// 哪些子命令算"发起了网络请求"——比下载行为统计（DOWNLOAD_OP_ORDER）宽一些：那边
+// 特意把不带 -o/-O 的裸 curl 排除在外（避免把纯 API 调用算成"下载"），但对 AI 轨迹
+// 来说，裸 curl 调 API 本身也是一次真实的网络请求，理应体现在轨迹里，不该套用下载
+// 统计那条更窄的口径。git 只算 clone/pull/fetch/push 这几个会真的发起网络连接的
+// 子命令，commit 是纯本地操作不算。ssh 系列里 keyManagement（ssh-keygen 等）是本地
+// 操作，同样不算。
+function isNetworkTouchingSegment(seg) {
+  return (
+    /^(wget2?|curl|aria2c?|axel|lftp|ftp|https?)(\s|$)/.test(seg) ||
+    /^git\s+(clone|pull|fetch|push)\b/.test(seg) ||
+    /^(ssh|scp|sftp|autossh|sshpass)(\s|$)/.test(seg)
+  );
+}
+
+// 由 Claude 通过 Bash 执行、涉及网络请求的命令——跟系统层探针（os_net，实测到的
+// 真实 connect()）是两种不同性质的证据：这里只是"命令文本上看起来会联网"，不代表
+// 真的连通了（可能失败/超时/被 policy 拦截），也没有字节数可言。用户明确要求：这类
+// 命令没被探针捕捉到时，也要能在"AI 轨迹"里体现出来（很多人根本没有手动启动过
+// system 层探针，之前完全没有这块可见性）。只看 Claude 自己触发的 hook_pre 事件，
+// 用户在别的终端里手打的命令不会经过 Claude Code 的 hooks，天然不会出现在这里。
+function commandNetworkHosts(limit = 2000) {
+  return withDb((db) => {
+    const rows = db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, detail FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash'
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+    const out = [];
+    for (const row of rows) {
+      let detail;
+      try {
+        detail = row.detail ? JSON.parse(row.detail) : {};
+      } catch (e) {
+        continue;
+      }
+      const cmd = detail.command || "";
+      const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+      const hostsInCmd = new Set();
+      for (const seg of segments) {
+        if (!isNetworkTouchingSegment(seg)) continue;
+        for (const host of extractCommandHosts(seg)) hostsInCmd.add(host);
+      }
+      for (const host of hostsInCmd) {
+        out.push({ id: row.id, ts: row.ts, sessionId: row.session_id, cwd: row.cwd, command: cmd, host });
+      }
+    }
+    return out;
+  }, []);
+}
+
 // 截屏审计——Claude Code 没有内置"截图"工具，实际观测到的截屏行为分三种路子，
 // 判断方式各自独立、按"最可能"的信号来源分开看：
 //   1. Bash 命令调用了截图类 CLI 工具——跟 commandDeletesFiles() 一个思路，按
@@ -124,6 +267,8 @@ function withDb(fn, fallback) {
     db.function("cc_is_delete", isDeleteEvent);
     db.function("cc_github_op", githubOpType);
     db.function("cc_is_screenshot", isScreenCaptureEvent);
+    db.function("cc_ssh_op", sshOpType);
+    db.function("cc_download_op", downloadOpType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -334,6 +479,62 @@ function githubOpsDetails(type, limit = 300) {
   }, []);
 }
 
+// SSH 操作统计（ssh/scp/sftp/密钥管理/其它）——跟 GitHub 操作统计一个思路，大部分
+// ssh/scp 命令本来就不违反任何 policy 规则，压根不会被打上 matched_rule，得直接看
+// 命令文本，用上面注册的 cc_ssh_op() 自定义 SQL 函数分类。
+function sshOpsStats() {
+  return withDb((db) => {
+    const rows = db
+      .prepare(`SELECT cc_ssh_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
+      .all();
+    const counts = { ssh: 0, scp: 0, sftp: 0, keyManagement: 0, other: 0 };
+    for (const r of rows) {
+      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
+    }
+    return counts;
+  }, { ssh: 0, scp: 0, sftp: 0, keyManagement: 0, other: 0 });
+}
+
+function sshOpsDetails(type, limit = 300) {
+  if (!SSH_OP_ORDER.includes(type)) return [];
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_ssh_op(detail) = ?
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(type, limit);
+  }, []);
+}
+
+// 下载行为统计（wget/curl/aria2/其它）——同上一套思路，直接看命令文本分类。
+function downloadOpsStats() {
+  return withDb((db) => {
+    const rows = db
+      .prepare(`SELECT cc_download_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
+      .all();
+    const counts = { wget: 0, curl: 0, aria2: 0, other: 0 };
+    for (const r of rows) {
+      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
+    }
+    return counts;
+  }, { wget: 0, curl: 0, aria2: 0, other: 0 });
+}
+
+function downloadOpsDetails(type, limit = 300) {
+  if (!DOWNLOAD_OP_ORDER.includes(type)) return [];
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_download_op(detail) = ?
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(type, limit);
+  }, []);
+}
+
 // 首页"截屏审计"卡片：单一计数，不像软件安装/GitHub 操作那样拆细分类——截屏本来
 // 就不常发生，没必要再按来源（Bash/Read/MCP）拆成好几张卡片，下钻列表里每一行的
 // 工具名本身就能看出是哪种来源。
@@ -487,13 +688,17 @@ function skillCallEvents(limit = 300) {
   }, []);
 }
 
-// AI 轨迹卡片下钻的事件明细部分——跟上面三个不一样：这些数据来自系统层探针的
-// CONNECT 观测（source='os_net'），探针只在内核层面看到 pid/uid，天生不知道
-// "这属于 Claude Code 的哪个 session"，所以 session_id/cwd 在这张表里永远是空的，
-// 不是查询漏了字段——前端要如实显示"不可用"，不能编一个假的出来。能给的是
-// 时间戳和 pid（探针观测到的进程号，勉强算是"哪个进程"的线索）。
+// AI 轨迹卡片下钻的事件明细部分——两种不同性质的证据拼在一起，靠 inferred 字段
+// 区分：
+//   - 探针实测（source='os_net'，inferred=false）：探针只在内核层面看到 pid/uid，
+//     天生不知道"这属于 Claude Code 的哪个 session"，所以 sessionId/cwd 在这些行
+//     里永远是空的，不是查询漏了字段——前端要如实显示"不可用"，不能编一个假的
+//     出来。能给的是时间戳和 pid（探针观测到的进程号，勉强算是"哪个进程"的线索）。
+//   - 命令文本推断（inferred=true）：来自 commandNetworkHosts()，有 sessionId/cwd/
+//     具体命令，但没有 pid（这条命令有没有真的连通、连的是不是文本里那个 host，
+//     都只是"看起来像"，不是探针那种内核级别的确认）。
 function networkConnectEvents(limit = 300) {
-  return withDb((db) => {
+  const observed = withDb((db) => {
     const rows = db
       .prepare(`SELECT id, ts, tool_name, detail FROM events WHERE source = 'os_net' ORDER BY id DESC LIMIT ?`)
       .all(limit);
@@ -504,9 +709,34 @@ function networkConnectEvents(limit = 300) {
       } catch (e) {
         detail = {};
       }
-      return { id: r.id, ts: r.ts, comm: r.tool_name, pid: detail.pid, ip: detail.ip, port: detail.port, host: detail.host };
+      return {
+        id: r.id,
+        ts: r.ts,
+        comm: r.tool_name,
+        pid: detail.pid,
+        ip: detail.ip,
+        port: detail.port,
+        host: detail.host,
+        inferred: false,
+      };
     });
   }, []);
+  const inferred = commandNetworkHosts(limit).map((e) => ({
+    id: "cmd-" + e.id + "-" + e.host,
+    ts: e.ts,
+    comm: e.command,
+    pid: null,
+    ip: null,
+    port: null,
+    host: e.host,
+    sessionId: e.sessionId,
+    cwd: e.cwd,
+    inferred: true,
+  }));
+  return observed
+    .concat(inferred)
+    .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
+    .slice(0, limit);
 }
 
 // "审计事件总数"下钻：按 工具/来源 分组，并且列出每个分组具体是哪些 session 产生的。
@@ -559,8 +789,13 @@ module.exports = {
   installDetails,
   githubOpsStats,
   githubOpsDetails,
+  sshOpsStats,
+  sshOpsDetails,
+  downloadOpsStats,
+  downloadOpsDetails,
   screenshotStats,
   screenshotDetails,
+  commandNetworkHosts,
   toolCallStats,
   toolCallBreakdown,
   mcpCallStats,

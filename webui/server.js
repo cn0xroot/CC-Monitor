@@ -361,6 +361,8 @@ app.get("/api/overview", async (req, res) => {
     fileOps: audit.fileOpsStats(),
     installOps: audit.installStats(),
     githubOps: audit.githubOpsStats(),
+    sshOps: audit.sshOpsStats(),
+    downloadOps: audit.downloadOpsStats(),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
@@ -445,6 +447,60 @@ app.get("/api/drilldown/github-op/:type", (req, res) => {
     return res.status(400).json({ error: "type 必须是 push/clone/commit/pullFetch/ghCli/otherGit 之一" });
   }
   const rows = audit.githubOpsDetails(type).map((row) => {
+    let detail = {};
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      detail = {};
+    }
+    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      toolName: row.tool_name,
+      matchedRule: row.matched_rule,
+      label,
+      summaryHtml,
+    };
+  });
+  res.json(rows);
+});
+
+app.get("/api/drilldown/ssh-op/:type", (req, res) => {
+  const type = req.params.type;
+  if (!["ssh", "scp", "sftp", "keyManagement", "other"].includes(type)) {
+    return res.status(400).json({ error: "type 必须是 ssh/scp/sftp/keyManagement/other 之一" });
+  }
+  const rows = audit.sshOpsDetails(type).map((row) => {
+    let detail = {};
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      detail = {};
+    }
+    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      toolName: row.tool_name,
+      matchedRule: row.matched_rule,
+      label,
+      summaryHtml,
+    };
+  });
+  res.json(rows);
+});
+
+app.get("/api/drilldown/download-op/:type", (req, res) => {
+  const type = req.params.type;
+  if (!["wget", "curl", "aria2", "other"].includes(type)) {
+    return res.status(400).json({ error: "type 必须是 wget/curl/aria2/other 之一" });
+  }
+  const rows = audit.downloadOpsDetails(type).map((row) => {
     let detail = {};
     try {
       detail = row.detail ? JSON.parse(row.detail) : {};

@@ -36,9 +36,14 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     "how many tool invocations actually happened" number than the raw event total), **MCP
     calls** (identified via the `mcp__<server>__<tool>` naming convention, click through for
     a per-server breakdown), and **AI trajectory** (domains/IPs Claude Code has visited,
-    backed by the same data as the Network tab). The "total sessions" / "total events" /
-    "blocked operations" / "tool calls" / "MCP calls" / "AI trajectory" cards are all
-    clickable for drilldown detail.
+    backed by the same data as the Network tab — a blend of two kinds of evidence: real
+    connections the system-layer probe (eBPF/nettop) actually observed, plus targets inferred
+    from the text of wget/curl/git clone/ssh/scp/… commands Claude ran, tagged "inferred" so
+    they're never mistaken for confirmed probe data. Many people never start the system-layer
+    probe by hand, so this card used to sit empty even when Claude had clearly run a pile of
+    networked commands — now both kinds of evidence show up here, and on the world map too).
+    The "total sessions" / "total events" / "blocked operations" / "tool calls" / "MCP calls" /
+    "AI trajectory" cards are all clickable for drilldown detail.
   - **File operation stats**: read/write/edit/delete counts, each clickable for detail.
   - **Install operation stats**: grouped by which install-type rule matched — pip / system
     package manager (apt/yum/dnf/pacman/brew/port) / npm global install / other — click through for the
@@ -48,6 +53,14 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     itself (most git/gh commands don't violate any policy rule, so they never get a
     `matched_rule` and couldn't reuse the install-ops trick). Click through for the exact
     session, folder, timestamp, and command.
+  - **SSH operation stats**: ssh (remote login/exec) / scp (file copy) / sftp (file transfer) /
+    key management (`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`) / other
+    (`autossh`/`sshpass`), five cards, classified the same way as GitHub operation stats (only
+    the start of each sub-command, never a substring match against the whole text, so an
+    `echo`'d string can't be misread as a real invocation).
+  - **Download stats**: wget / curl (only counted when it writes to a file via `-o`/`-O`/
+    `--output` — a bare curl call to an API isn't a "download") / aria2 / other
+    (`axel`/`lftp`/`ftp`/`http`), four cards.
   - **Screenshot audit**: Claude Code has no built-in "screenshot" tool, so this is identified
     from three independent signals — a Bash command invoking a screenshot CLI (`scrot`,
     `gnome-screenshot`, `import`, `spectacle`, `flameshot`, `maim`, `grim`, `xwd`, macOS's
@@ -518,6 +531,14 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Per-session `Σ Total / Cached` token summary on the Status page (same accounting as ccstatusline)
 - [x] Model Usage table, Limits table, context window usage %, and Context compaction count (real detection, not an estimate) on the Status page
 - [x] Home page GitHub Operations stats (push/clone/commit/pull-fetch/gh CLI/other git operations)
+- [x] Home page SSH Operations (ssh/scp/sftp/key management/other) and Downloads
+      (wget/curl/aria2/other) cards, classified from Bash command text
+- [x] The "AI Trajectory" card and world map now also include command-text-inferred network
+      targets: when Claude runs wget/curl/git clone/ssh/scp/…, the target hostname is
+      extracted from the command, resolved to an IP, and geo-located, then merged alongside
+      real system-layer-probe data with an "inferred" tag (not guaranteed to have actually
+      connected, and no byte counts) — many people never start the probe by hand, so this used
+      to be empty entirely
 - [x] Home page Screenshot Audit: identifies Bash screenshot CLI commands / image files opened
       via Read / MCP screenshot-type tool actions; the drilldown shows only basic info (command
       / file path), never the screenshot's own image content

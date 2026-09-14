@@ -8,6 +8,36 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [1.6.0] - 2026-09-14
 
 ### Added
+- **New "SSH Operations" and "Downloads" cards on the Home page**: SSH operations split into
+  five cards — ssh (remote login/exec) / scp (file copy) / sftp (file transfer) / key
+  management (`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`) / other
+  (`autossh`/`sshpass`); downloads split into four — wget / curl (only counted when it writes
+  to a file via `-o`/`-O`/`--output` — a bare curl call to an API isn't a "download") / aria2 /
+  other (`axel`/`lftp`/`ftp`/`http`). Classified exactly like the existing GitHub operation
+  stats (`classifyGithubOp`): split on `;`/`&`/`|`/newlines, check each sub-command's start,
+  never a substring match against the whole text. Added the `cc_ssh_op`/`cc_download_op` SQL
+  custom functions in `webui/lib/audit.js`, and `/api/drilldown/ssh-op/:type`,
+  `/api/drilldown/download-op/:type` endpoints.
+- **The "AI Trajectory" card and world map now also include command-text-inferred network
+  targets**: "AI Trajectory" used to depend entirely on the system-layer probe's (eBPF/nettop)
+  observed data, and many people never start the probe by hand (it needs a separate
+  `sudo ./bin/CC-Monitor-probe`), so the card and the world map stayed empty even when Claude
+  had clearly run a pile of networked commands like wget/curl/git clone/ssh/scp. Now the
+  target hostname is extracted from these commands' text (`extractCommandHosts()`: the host in
+  a URL, `user@host` form, `host:path` form — deliberately never a bare hostname with no `@`
+  and no trailing colon; an earlier version misread the output filename in
+  `curl -o out.tar.gz ...` and the local source path in `scp file.txt user@host:/path` as
+  "hostnames," since those strings are also dotted and followed by whitespace, structurally
+  indistinguishable from a real host by regex alone — tightening the rule to require an `@`
+  prefix or an immediately-following colon fixed it), lazily resolved via DNS
+  (`dnscache.js`, cached with a timeout — deliberately not done inside the hook, to avoid
+  slowing down every Bash call) and geo-located, then merged into the same `network.js`
+  pipeline (`listTraffic()`/`summary()`/`geoPairs()`) used for probe data, tagged
+  `inferred: true` and rendered as an "inferred" badge on the frontend — never passed off as
+  confirmed probe traffic, since there's no way to know whether the command actually connected
+  or how many bytes moved. Verified end-to-end: real DNS resolution of github.com/example.com
+  to correct IPs, GeoIP lookups landing in Toronto/Singapore, and the AI Trajectory drilldown
+  correctly attributing Session/folder info back to the session that ran the command.
 - **New "Screenshot Audit" card on the Home page**: Claude Code has no built-in "screenshot"
   tool, so this is identified from three independent signals — ① a Bash command invoking a
   screenshot CLI (`scrot`, `gnome-screenshot`, `import`, `spectacle`, `flameshot`, `maim`,

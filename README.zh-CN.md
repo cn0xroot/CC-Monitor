@@ -31,8 +31,12 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     （只数 `hook_pre`，比"审计事件总数"更贴近"到底调用了多少次工具"这个直觉）、
     **MCP 调用**（按 `mcp__<server>__<tool>` 命名规则识别，点开看按 server 分组的
     次数）、**AI 轨迹**（Claude Code 访问过的域名/IP，数据来自网络流量页，点开是同一份
-    连接明细）。"会话总数"/"审计事件总数"/"已拦截的高危操作"/"工具调用"/"MCP 调用"/
-    "AI 轨迹"这几张卡片都能点开查看详情。
+    连接明细——两种证据混在一起：系统层探针（eBPF/nettop）实测到的真实连接，加上
+    Claude 执行 wget/curl/git clone/ssh/scp 等命令时从命令文本推断出的目标，后者带
+    "推断"标签区分，不冒充成探针实测数据；很多人从没手动启动过系统层探针，之前这种
+    情况下这张卡片是空的，即使 Claude 明明执行过一堆联网命令，现在两种数据都会体现
+    出来，世界地图上也会一并标出来）。"会话总数"/"审计事件总数"/"已拦截的高危操作"/
+    "工具调用"/"MCP 调用"/"AI 轨迹"这几张卡片都能点开查看详情。
   - **文件操作统计**：读/写/编辑/删除次数，各自可以点开看具体是哪些操作。
   - **软件安装统计**：按命中的安装类规则分组——pip / 系统包管理器（apt/yum/dnf/pacman/brew/port）
     / npm 全局安装 / 其它，点开看具体是哪些安装指令。
@@ -40,6 +44,12 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     （PR/Issue/API…）/ 其它 git 操作六张卡片，按 Bash 命令文本分类识别（大部分
     git/gh 命令不违反任何 policy 规则，没法像软件安装统计那样复用规则引擎判断结果），
     点开看具体是哪个 session、哪个文件夹、什么时候执行的什么命令。
+  - **SSH 操作统计**：ssh（远程登录/执行）/ scp（文件复制）/ sftp（文件传输）/ 密钥管理
+    （`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`）/ 其它（`autossh`/`sshpass`）
+    五张卡片，按 Bash 命令文本识别，判断方式跟 GitHub 操作统计一致（只看子命令开头，
+    不做整条命令的子串匹配，避免 `echo "ssh 一般用来..."` 这种输出内容被误判）。
+  - **下载行为统计**：wget / curl（只在带 `-o`/`-O`/`--output` 这类落盘参数时才算，
+    裸 curl 调 API 不算下载）/ aria2 / 其它（`axel`/`lftp`/`ftp`/`http`）四张卡片。
   - **截屏审计**：Claude Code 没有内置"截图"工具，识别靠三条独立信号——Bash 命令调用
     截图类 CLI 工具（`scrot`/`gnome-screenshot`/`import`/`spectacle`/`flameshot`/`maim`/
     `grim`/`xwd`/macOS 的 `screencapture`，以及 Wayland 下常见的 `gdbus`/`dbus-send`
@@ -447,6 +457,12 @@ sudo ./bin/CC-Monitor-probe
 - [x] 状态信息页新增"模型使用统计"表格、"额度明细"表格、上下文窗口使用率、Context
       compaction 次数（真实检测，非估算）
 - [x] 首页新增"GitHub 操作统计"（push/clone/commit/pull-fetch/gh CLI/其它 git 操作）
+- [x] 首页新增"SSH 操作统计"（ssh/scp/sftp/密钥管理/其它）和"下载行为统计"
+      （wget/curl/aria2/其它），按 Bash 命令文本识别
+- [x] "AI 轨迹"卡片和世界地图新增命令文本推断的网络目标：Claude 执行 wget/curl/
+      git clone/ssh/scp 等命令时，从命令里提取目标主机名、解析成 IP、查 GeoIP，
+      跟系统层探针实测数据合并展示，用"推断"标签区分（不保证命令真的连通，也没有
+      字节数）——很多人从没手动启动过探针，之前这块完全是空的
 - [x] 首页新增"截屏审计"：识别 Bash 截图 CLI 命令 / Read 打开的图片文件 / MCP 截图类工具
       动作，点开只显示命令/文件路径等基本信息，不读取截图图像内容本身
 - [x] 网络流量页"连接次数"支持点击查看每次连接的时间/进程/PID 明细
