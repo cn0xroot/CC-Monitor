@@ -7,6 +7,30 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 留痕审计，避免 AI 工具误操作破坏系统或泄露数据。技术方案见
 [DESIGN.md](./DESIGN.md)（[English](./DESIGN.en.md)）。
 
+## 快速安装
+
+```bash
+git clone https://github.com/cn0xroot/CC-Monitor.git
+cd CC-Monitor
+./install.sh
+```
+
+`install.sh` 一键按顺序装好 5 件事：ccstatusline 终端状态栏、hooks 注册、Web UI
+依赖、系统层探针检测、GeoIP 数据库——每一步都是幂等、可单独跳过的（`--skip-ccstatusline`
+/ `--skip-geoip`），不会覆盖你已有的任何配置。装完用 `./start.sh` 启动 Web UI。
+
+只想要最核心的拦截/审计能力、不需要 Web UI 和这些周边功能的话，只跑这一步就够：
+
+```bash
+python3 install.py
+```
+
+这一步只做一件事——把 hooks 注册进 Claude Code 的 `~/.claude/settings.json`，不装
+任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。装完 `CC-Monitor tail`
+/`rules`/`stats`/`verify` 这些 CLI 命令已经能直接用，Web UI 是完全独立的可选项，
+随时可以后补装。两种装法的详细参数、`install.sh` 具体做了哪 5 步、以及装到系统路径
+（`make install`）的方式，见下面["安装"](#安装)一节。
+
 ## Web UI
 
 `webui/` 是一个独立的 Node.js 服务，提供浏览器界面：

@@ -9,6 +9,35 @@ on high-risk operations, so an AI coding agent can't quietly damage your system 
 Everything is audit-logged. The technical design doc is available in
 [English](./DESIGN.en.md) and [Chinese](./DESIGN.md).
 
+## Quick Install
+
+```bash
+git clone https://github.com/cn0xroot/CC-Monitor.git
+cd CC-Monitor
+./install.sh
+```
+
+`install.sh` runs 5 steps in order: the ccstatusline terminal statusline, hook
+registration, Web UI dependencies, a system-layer probe check, and the GeoIP database —
+each one idempotent and independently skippable (`--skip-ccstatusline` / `--skip-geoip`),
+never overwriting anything you already have configured. Then run `./start.sh` to launch
+the Web UI.
+
+If you only want the core interception/audit capability and don't need the Web UI or
+any of that, this one step is enough on its own:
+
+```bash
+python3 install.py
+```
+
+It does exactly one thing — registers the hooks into Claude Code's
+`~/.claude/settings.json`. No npm or Python dependencies get installed (`cc_monitor/`
+itself is standard-library-only Python). Once that's done, the `CC-Monitor
+tail`/`rules`/`stats`/`verify` CLI commands already work; the Web UI is an entirely
+optional, separate add-on you can install later whenever you want it. For the exact
+flags each script takes, what `install.sh`'s 5 steps actually do, and installing to a
+system path (`make install`), see the [Installation](#installation) section below.
+
 ## Web UI
 
 `webui/` is a standalone Node.js service that provides a browser UI:
