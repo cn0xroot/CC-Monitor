@@ -69,16 +69,36 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     是供应链投毒的入口，但全局安装会长期驻留在 `$PATH` 上、影响所有项目，风险明显
     更大，所以只有全局的需要人工确认。点开卡片详情会分成"全局安装"/"本地安装"两组
     分别列出，不会混在一起看不出哪些是高风险的。
-  - **GitHub 操作统计**：git push / git clone / git commit / git pull-fetch / gh CLI
-    （PR/Issue/API…）/ 其它 git 操作六张卡片，按 Bash 命令文本分类识别（大部分
-    git/gh 命令不违反任何 policy 规则，没法像软件安装统计那样复用规则引擎判断结果），
-    点开看具体是哪个 session、哪个文件夹、什么时候执行的什么命令。
-  - **SSH 操作统计**：ssh（远程登录/执行）/ scp（文件复制）/ sftp（文件传输）/ 密钥管理
-    （`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`）/ 其它（`autossh`/`sshpass`）
-    五张卡片，按 Bash 命令文本识别，判断方式跟 GitHub 操作统计一致（只看子命令开头，
-    不做整条命令的子串匹配，避免 `echo "ssh 一般用来..."` 这种输出内容被误判）。
-  - **下载行为统计**：wget / curl（只在带 `-o`/`-O`/`--output` 这类落盘参数时才算，
-    裸 curl 调 API 不算下载）/ aria2 / 其它（`axel`/`lftp`/`ftp`/`http`）四张卡片。
+  - **命令类操作统计**（GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理，共七组）：
+    每组首页只放一张汇总卡片（数字是这组所有分类的合计），点开才展开分类小计表
+    + 带语法高亮的完整命令明细，避免七组细分类卡片铺满首页——这七组原来每组各
+    占一整排（合计 33 张），点开详情的交互模式跟 MCP/Skill/子代理调用卡片一致：
+    - **GitHub 操作**：git push / git clone / git commit / git pull-fetch / gh CLI
+      （PR/Issue/API…）/ 其它 git 操作，按 Bash 命令文本分类识别（大部分 git/gh
+      命令不违反任何 policy 规则，没法像软件安装统计那样复用规则引擎判断结果）。
+    - **SSH 操作**：ssh（远程登录/执行）/ scp（文件复制）/ sftp（文件传输）/
+      密钥管理（`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`）/ 其它
+      （`autossh`/`sshpass`），判断方式跟 GitHub 操作统计一致（只看子命令开头，
+      不做整条命令的子串匹配，避免 `echo "ssh 一般用来..."` 这种输出内容被误判）。
+    - **下载行为**：wget / curl（只在带 `-o`/`-O`/`--output` 这类落盘参数时才算，
+      裸 curl 调 API 不算下载）/ aria2 / 其它（`axel`/`lftp`/`ftp`/`http`）。
+    - **Docker 操作**：run（启动容器）/ build（构建镜像）/ exec（进入容器执行）/
+      compose（`docker compose`/`docker-compose`）/ 其它（`ps`/`logs`/`images`
+      等只读查看类）。run/build/exec 单独拆出来是因为这三个会执行任意外部
+      镜像/Dockerfile/容器内命令，风险跟纯只读查看不是一个量级。
+    - **压缩/归档操作**：tar / zip（含 unzip）/ 7z / gzip（含 gunzip/zcat）/
+      其它（bzip2/xz/zstd/rar 等）。
+    - **网络诊断工具**：nc（含 ncat/netcat 别名）/ nmap / telnet / 其它
+      （socat），纯粹是"用过这些工具没有"的可见性统计，`nc -zv example.com 443`
+      这种正常端口探测也会计入，不代表危险——真正的反弹 shell 由下面的策略规则
+      单独拦截。
+    - **进程管理/后台驻留**：nohup / disown / 后台任务（命令末尾裸 `&`）/ 其它
+      （setsid）。"后台任务"识别故意收窄（要求 `&` 前后不是 `&&`/`2>&1`/`&>`
+      这类语法，且后面紧跟命令末尾或 `;`），换取不误伤 `curl 'http://x.com/a&b=c'`
+      这类 URL 查询字符串里的 `&`。
+  - **子代理派生统计**：跟 MCP/Skill 调用统计同一个思路，按 `subagent_type`（子代理
+    类型，比如 `general-purpose`/`Explore`/`Plan`/`fork`）分组，子代理会消耗独立
+    资源、有自己的一整套操作轨迹，不该混在笼统的"工具调用"计数里。
   - **截屏审计**：Claude Code 没有内置"截图"工具，识别靠三条独立信号——Bash 命令调用
     截图类 CLI 工具（`scrot`/`gnome-screenshot`/`import`/`spectacle`/`flameshot`/`maim`/
     `grim`/`xwd`/macOS 的 `screencapture`，以及 Wayland 下常见的 `gdbus`/`dbus-send`
@@ -454,7 +474,15 @@ sudo ./bin/CC-Monitor-probe
 - `log`：放行但记录审计日志。
 
 默认规则见 [cc_monitor/default_rules.json](./cc_monitor/default_rules.json)，涵盖：危险删除、磁盘覆写
-命令、`curl|bash`、递归 777、`sudo`、`git push --force`、读写 SSH 密钥/凭据文件、写系统目录等。
+命令、`curl|bash`、递归 777、`sudo`、`git push --force`、读写 SSH 密钥/凭据文件、写系统目录、
+试图关掉监控自身（`kill`/`pkill` 命中 CC-Monitor 探针进程名，`confirm` 级别；通用 `kill`/`pkill`
+只是 `log` 级别，避免日常开发太常见而造成警报疲劳）、用 `cat`/`less`/`head` 等命令读 SSH 密钥/
+`.env`/凭据文件（`Read` 工具之外的盲区）、`env`/`printenv`/`export -p` 打印全部环境变量、`su`/
+`pkexec` 提权（跟 `sudo` 同一类风险）、单文件 `chmod 777`（非递归、相对路径也覆盖到）、
+`mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3` 接 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL` 这类直连
+数据库的破坏性命令、读取 shell 历史文件或执行裸 `history` 命令（可能翻出过去输入过的明文
+凭据）、反弹 shell / 后门执行（覆盖 `nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、
+`mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体）等。
 
 ## 功能开发进展
 
@@ -511,6 +539,34 @@ sudo ./bin/CC-Monitor-probe
       提示符前完全没有 `claude` 字样，"新建会话"能看到 `claude\r` 被写入
 - [x] 首页新增"截屏审计"：识别 Bash 截图 CLI 命令 / Read 打开的图片文件 / MCP 截图类工具
       动作，点开只显示命令/文件路径等基本信息，不读取截图图像内容本身
+- [x] 新增 kill/pkill 监控进程检测规则：专门识别针对 CC-Monitor 自身探针/hook 进程的
+      kill/pkill（`confirm` 级别），通用 kill/pkill 单独 `log` 级别兜底，避免警报疲劳
+- [x] 首页新增"Docker 操作统计"（run/build/exec/compose/其它），按 Bash 命令文本识别，
+      run/build/exec 单独拆出来是因为风险跟纯只读查看不是一个量级
+- [x] 敏感文件读取检测扩展到 Bash 命令：`cat`/`less`/`head` 等读 SSH 密钥/`.env`/凭据
+      文件的场景新增覆盖（之前只有 `Read` 工具直接打开才算），另外新增 `env`/`printenv`/
+      `export -p` 打印全部环境变量的检测
+- [x] 新增 `su`/`pkexec` 提权检测（跟 `sudo` 同一类风险，之前完全漏检）
+- [x] 新增单文件 `chmod 777`（非递归）检测：相对路径、单文件的写法之前不在任何规则的
+      覆盖范围内
+- [x] 新增数据库直连破坏性命令检测：`mysql`/`psql`/`redis-cli`/`mongo`/`mongosh`/
+      `sqlite3` 接 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`/`FLUSHDB` 之前完全没有规则覆盖
+- [x] 新增历史指令读取检测：`cat .bash_history`/裸执行 `history` 之前没有规则覆盖，
+      命令历史里可能留着过去输入过的明文凭据
+- [x] 加强反弹 shell / 后门执行检测：原来的 `reverse_shell_pattern` 只认 `nc -e`
+      一种写法，扩展覆盖 `-c` 参数变体、`ncat`/`netcat` 别名、`socat exec:`、
+      `mkfifo` 配合命名管道拼出来的反弹 shell，同时验证过不会误伤 `nc -zv`/`nmap`
+      这类正常网络诊断用途
+- [x] 首页新增"压缩/归档操作统计"（tar/zip/7z/gzip/其它），按 Bash 命令文本识别
+- [x] 首页新增"网络诊断工具统计"（nc/nmap/telnet/其它），纯可见性统计，跟反弹 shell
+      风险判断是两回事
+- [x] 首页新增"进程管理/后台驻留统计"（nohup/disown/后台任务/其它），"后台任务"靠
+      识别命令末尾独立的 `&` 实现，故意收窄避免误伤 URL 查询字符串里的 `&`
+- [x] 首页新增"子代理派生"统计卡片：按 `subagent_type` 分组，之前混在笼统的"工具
+      调用"计数里没有单独可见性
+- [x] 首页折叠 GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组统计卡片：原来
+      七排合计 33 张细分类卡片改成每组一张汇总卡片，点开才展示分类小计表 + 带
+      语法高亮的完整命令明细，交互模式跟 MCP/Skill/子代理调用卡片一致
 - [x] 网络流量页"连接次数"支持点击查看每次连接的时间/进程/PID 明细
 - [x] 外观设置弹窗：主题色块网格、界面字体、界面字号（新设置项，之前没有）
 - [x] 单次额度显示"剩余百分比"（conky 分段配色），周额度"已用百分比"用红→黄→绿连续

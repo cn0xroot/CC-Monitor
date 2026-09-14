@@ -93,6 +93,148 @@
   信息，网页详情页不该把它 serve 出来。用隔离测试数据库 + 无头浏览器验证过端到端
   链路：首页卡片计数正确、点击详情正确列出匹配事件、不匹配的普通命令（`ls -la`、
   纯文本文件读取）正确排除在外。
+- **新增 kill/pkill 监控进程检测规则**：`default_rules.json` 新增两条规则——
+  `kill_monitoring_process`（`risk: high`, `action: confirm`）专门匹配
+  `kill`/`pkill`/`killall` 后面跟着 CC-Monitor 自身进程名（探针二进制、
+  `probe_linux.bt`/`probe_darwin.py`、`cc_monitor.probe`、`bpftrace`）的命令——
+  这是"正在试图关掉安全监控本身"这个场景，用 `confirm` 而不是 `block`，因为
+  正常维护/重启探针本来就是合理操作，不该被硬拦截，只是需要人确认一下；通用的
+  `kill`/`pkill`/`killall`（`process_kill`，`risk: low`, `action: log`）单独放
+  在后面兜底，只做记录不打扰，`kill`/`pkill` 在日常开发里太常见，全部要求确认
+  会造成警报疲劳。两条规则插在 `disable_security_controls` 和 `sudo_pip_install`
+  之间，规则顺序保证专门针对 CC-Monitor 自身进程的这条先匹配。已有用户的
+  `~/.cc-monitor/rules.json` 是首次运行时拷的副本，不会自动更新，想要这两条新
+  规则生效，删掉它让它重新生成，或者手动加进去。
+- **首页新增"Docker 操作统计"**：跟 SSH/下载行为统计同一套思路，按 `;`/`&`/
+  `|`/换行拆成子命令只看开头，拆成 run（启动容器）/ build（构建镜像）/ exec
+  （进入容器执行）/ compose（`docker compose`/`docker-compose`）/ 其它
+  （`ps`/`logs`/`images` 等只读查看类）五张卡片。run/build/exec 单独拆出来是
+  因为这三个是"会执行任意外部镜像/Dockerfile/容器内命令"，风险跟纯只读查看不是
+  一个量级。新增 `webui/lib/audit.js` 的 `classifyDockerOp`/`dockerOpsStats`/
+  `dockerOpsDetails`、`cc_docker_op` SQL 自定义函数，`/api/drilldown/docker-op/:type`
+  接口。用隔离测试数据库验证过 9 条真实命令（含一条 `echo "docker run..."` 的
+  字符串输出，确认不会被误判成真的执行了 docker run）分类结果全部正确，用无头
+  浏览器截图验证过首页卡片计数和点击详情弹窗都正确。
+- **敏感文件读取检测扩展到 Bash 命令**：之前 `sensitive_file_read` 规则只覆盖
+  `Read` 工具直接打开 `.ssh/`/`.aws/credentials`/`.env`/私钥等敏感路径的场景，
+  用 `cat`/`less`/`head` 等 Bash 命令读同样的文件完全是盲区。新增
+  `sensitive_file_read_bash`（`risk: medium`, `action: log`）覆盖
+  `cat`/`less`/`more`/`head`/`tail`/`strings`/`xxd`/`hexdump`/`od` 后面跟着这些
+  敏感路径的命令；另外新增 `env_dump`（`risk: low`, `action: log`）记录
+  `env`/`printenv`/`export -p` 这类会把当前进程全部环境变量（可能包含 API key/
+  token）打印到终端的命令。两条都插在已有的 `sensitive_file_read` 和
+  `system_config_write` 之间。这几条规则复用了 `policy.py` 现有的 `re.search`
+  纯正则匹配，没有像 webui 那边的 `splitShellSegments()` 一样做引号/heredoc
+  感知——这是 Python 策略引擎全部 30+ 条规则共有的既有特点，不是这几条新规则
+  引入的新问题，之后如果要修，得是对整个策略引擎的单独改造，不在这次范围内。
+  同样地，已有用户的 `~/.cc-monitor/rules.json` 不会自动更新，想要这两条新
+  规则生效需要手动同步。
+- **新增 `su`/`pkexec` 提权检测**：之前只有 `sudo_usage` 这一条规则覆盖提权场景，
+  `su`/`pkexec` 这两个跟 `sudo` 效果等价（切换/以其它用户身份执行命令，通常是
+  root）的提权方式完全漏检。新增 `su_pkexec_privilege_escalation`
+  （`risk: medium`, `action: confirm`），只认命令开头或 `;`/`&&`/`||` 之后紧跟的
+  `su`/`pkexec`（写法跟已有 `sudo_usage` 的 `(^|;|&&|\|\|)\s*sudo\b` 完全一致），
+  不会把 `echo su` 这类字符串输出、或 `subprocess.run(...)` 里当成普通标识符出现的
+  "su" 误判成真的在提权。插在 `sudo_usage` 后面。
+- **新增单文件 `chmod 777`（非递归）检测**：原来 `chmod_world_writable_recursive`
+  只认目标路径以 `/` 或 `~` 开头的写法，`chmod_recursive_generic` 只认带 `-R` 的
+  调用——`chmod 777 file.txt`（相对路径、单文件、不递归）这种真实存在的场景恰好
+  两条都没覆盖到。新增 `chmod_777_single_file`（`risk: medium`, `action: confirm`），
+  插在 `chmod_recursive_generic` 之后，靠规则顺序保证只在前两条都没命中时才轮到它
+  （带 `-R` 的、目标是 `/`/`~` 开头的都已经在更早的规则里被更高级别处理过，不会
+  重复触发或降级）。
+- **新增数据库直连破坏性命令检测**：`mysql`/`psql`/`redis-cli`/`mongo`/`mongosh`/
+  `sqlite3` 这类数据库命令行客户端接 `DROP`/`DELETE`/`TRUNCATE`（SQL）或
+  `FLUSHALL`/`FLUSHDB`（Redis）之前完全没有任何规则覆盖——能直接读写生产数据，
+  风险性质跟"删文件"是一回事，但完全在雷达外。新增 `db_destructive_command`
+  （`risk: high`, `action: confirm`），插在 `history_tampering` 和
+  `docker_privileged_or_host_mount` 之间。用 23 个正负测试用例验证过匹配和跟
+  既有规则的优先级交互（比如 `chmod -R 777 subdir` 正确命中更早的
+  `chmod_recursive_generic` 而不是新规则，`chmod 777 ~/.ssh/id_rsa` 正确命中
+  `chmod_world_writable_recursive`），`node --test` 5/5 全部通过，不是回归。
+  这三条同样复用 `policy.py` 现有的纯正则匹配，没有 webui 那边的引号/heredoc
+  感知，理由跟上面 `sensitive_file_read_bash`/`env_dump` 一致；已有用户的
+  `~/.cc-monitor/rules.json` 同样不会自动更新。
+- **新增历史指令读取检测**：`cat ~/.bash_history`/`cat .history` 这类读取 shell
+  历史文件的命令、以及直接执行裸 `history` 命令（会把当前会话的历史命令原样打印
+  到 stdout），之前完全没有规则覆盖——命令历史里经常留着过去输入过的密码/token
+  等明文凭据，是真实存在的信息泄露路径。新增 `history_read`（`risk: low`,
+  `action: log`），覆盖 `cat`/`less`/`more`/`head`/`tail`/`strings` 读取
+  `.bash_history`/`.zsh_history`/`.python_history`/`.mysql_history`/
+  `.psql_history`/`.node_repl_history`/任意 `*.history` 文件、以及命令开头或
+  `;`/`&&`/`||` 之后紧跟的裸 `history`（`history -c` 这种清空历史的破坏性用法
+  已经由更早的 `history_tampering` 规则单独覆盖，靠规则顺序 + 显式排除
+  `(?!\s*-c\b)` 避免重复触发）。插在 `history_tampering` 之后。用 13 个正负
+  测试用例验证过匹配和优先级，不是回归。
+- **加强反弹 shell / 后门执行检测**：原来的 `reverse_shell_pattern` 只认
+  `nc ... -e /bin/sh` 这一种写法，覆盖面偏窄——真实攻击/红队工具箱里还有好几种
+  常见变体完全漏检：`nc`/`ncat`/`netcat` 换用 `-c` 而不是 `-e`（部分 nc 变体的
+  执行命令写法）、`ncat`/`netcat` 这两个 nc 的别名工具本身没被认到、`socat` 用
+  `exec:` 目标做反弹 shell（很多加固过的系统没有带 `-e` 支持的 nc，`socat` 是
+  最常见的替代品）、以及不带 `-e`/`-c` 参数、靠 `mkfifo` 建一个命名管道配合
+  `nc`+shell 手动拼出来的反弹 shell（更隐蔽，规避了对 `-e`/`-c` 参数的检测）。
+  扩展了 `reverse_shell_pattern` 的正则覆盖这四种新变体，`risk`/`action` 维持
+  原来的 `high`/`block` 不变。用 17 个正负测试用例验证过匹配（含原有 `nc -e`/
+  `/dev/tcp`/`sh -i` 写法必须继续命中，不能因为改动引入回归；以及 `nc -zv`/
+  `nmap`/`ncat --ssl` 这类正常网络诊断用途不能被误伤）。范围上刻意不做的：
+  Python/Perl/PHP/Ruby 这类脚本语言的一行反弹 shell（`python3 -c
+  "import socket,subprocess..."`）——这类命令的"危险性"完全取决于脚本内容的
+  语义，纯正则匹配要么漏掉绝大多数变体、要么把大量合法用到 `socket` 模块的
+  脚本也拦下来，误报代价太高，不在这次范围内。
+- **首页新增"压缩/归档操作统计"**：跟 SSH/下载/Docker 操作统计同一套思路，拆成
+  tar / zip（含 unzip）/ 7z / gzip（含 gunzip/zcat）/ 其它
+  （bzip2/xz/zstd/rar 等）五张卡片，按 Bash 命令文本识别。新增
+  `webui/lib/audit.js` 的 `classifyArchiveOp`/`archiveOpsStats`/
+  `archiveOpsDetails`、`cc_archive_op` SQL 自定义函数，
+  `/api/drilldown/archive-op/:type` 接口。
+- **首页新增"网络诊断工具统计"**：nc（含 ncat/netcat 别名）/ nmap / telnet /
+  其它（socat）四张卡片，纯粹是"用过这些工具没有"的可见性统计，跟上面的反弹
+  shell 风险判断是两回事——`nc -zv example.com 443` 这种正常端口探测也会被计入
+  这张卡片，不代表危险。新增 `classifyNetdiagOp`/`netdiagOpsStats`/
+  `netdiagOpsDetails`、`cc_netdiag_op` SQL 自定义函数，
+  `/api/drilldown/netdiag-op/:type` 接口。
+- **首页新增"进程管理/后台驻留统计"**：nohup / disown / 后台任务（命令末尾裸
+  `&`）/ 其它（setsid）四张卡片。前两个按子命令开头识别，跟其它分类器一个思路；
+  "后台任务"不一样——裸 `&` 不是某个命令的名字，是整条命令末尾的 shell 语法
+  标记，`splitShellSegments()` 本身会把单个 `&` 当分隔符切开，没法通过"看子命令
+  开头"识别，改成直接在原始命令文本上找"独立的 `&`"：前面不能紧跟 `&`/`>`（排除
+  `&&`、`2>&1`、`&>` 这些不是真正后台标记的写法），后面不能紧跟数字/`&`/`>`
+  （同样排除文件描述符重定向），且这个 `&` 后面（跳过空白）直接是命令末尾或
+  `;`——故意收窄换取不误伤 `curl 'http://x.com/a&b=c'` 这类 URL 查询字符串里的
+  `&`，代价是 `task1 & task2`（后台之后紧接着写下一条命令、中间没有 `;`）这种
+  少见写法会漏检。新增 `classifyProcessBackground`/`procbgOpsStats`/
+  `procbgOpsDetails`、`cc_procbg_op` SQL 自定义函数，
+  `/api/drilldown/procbg-op/:type` 接口。
+- **首页新增"子代理派生"统计卡片**：跟 MCP/Skill 调用统计同一个思路，只是分组
+  字段换成 `tool_input` 里的 `subagent_type`（`general-purpose`/`Explore`/
+  `Plan`/`fork`，或者用户自定义的子代理名字）。Claude Code 不同版本这个工具名
+  叫 "Task" 还是 "Agent" 不完全一致，两个都认。子代理会消耗独立资源、有自己的
+  一整套操作轨迹，之前完全混在笼统的"工具调用"计数里，没有单独可见性。新增
+  `subagentCallStats`/`subagentCallBreakdown`/`subagentCallEvents`，
+  `/api/drilldown/subagent-calls` 接口，复用 `mcpCallBreakdown`/
+  `skillCallBreakdown` 已有的 SQL `json_extract` 分组手法。
+  以上四个统计卡片 + 反弹 shell 检测扩展 + 历史指令读取检测都用隔离测试数据库
+  （压缩/网络诊断/后台驻留三个分类器还额外验证了 `curl` URL 查询字符串里的 `&`、
+  `cmd1 && cmd2`、`echo '...'` 这几种已知误判来源正确排除在外）+ 无头浏览器截图
+  验证过端到端链路：首页卡片计数正确、点击详情正确列出匹配事件。`node --test`
+  5/5 全部通过，不是回归。
+- **首页折叠 GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组统计卡片**：
+  这七组原来每组都是一整排细分类卡片（合计 6+5+4+5+5+4+4 = 33 张），叠在一起
+  刷屏太厉害。改成每组只放一张汇总卡片（数字是这组所有分类的合计），点开才展示
+  分类小计表 + 完整命令明细（每条前面挂一个分类徽章），交互模式跟已有的
+  MCP/Skill/子代理调用卡片保持一致。`webui/lib/audit.js` 把七组各自的
+  `xxxOpsStats()`/`xxxOpsDetails(type)` 换成两个通用函数
+  `opsBreakdown(sqlFn)`/`opsEvents(sqlFn)`（七组背后本来就是同一个"按
+  `cc_xxx_op()` 自定义 SQL 函数分类、`GROUP BY kind`"的查询形状，只是传的函数名
+  不同，抽出来减少了约 190 行重复代码）；`server.js` 对应把 14 个 `/api/drilldown/
+  xxx-op/:type` 单分类接口换成 7 个 `/api/drilldown/xxx-ops`（不带 `:type`）
+  接口，一次性返回 `{breakdown, events}`；首页卡片总数改成读
+  `sumN(audit.xxxOpsBreakdown())`。原来这七组专用的 `GITHUB_OP_TYPES` 等
+  仅用于校验 URL `:type` 参数的常量、`drilldown.githubOp.suffix` 这个不再被
+  引用的 i18n key 一并删除，没有留背景兼容代码。用隔离测试数据库 + 无头浏览器
+  截图验证过：首页从 7 排 33 张卡片变成 1 排 7 张卡片，点开任意一张（截图验证的
+  是 GitHub 操作）正确显示分类小计表和带语法高亮的命令明细列表，`node --test`
+  5/5 全部通过，不是回归。
 
 ### 修复
 - **命令分类器误报：heredoc/引号内多行字符串被当成多条独立子命令**：截屏审计、

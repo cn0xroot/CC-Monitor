@@ -210,6 +210,135 @@ function downloadOpType(detailJson) {
   }
 }
 
+// Docker 操作分类——跟 classifySshOp/classifyDownloadOp 一样按子命令开头识别。
+// build/run 单独拆出来是因为这两个是"会执行任意外部镜像/Dockerfile 里的指令"，
+// 风险跟普通的 ps/logs/images 这类只读查看类操作不是一个量级；exec 单独拆出来是
+// 因为这是"进到一个已经在跑的容器里执行命令"，跟宿主机上直接跑命令的风险类似；
+// compose 覆盖 docker compose（v2 子命令）和独立的 docker-compose（v1 二进制）。
+// docker-compose 单独判断是不是子命令开头，不能套用 \b（否则会被 docker 一起命中）。
+const DOCKER_OP_ORDER = ["run", "build", "exec", "compose", "other"];
+function classifyDockerOp(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^docker-compose(\s|$)/.test(seg)) found.add("compose");
+    else if (/^docker\s+compose\b/.test(seg)) found.add("compose");
+    else if (/^docker\s+run\b/.test(seg)) found.add("run");
+    else if (/^docker\s+build\b/.test(seg)) found.add("build");
+    else if (/^docker\s+exec\b/.test(seg)) found.add("exec");
+    else if (/^docker(\s|$)/.test(seg)) found.add("other");
+  }
+  for (const kind of DOCKER_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function dockerOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyDockerOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 压缩/归档操作分类——跟 classifyDockerOp 同一套思路，按子命令开头识别。
+const ARCHIVE_OP_ORDER = ["tar", "zip", "sevenZip", "gzip", "other"];
+function classifyArchiveOp(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^tar(\s|$)/.test(seg)) found.add("tar");
+    else if (/^(zip|unzip)(\s|$)/.test(seg)) found.add("zip");
+    else if (/^(7z|7za|7zr)(\s|$)/.test(seg)) found.add("sevenZip");
+    else if (/^(gzip|gunzip|zcat)(\s|$)/.test(seg)) found.add("gzip");
+    else if (/^(bzip2|bunzip2|xz|unxz|zstd|unzstd|lzma|unlzma|rar|unrar)(\s|$)/.test(seg)) found.add("other");
+  }
+  for (const kind of ARCHIVE_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function archiveOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyArchiveOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 网络诊断工具分类——nc/ncat/netcat 单独统计，不代表就是反弹 shell：`nc -e /bin/sh`
+// 这种真正危险的用法已经由 policy.py 的 reverse_shell_pattern 规则单独拦截/告警了，
+// 这里只是"这条命令用过 nc/nmap/telnet 之类的工具"这个更宽的可见性统计，跟风险判断
+// 是两回事。
+const NETDIAG_OP_ORDER = ["nc", "nmap", "telnet", "other"];
+function classifyNetdiagOp(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^(nc|ncat|netcat)(\s|$)/.test(seg)) found.add("nc");
+    else if (/^nmap(\s|$)/.test(seg)) found.add("nmap");
+    else if (/^telnet(\s|$)/.test(seg)) found.add("telnet");
+    else if (/^socat(\s|$)/.test(seg)) found.add("other");
+  }
+  for (const kind of NETDIAG_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function netdiagOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyNetdiagOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 进程管理/后台驻留分类——nohup/disown/setsid 按子命令开头识别，是同一套思路；
+// "后台任务"（裸 `&`）不一样，它不是某个命令的名字，而是整条命令末尾的一个 shell
+// 语法标记，没法按 splitShellSegments() 切出来的子命令开头去匹配（splitShellSegments
+// 本身就会把单个 `&` 当成分隔符切开，切完就看不出原来是不是背景任务标记了）。改成
+// 直接在原始命令文本上找"独立的 `&`"：前面不能紧跟 `&`/`>`（排除 `&&`、`2>&1`、`&>`
+// 这些不是真正后台标记的写法），后面不能紧跟数字/`&`/`>`（同样排除 `2>&1`/`&>` 这种
+// 文件描述符重定向），并且这个 `&` 后面（跳过空白）直接是命令末尾或者 `;`——只抓
+// "命令在这里结束、后台丢出去了"这种最典型的写法，像 `task1 & task2`（后台之后紧接着
+// 写下一条命令，中间没有 `;`）这种少见写法会漏掉，属于故意收窄换取不误伤形如
+// `curl 'http://x.com/a&b=c'` 这类 URL 查询字符串里的 `&`。
+const BG_JOB_RE = /[^&>]&(?![&>0-9])\s*(;|$)/m;
+const PROCMGMT_OP_ORDER = ["nohup", "disown", "backgroundJob", "other"];
+function classifyProcessBackground(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^nohup(\s|$)/.test(seg)) found.add("nohup");
+    else if (/^disown(\s|$)/.test(seg)) found.add("disown");
+    else if (/^setsid(\s|$)/.test(seg)) found.add("other");
+  }
+  if (!found.size && BG_JOB_RE.test(cmd)) found.add("backgroundJob");
+  for (const kind of PROCMGMT_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function processBackgroundType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyProcessBackground(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
 // 从命令文本里抠目标主机名——三种写法都要认，全部要求有明确、低误判风险的语法标记，
 // 不认"看起来像域名的裸单词"：
 //   1. URL 形式：协议://[user@]host[:port]/…（wget/curl/aria2/axel/lftp/http(s)）
@@ -351,6 +480,10 @@ function withDb(fn, fallback) {
     db.function("cc_is_screenshot", isScreenCaptureEvent);
     db.function("cc_ssh_op", sshOpType);
     db.function("cc_download_op", downloadOpType);
+    db.function("cc_docker_op", dockerOpType);
+    db.function("cc_archive_op", archiveOpType);
+    db.function("cc_netdiag_op", netdiagOpType);
+    db.function("cc_procbg_op", processBackgroundType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -533,91 +666,76 @@ function installDetails(type, limit = 300) {
   }, []);
 }
 
-// GitHub 操作统计（push/clone/commit/pull-fetch/gh CLI/其它 git 操作）——不像
-// 软件安装那样能复用 policy 规则的 matched_rule（大部分 git/gh 命令本来就不违反
-// 任何规则，压根不会被打上 matched_rule），得直接看命令文本，所以用上面注册的
-// cc_github_op() 自定义 SQL 函数分类。
-const GITHUB_OP_TYPES = ["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"];
-function githubOpsStats() {
-  return withDb((db) => {
-    const rows = db
-      .prepare(`SELECT cc_github_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
-      .all();
-    const counts = { push: 0, clone: 0, commit: 0, pullFetch: 0, ghCli: 0, otherGit: 0 };
-    for (const r of rows) {
-      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
-    }
-    return counts;
-  }, { push: 0, clone: 0, commit: 0, pullFetch: 0, ghCli: 0, otherGit: 0 });
-}
-
-function githubOpsDetails(type, limit = 300) {
-  if (!GITHUB_OP_TYPES.includes(type)) return [];
+// GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组操作统计——首页原来每组各
+// 占一整排细分类卡片（合计 30+ 张），刷屏太厉害；改成每组只放一张汇总卡片，点开
+// 才展示这套分类的小计表 + 事件明细，跟 MCP/Skill/子代理调用卡片同一个交互模式。
+// 七组背后都是"按 cc_xxx_op() 自定义 SQL 函数分类、GROUP BY kind"这同一个查询
+// 形状，抽成两个通用函数，各组只是传不同的函数名进去。
+function opsBreakdown(sqlFn) {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
-         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_github_op(detail) = ?
-         ORDER BY id DESC LIMIT ?`
+        `SELECT ${sqlFn}(detail) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND ${sqlFn}(detail) IS NOT NULL
+         GROUP BY kind ORDER BY n DESC`
       )
-      .all(type, limit);
+      .all();
   }, []);
 }
 
-// SSH 操作统计（ssh/scp/sftp/密钥管理/其它）——跟 GitHub 操作统计一个思路，大部分
-// ssh/scp 命令本来就不违反任何 policy 规则，压根不会被打上 matched_rule，得直接看
-// 命令文本，用上面注册的 cc_ssh_op() 自定义 SQL 函数分类。
-function sshOpsStats() {
-  return withDb((db) => {
-    const rows = db
-      .prepare(`SELECT cc_ssh_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
-      .all();
-    const counts = { ssh: 0, scp: 0, sftp: 0, keyManagement: 0, other: 0 };
-    for (const r of rows) {
-      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
-    }
-    return counts;
-  }, { ssh: 0, scp: 0, sftp: 0, keyManagement: 0, other: 0 });
-}
-
-function sshOpsDetails(type, limit = 300) {
-  if (!SSH_OP_ORDER.includes(type)) return [];
+function opsEvents(sqlFn, limit = 300) {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
-         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_ssh_op(detail) = ?
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, ${sqlFn}(detail) AS kind FROM events
+         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND ${sqlFn}(detail) IS NOT NULL
          ORDER BY id DESC LIMIT ?`
       )
-      .all(type, limit);
+      .all(limit);
   }, []);
 }
 
-// 下载行为统计（wget/curl/aria2/其它）——同上一套思路，直接看命令文本分类。
-function downloadOpsStats() {
-  return withDb((db) => {
-    const rows = db
-      .prepare(`SELECT cc_download_op(detail) AS kind, COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash' GROUP BY kind`)
-      .all();
-    const counts = { wget: 0, curl: 0, aria2: 0, other: 0 };
-    for (const r of rows) {
-      if (r.kind && counts[r.kind] !== undefined) counts[r.kind] = r.n;
-    }
-    return counts;
-  }, { wget: 0, curl: 0, aria2: 0, other: 0 });
+function githubOpsBreakdown() {
+  return opsBreakdown("cc_github_op");
 }
-
-function downloadOpsDetails(type, limit = 300) {
-  if (!DOWNLOAD_OP_ORDER.includes(type)) return [];
-  return withDb((db) => {
-    return db
-      .prepare(
-        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
-         WHERE source = 'hook_pre' AND tool_name = 'Bash' AND cc_download_op(detail) = ?
-         ORDER BY id DESC LIMIT ?`
-      )
-      .all(type, limit);
-  }, []);
+function githubOpsEvents(limit = 300) {
+  return opsEvents("cc_github_op", limit);
+}
+function sshOpsBreakdown() {
+  return opsBreakdown("cc_ssh_op");
+}
+function sshOpsEvents(limit = 300) {
+  return opsEvents("cc_ssh_op", limit);
+}
+function downloadOpsBreakdown() {
+  return opsBreakdown("cc_download_op");
+}
+function downloadOpsEvents(limit = 300) {
+  return opsEvents("cc_download_op", limit);
+}
+function dockerOpsBreakdown() {
+  return opsBreakdown("cc_docker_op");
+}
+function dockerOpsEvents(limit = 300) {
+  return opsEvents("cc_docker_op", limit);
+}
+function archiveOpsBreakdown() {
+  return opsBreakdown("cc_archive_op");
+}
+function archiveOpsEvents(limit = 300) {
+  return opsEvents("cc_archive_op", limit);
+}
+function netdiagOpsBreakdown() {
+  return opsBreakdown("cc_netdiag_op");
+}
+function netdiagOpsEvents(limit = 300) {
+  return opsEvents("cc_netdiag_op", limit);
+}
+function procbgOpsBreakdown() {
+  return opsBreakdown("cc_procbg_op");
+}
+function procbgOpsEvents(limit = 300) {
+  return opsEvents("cc_procbg_op", limit);
 }
 
 // 首页"截屏审计"卡片：单一计数，不像软件安装/GitHub 操作那样拆细分类——截屏本来
@@ -773,6 +891,46 @@ function skillCallEvents(limit = 300) {
   }, []);
 }
 
+// 子代理（Task/Agent）派生统计——跟 MCP/Skill 调用完全同一个思路，只是分组字段
+// 换成 tool_input 里的 subagent_type（"用的是哪个子代理类型"，比如
+// general-purpose/Explore/Plan/fork，或者用户自定义的子代理名字）。Claude Code
+// 不同版本这个工具名叫 "Task" 还是 "Agent" 不完全一致，两个都认。子代理本身会
+// 消耗独立的资源、有自己的一整套操作轨迹，值得单独拉出来看，而不是混在笼统的
+// "工具调用"计数里。
+function subagentCallStats() {
+  return withDb((db) => {
+    const total = db
+      .prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name IN ('Task', 'Agent')`)
+      .get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+function subagentCallBreakdown(limit = 100) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT COALESCE(json_extract(detail, '$.subagent_type'), '?') AS subagentType, COUNT(*) AS n
+         FROM events WHERE source = 'hook_pre' AND tool_name IN ('Task', 'Agent')
+         GROUP BY subagentType ORDER BY n DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+function subagentCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, COALESCE(json_extract(detail, '$.subagent_type'), '?') AS subagentType,
+                COALESCE(json_extract(detail, '$.description'), '') AS description
+         FROM events WHERE source = 'hook_pre' AND tool_name IN ('Task', 'Agent')
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 // AI 轨迹卡片下钻的事件明细部分——两种不同性质的证据拼在一起，靠 inferred 字段
 // 区分：
 //   - 探针实测（source='os_net'，inferred=false）：探针只在内核层面看到 pid/uid，
@@ -872,12 +1030,20 @@ module.exports = {
   fileOpDetails,
   installStats,
   installDetails,
-  githubOpsStats,
-  githubOpsDetails,
-  sshOpsStats,
-  sshOpsDetails,
-  downloadOpsStats,
-  downloadOpsDetails,
+  githubOpsBreakdown,
+  githubOpsEvents,
+  sshOpsBreakdown,
+  sshOpsEvents,
+  downloadOpsBreakdown,
+  downloadOpsEvents,
+  dockerOpsBreakdown,
+  dockerOpsEvents,
+  archiveOpsBreakdown,
+  archiveOpsEvents,
+  netdiagOpsBreakdown,
+  netdiagOpsEvents,
+  procbgOpsBreakdown,
+  procbgOpsEvents,
   screenshotStats,
   screenshotDetails,
   commandNetworkHosts,
@@ -887,10 +1053,13 @@ module.exports = {
   mcpCallBreakdown,
   skillCallStats,
   skillCallBreakdown,
+  subagentCallStats,
+  subagentCallBreakdown,
   toolCallDetails,
   toolCallEvents,
   mcpCallEvents,
   skillCallEvents,
+  subagentCallEvents,
   networkConnectEvents,
   eventTypeBreakdown,
   blockedDetails,

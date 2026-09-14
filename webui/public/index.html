@@ -124,6 +124,10 @@
           <div class="card-num" id="stat-skill-calls">-</div>
           <div class="card-label"><span data-i18n="home.card.skillCalls">Skill 调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
         </div>
+        <div class="card clickable" data-drilldown="subagent-calls">
+          <div class="card-num" id="stat-subagent-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.subagentCalls">子代理派生</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
         <div class="card clickable" data-drilldown="ai-trajectory">
           <div class="card-num" id="stat-ai-trajectory">-</div>
           <div class="card-label"><span data-i18n="home.card.aiTrajectory">AI 轨迹（访问过的域名/IP）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
@@ -146,31 +150,15 @@
         <div class="card clickable" data-drilldown="install-op-other"><div class="card-num" id="stat-install-other">-</div><div class="card-label"><span data-i18n="home.installOps.other">其它软件安装</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
-      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.githubOps.title">GitHub 操作统计（按 Bash 命令文本识别，非精确）</div>
+      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.opsGroups.title">命令类操作统计（GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理，点开看分类明细）</div>
       <div class="cards">
-        <div class="card clickable" data-drilldown="github-op-push"><div class="card-num" id="stat-github-push">-</div><div class="card-label"><span data-i18n="home.githubOps.push">git push</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="github-op-clone"><div class="card-num" id="stat-github-clone">-</div><div class="card-label"><span data-i18n="home.githubOps.clone">git clone</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="github-op-commit"><div class="card-num" id="stat-github-commit">-</div><div class="card-label"><span data-i18n="home.githubOps.commit">git commit</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="github-op-pullFetch"><div class="card-num" id="stat-github-pullFetch">-</div><div class="card-label"><span data-i18n="home.githubOps.pullFetch">git pull / fetch</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="github-op-ghCli"><div class="card-num" id="stat-github-ghCli">-</div><div class="card-label"><span data-i18n="home.githubOps.ghCli">gh CLI（PR/Issue/API…）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="github-op-otherGit"><div class="card-num" id="stat-github-otherGit">-</div><div class="card-label"><span data-i18n="home.githubOps.otherGit">其它 git 操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-      </div>
-
-      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.sshOps.title">SSH 操作统计（按 Bash 命令文本识别，非精确）</div>
-      <div class="cards">
-        <div class="card clickable" data-drilldown="ssh-op-ssh"><div class="card-num" id="stat-ssh-ssh">-</div><div class="card-label"><span data-i18n="home.sshOps.ssh">ssh（远程登录/执行）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="ssh-op-scp"><div class="card-num" id="stat-ssh-scp">-</div><div class="card-label"><span data-i18n="home.sshOps.scp">scp（文件复制）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="ssh-op-sftp"><div class="card-num" id="stat-ssh-sftp">-</div><div class="card-label"><span data-i18n="home.sshOps.sftp">sftp（文件传输）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="ssh-op-keyManagement"><div class="card-num" id="stat-ssh-keyManagement">-</div><div class="card-label"><span data-i18n="home.sshOps.keyManagement">密钥管理（keygen/copy-id/add/agent）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="ssh-op-other"><div class="card-num" id="stat-ssh-other">-</div><div class="card-label"><span data-i18n="home.sshOps.other">其它 SSH 相关</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-      </div>
-
-      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.downloadOps.title">下载行为统计（按 Bash 命令文本识别，非精确；curl 只在带落盘参数时才算下载）</div>
-      <div class="cards">
-        <div class="card clickable" data-drilldown="download-op-wget"><div class="card-num" id="stat-download-wget">-</div><div class="card-label"><span data-i18n="home.downloadOps.wget">wget</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="download-op-curl"><div class="card-num" id="stat-download-curl">-</div><div class="card-label"><span data-i18n="home.downloadOps.curl">curl（-o/-O 落盘）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="download-op-aria2"><div class="card-num" id="stat-download-aria2">-</div><div class="card-label"><span data-i18n="home.downloadOps.aria2">aria2</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="download-op-other"><div class="card-num" id="stat-download-other">-</div><div class="card-label"><span data-i18n="home.downloadOps.other">其它（axel/lftp/ftp/http）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="github-ops"><div class="card-num" id="stat-github-total">-</div><div class="card-label"><span data-i18n="home.githubOps.title2">GitHub 操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="ssh-ops"><div class="card-num" id="stat-ssh-total">-</div><div class="card-label"><span data-i18n="home.sshOps.title2">SSH 操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="download-ops"><div class="card-num" id="stat-download-total">-</div><div class="card-label"><span data-i18n="home.downloadOps.title2">下载行为</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="docker-ops"><div class="card-num" id="stat-docker-total">-</div><div class="card-label"><span data-i18n="home.dockerOps.title2">Docker 操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="archive-ops"><div class="card-num" id="stat-archive-total">-</div><div class="card-label"><span data-i18n="home.archiveOps.title2">压缩/归档操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="netdiag-ops"><div class="card-num" id="stat-netdiag-total">-</div><div class="card-label"><span data-i18n="home.netdiagOps.title2">网络诊断工具</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card clickable" data-drilldown="procbg-ops"><div class="card-num" id="stat-procbg-total">-</div><div class="card-label"><span data-i18n="home.procbgOps.title2">进程管理/后台驻留</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.screenshotOps.title">截屏审计（Bash 截图命令 / 打开图片 / MCP 截图动作，按命令与工具名近似识别，非精确）</div>

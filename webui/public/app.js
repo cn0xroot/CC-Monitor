@@ -885,6 +885,7 @@ async function refreshOverview() {
   document.getElementById("stat-tool-calls").textContent = s.toolCalls;
   document.getElementById("stat-mcp-calls").textContent = s.mcpCalls;
   document.getElementById("stat-skill-calls").textContent = s.skillCalls;
+  document.getElementById("stat-subagent-calls").textContent = s.subagentCalls;
   document.getElementById("stat-ai-trajectory").textContent = s.aiTrajectory;
 
   if (s.fileOps) {
@@ -899,27 +900,13 @@ async function refreshOverview() {
     document.getElementById("stat-install-npm").textContent = s.installOps.npm;
     document.getElementById("stat-install-other").textContent = s.installOps.other;
   }
-  if (s.githubOps) {
-    document.getElementById("stat-github-push").textContent = s.githubOps.push;
-    document.getElementById("stat-github-clone").textContent = s.githubOps.clone;
-    document.getElementById("stat-github-commit").textContent = s.githubOps.commit;
-    document.getElementById("stat-github-pullFetch").textContent = s.githubOps.pullFetch;
-    document.getElementById("stat-github-ghCli").textContent = s.githubOps.ghCli;
-    document.getElementById("stat-github-otherGit").textContent = s.githubOps.otherGit;
-  }
-  if (s.sshOps) {
-    document.getElementById("stat-ssh-ssh").textContent = s.sshOps.ssh;
-    document.getElementById("stat-ssh-scp").textContent = s.sshOps.scp;
-    document.getElementById("stat-ssh-sftp").textContent = s.sshOps.sftp;
-    document.getElementById("stat-ssh-keyManagement").textContent = s.sshOps.keyManagement;
-    document.getElementById("stat-ssh-other").textContent = s.sshOps.other;
-  }
-  if (s.downloadOps) {
-    document.getElementById("stat-download-wget").textContent = s.downloadOps.wget;
-    document.getElementById("stat-download-curl").textContent = s.downloadOps.curl;
-    document.getElementById("stat-download-aria2").textContent = s.downloadOps.aria2;
-    document.getElementById("stat-download-other").textContent = s.downloadOps.other;
-  }
+  document.getElementById("stat-github-total").textContent = s.githubOpsTotal;
+  document.getElementById("stat-ssh-total").textContent = s.sshOpsTotal;
+  document.getElementById("stat-download-total").textContent = s.downloadOpsTotal;
+  document.getElementById("stat-docker-total").textContent = s.dockerOpsTotal;
+  document.getElementById("stat-archive-total").textContent = s.archiveOpsTotal;
+  document.getElementById("stat-netdiag-total").textContent = s.netdiagOpsTotal;
+  document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -1655,10 +1642,16 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind === "tool-calls" || kind === "mcp-calls" || kind === "skill-calls") {
-    const groupKind = kind === "mcp-calls" ? "mcp" : kind === "skill-calls" ? "skill" : "tool";
+  if (kind === "tool-calls" || kind === "mcp-calls" || kind === "skill-calls" || kind === "subagent-calls") {
+    const groupKind = kind === "mcp-calls" ? "mcp" : kind === "skill-calls" ? "skill" : kind === "subagent-calls" ? "subagent" : "tool";
     title.textContent =
-      groupKind === "mcp" ? t("drilldown.mcpCalls.title") : groupKind === "skill" ? t("drilldown.skillCalls.title") : t("drilldown.toolCalls.title");
+      groupKind === "mcp"
+        ? t("drilldown.mcpCalls.title")
+        : groupKind === "skill"
+          ? t("drilldown.skillCalls.title")
+          : groupKind === "subagent"
+            ? t("drilldown.subagentCalls.title")
+            : t("drilldown.toolCalls.title");
     const result = await api(`/api/drilldown/${kind}`);
     if (!result) return;
     const { breakdown, events } = result;
@@ -1666,9 +1659,16 @@ async function openDrilldown(kind) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
       return;
     }
-    const columnLabel = groupKind === "mcp" ? t("drilldown.mcpCalls.server") : groupKind === "skill" ? t("drilldown.skillCalls.skill") : t("drilldown.toolCalls.tool");
-    const rowLabel = (r) => (groupKind === "mcp" ? r.server : groupKind === "skill" ? r.skill : toolLabel(r.tool_name, r.tool_name));
-    const eventLabel = (e) => (groupKind === "skill" ? e.skill : toolLabel(e.tool_name, e.tool_name));
+    const columnLabel =
+      groupKind === "mcp"
+        ? t("drilldown.mcpCalls.server")
+        : groupKind === "skill"
+          ? t("drilldown.skillCalls.skill")
+          : groupKind === "subagent"
+            ? t("drilldown.subagentCalls.type")
+            : t("drilldown.toolCalls.tool");
+    const rowLabel = (r) => (groupKind === "mcp" ? r.server : groupKind === "skill" ? r.skill : groupKind === "subagent" ? r.subagentType : toolLabel(r.tool_name, r.tool_name));
+    const eventLabel = (e) => (groupKind === "skill" ? e.skill : groupKind === "subagent" ? e.subagentType + (e.description ? " — " + e.description : "") : toolLabel(e.tool_name, e.tool_name));
     body.innerHTML = `
       <table class="dd-table">
         <thead><tr>
@@ -1702,6 +1702,57 @@ async function openDrilldown(kind) {
           }
         </tbody>
       </table>`;
+    return;
+  }
+
+  const GROUPED_OPS_KINDS = {
+    "github-ops": { titleKey: "home.githubOps.title", labels: { push: "home.githubOps.push", clone: "home.githubOps.clone", commit: "home.githubOps.commit", pullFetch: "home.githubOps.pullFetch", ghCli: "home.githubOps.ghCli", otherGit: "home.githubOps.otherGit" } },
+    "ssh-ops": { titleKey: "home.sshOps.title", labels: { ssh: "home.sshOps.ssh", scp: "home.sshOps.scp", sftp: "home.sshOps.sftp", keyManagement: "home.sshOps.keyManagement", other: "home.sshOps.other" } },
+    "download-ops": { titleKey: "home.downloadOps.title", labels: { wget: "home.downloadOps.wget", curl: "home.downloadOps.curl", aria2: "home.downloadOps.aria2", other: "home.downloadOps.other" } },
+    "docker-ops": { titleKey: "home.dockerOps.title", labels: { run: "home.dockerOps.run", build: "home.dockerOps.build", exec: "home.dockerOps.exec", compose: "home.dockerOps.compose", other: "home.dockerOps.other" } },
+    "archive-ops": { titleKey: "home.archiveOps.title", labels: { tar: "home.archiveOps.tar", zip: "home.archiveOps.zip", sevenZip: "home.archiveOps.sevenZip", gzip: "home.archiveOps.gzip", other: "home.archiveOps.other" } },
+    "netdiag-ops": { titleKey: "home.netdiagOps.title", labels: { nc: "home.netdiagOps.nc", nmap: "home.netdiagOps.nmap", telnet: "home.netdiagOps.telnet", other: "home.netdiagOps.other" } },
+    "procbg-ops": { titleKey: "home.procbgOps.title", labels: { nohup: "home.procbgOps.nohup", disown: "home.procbgOps.disown", backgroundJob: "home.procbgOps.backgroundJob", other: "home.procbgOps.other" } },
+  };
+  if (GROUPED_OPS_KINDS[kind]) {
+    // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组——首页原来每组一整排
+    // 细分类卡片（合计 30+ 张，刷屏），现在每组只放一张汇总卡片，点开先看分类
+    // 小计表（跟 MCP/Skill/子代理调用同一个表格），再往下是完整命令明细列表
+    // （复用 log-item 那套带语法高亮的 summaryHtml 渲染，每条前面挂一个分类徽章）。
+    const cfg = GROUPED_OPS_KINDS[kind];
+    title.textContent = t(cfg.titleKey);
+    const result = await api(`/api/drilldown/${kind}`);
+    if (!result) return;
+    const { breakdown, events } = result;
+    if (breakdown.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    const kindLabel = (k) => (cfg.labels[k] ? t(cfg.labels[k]) : k);
+    body.innerHTML = `
+      <table class="dd-table">
+        <thead><tr><th>${t("drilldown.opsBreakdown.category")}</th><th>${t("drilldown.toolCalls.count")}</th></tr></thead>
+        <tbody>
+          ${breakdown.map((r) => `<tr><td>${escapeHtml(kindLabel(r.kind))}</td><td>${r.n}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="box-title" style="margin:18px 0 8px;">${t("drilldown.eventDetail")}</div>
+      ${
+        events
+          .map(
+            (r) => `
+      <div class="log-item">
+        <div class="row1">
+          <span class="ts">${r.ts}</span>
+          <span class="dd-badge-category">${escapeHtml(kindLabel(r.kind))}</span>
+          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+        </div>
+        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
+        <div class="summary">${r.summaryHtml || ""}</div>
+      </div>`
+          )
+          .join("") || `<div class="empty-state">${t("drilldown.empty")}</div>`
+      }`;
     return;
   }
 
@@ -1826,33 +1877,23 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind.startsWith("file-op-") || kind.startsWith("install-op-") || kind.startsWith("github-op-") || kind.startsWith("ssh-op-") || kind.startsWith("download-op-")) {
-    // 文件操作（读/写/编辑/删除）、软件安装（pip/系统包/npm/其它）、GitHub 操作
-    // （push/clone/commit/pull-fetch/gh CLI/其它 git）、SSH 操作（ssh/scp/sftp/
-    // 密钥管理/其它）、下载行为（wget/curl/aria2/其它）这五组下钻详情数据形状、
-    // 渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
-    const apiKind = kind.startsWith("install-op-")
-      ? "install-op"
-      : kind.startsWith("github-op-")
-        ? "github-op"
-        : kind.startsWith("ssh-op-")
-          ? "ssh-op"
-          : kind.startsWith("download-op-")
-            ? "download-op"
-            : "file-op";
+  const OP_DRILLDOWN_PREFIXES = ["file-op-", "install-op-"];
+  if (OP_DRILLDOWN_PREFIXES.some((p) => kind.startsWith(p))) {
+    // 文件操作（读/写/编辑/删除）、软件安装（pip/系统包/npm/其它）这两组下钻详情
+    // 数据形状、渲染方式完全一样，就是后端接口路径前缀不同，合并成一份处理逻辑。
+    // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组以前也在这个大家族里，
+    // 首页改成每组一张汇总卡片之后，挪到下面 GROUPED_OPS_KINDS 那个专门的分支了
+    // （那七组下钻现在是"分类小计表 + 事件明细"，跟 file-op/install-op 这种平铺
+    // 列表已经不是同一种形状）。
+    const OP_LABEL_KEYS = {
+      "install-op": { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" },
+      "file-op": { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" },
+    };
+    const apiKind = OP_DRILLDOWN_PREFIXES.find((p) => kind.startsWith(p)).slice(0, -1);
     const prefix = apiKind + "-";
     const opType = kind.slice(prefix.length);
-    const opLabelKey =
-      apiKind === "install-op"
-        ? { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" }[opType]
-        : apiKind === "github-op"
-          ? { push: "home.githubOps.push", clone: "home.githubOps.clone", commit: "home.githubOps.commit", pullFetch: "home.githubOps.pullFetch", ghCli: "home.githubOps.ghCli", otherGit: "home.githubOps.otherGit" }[opType]
-          : apiKind === "ssh-op"
-            ? { ssh: "home.sshOps.ssh", scp: "home.sshOps.scp", sftp: "home.sshOps.sftp", keyManagement: "home.sshOps.keyManagement", other: "home.sshOps.other" }[opType]
-            : apiKind === "download-op"
-              ? { wget: "home.downloadOps.wget", curl: "home.downloadOps.curl", aria2: "home.downloadOps.aria2", other: "home.downloadOps.other" }[opType]
-              : { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" }[opType];
-    const suffixKey = apiKind === "install-op" ? "drilldown.installOp.suffix" : apiKind === "github-op" ? "drilldown.githubOp.suffix" : "drilldown.fileOp.suffix";
+    const opLabelKey = OP_LABEL_KEYS[apiKind][opType];
+    const suffixKey = apiKind === "install-op" ? "drilldown.installOp.suffix" : "drilldown.fileOp.suffix";
     title.textContent = t(opLabelKey) + " — " + t(suffixKey);
     const rows = await api(`/api/drilldown/${apiKind}/${opType}`);
     if (!rows) return;

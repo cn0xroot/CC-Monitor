@@ -29,7 +29,7 @@
     "action": "block",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\bnc\\b[^\\n]*-e\\s+/bin/(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)"
+    "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*e[a-zA-Z]*\\s+/bin/(ba)?sh\\b|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*c[a-zA-Z]*\\s+(/bin/)?(ba)?sh\\b|\\bsocat\\b[^\\n]*exec:['\"]?/?(bin/)?(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)|\\bmkfifo\\b[^\\n]*\\b(nc|ncat|netcat)\\b[^\\n]*\\|\\s*(/bin/)?(ba)?sh\\b"
   },
   {
     "id": "chmod_world_writable_recursive",
@@ -70,6 +70,14 @@
     "tools": ["Bash"],
     "field": "command",
     "pattern": "\\bchmod\\s+-R\\b"
+  },
+  {
+    "id": "chmod_777_single_file",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bchmod\\s+777\\b"
   },
   {
     "id": "fork_bomb",
@@ -120,6 +128,22 @@
     "pattern": "\\bsetenforce\\s+0\\b|\\bufw\\s+disable\\b|\\biptables\\s+(-F|--flush)\\b|\\bsystemctl\\s+(stop|disable)\\s+(firewalld|ufw|apparmor)\\b"
   },
   {
+    "id": "kill_monitoring_process",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(kill|pkill|killall)\\b[^\\n]*\\b(CC-Monitor-probe|CC-Monitor-hook|probe_linux\\.bt|probe_darwin\\.py|cc_monitor\\.probe|bpftrace)\\b"
+  },
+  {
+    "id": "process_kill",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(kill|pkill|killall)\\b"
+  },
+  {
     "id": "sudo_pip_install",
     "risk": "high",
     "action": "block",
@@ -142,6 +166,14 @@
     "tools": ["Bash"],
     "field": "command",
     "pattern": "(^|;|&&|\\|\\|)\\s*sudo\\b"
+  },
+  {
+    "id": "su_pkexec_privilege_escalation",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(^|;|&&|\\|\\|)\\s*(su|pkexec)\\b"
   },
   {
     "id": "pip_install_venv_context",
@@ -208,6 +240,22 @@
     "pattern": "\\bhistory\\s+-c\\b|>\\s*~?/?\\.bash_history\\b|\\brm\\s+-f?\\s*~?/\\.bash_history\\b"
   },
   {
+    "id": "history_read",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(cat|less|more|head|tail|strings)\\s+[^\\n|;&]*(\\.bash_history|\\.zsh_history|\\.python_history|\\.mysql_history|\\.psql_history|\\.node_repl_history|\\.history)\\b|(^|;|&&|\\|\\|)\\s*history\\b(?!\\s*-c\\b)"
+  },
+  {
+    "id": "db_destructive_command",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(mysql|psql|redis-cli|mongo|mongosh|sqlite3)\\b[^\\n|;&]*\\b(DROP|DELETE|TRUNCATE|FLUSHALL|FLUSHDB)\\b"
+  },
+  {
     "id": "docker_privileged_or_host_mount",
     "risk": "medium",
     "action": "confirm",
@@ -238,6 +286,22 @@
     "tools": ["Read"],
     "field": "file_path",
     "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$)"
+  },
+  {
+    "id": "sensitive_file_read_bash",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(cat|less|more|head|tail|strings|xxd|hexdump|od)\\s+[^\\n|;&]*(\\.ssh/|\\.aws/credentials|\\.env\\b|id_rsa|id_ed25519|\\.pem\\b|\\.p12\\b)"
+  },
+  {
+    "id": "env_dump",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(env|printenv)\\b(\\s|$)|\\bexport\\s+-p\\b"
   },
   {
     "id": "system_config_write",

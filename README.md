@@ -82,19 +82,44 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     attack surface, but a global install sticks around on `$PATH` across every project, so only
     the global case asks for confirmation. Clicking the card splits the drilldown into separate
     "Global installs"/"Local installs" groups instead of flattening them together.
-  - **GitHub operation stats**: git push / git clone / git commit / git pull-fetch / gh CLI
-    (PR/Issue/API…) / other git operations, six cards, classified from the Bash command text
-    itself (most git/gh commands don't violate any policy rule, so they never get a
-    `matched_rule` and couldn't reuse the install-ops trick). Click through for the exact
-    session, folder, timestamp, and command.
-  - **SSH operation stats**: ssh (remote login/exec) / scp (file copy) / sftp (file transfer) /
-    key management (`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`) / other
-    (`autossh`/`sshpass`), five cards, classified the same way as GitHub operation stats (only
-    the start of each sub-command, never a substring match against the whole text, so an
-    `echo`'d string can't be misread as a real invocation).
-  - **Download stats**: wget / curl (only counted when it writes to a file via `-o`/`-O`/
-    `--output` — a bare curl call to an API isn't a "download") / aria2 / other
-    (`axel`/`lftp`/`ftp`/`http`), four cards.
+  - **Command-based operation stats** (GitHub/SSH/Download/Docker/Archive/Network
+    Diagnostics/Process Management — seven groups): each group's home page footprint is a single
+    summary card (the number is the sum across that group's categories); clicking it expands into
+    a category breakdown table plus the full command list with syntax highlighting — avoiding a
+    home page wall-papered with 33 sub-category cards across the seven groups (that's what it used
+    to be, one full row per group). The drilldown interaction matches the existing MCP/Skill/
+    Subagent call cards:
+    - **GitHub operations**: git push / git clone / git commit / git pull-fetch / gh CLI
+      (PR/Issue/API…) / other git operations, classified from the Bash command text itself (most
+      git/gh commands don't violate any policy rule, so they never get a `matched_rule` and
+      couldn't reuse the install-ops trick).
+    - **SSH operations**: ssh (remote login/exec) / scp (file copy) / sftp (file transfer) / key
+      management (`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`) / other (`autossh`/`sshpass`),
+      classified the same way as GitHub operations (only the start of each sub-command, never a
+      substring match against the whole text, so an `echo`'d string can't be misread as a real
+      invocation).
+    - **Downloads**: wget / curl (only counted when it writes to a file via `-o`/`-O`/`--output` —
+      a bare curl call to an API isn't a "download") / aria2 / other (`axel`/`lftp`/`ftp`/`http`).
+    - **Docker operations**: run (start a container) / build (build an image) / exec (run inside a
+      running container) / compose (`docker compose` or the standalone `docker-compose`) / other
+      (read-only inspection like `ps`/`logs`/`images`). run/build/exec are broken out separately
+      since they can execute arbitrary code from an external image, Dockerfile, or a running
+      container — a different risk tier than read-only inspection.
+    - **Archive/compression operations**: tar / zip (incl. unzip) / 7z / gzip (incl. gunzip/zcat)
+      / other (bzip2/xz/zstd/rar, etc.).
+    - **Network diagnostic tools**: nc (incl. the ncat/netcat aliases) / nmap / telnet / other
+      (socat) — purely a "was this tool used" visibility stat; an ordinary port probe like
+      `nc -zv example.com 443` is still counted here without implying danger — an actual reverse
+      shell is blocked separately by the policy rule below.
+    - **Process management / backgrounding**: nohup / disown / background job (a bare trailing
+      `&`) / other (setsid). "Background job" detection is deliberately narrow (requires the `&`
+      not be part of `&&`/`2>&1`/`&>` syntax, and be immediately followed by the end of the
+      command or a `;`), to avoid false-positiving on the `&` inside a URL query string like
+      `curl 'http://x.com/a&b=c'`.
+  - **Subagent spawn stats**: same approach as the MCP/Skill call stats, grouped by
+    `subagent_type` (e.g. `general-purpose`/`Explore`/`Plan`/`fork`) — subagents consume
+    independent resources and have their own full trail of operations, so they shouldn't be
+    buried inside the generic "tool calls" count.
   - **Screenshot audit**: Claude Code has no built-in "screenshot" tool, so this is identified
     from three independent signals — a Bash command invoking a screenshot CLI (`scrot`,
     `gnome-screenshot`, `import`, `spectacle`, `flameshot`, `maim`, `grim`, `xwd`, macOS's
@@ -532,7 +557,17 @@ Events and rules live under `~/.cc-monitor/`: `events.db` (SQLite audit log) and
 
 Default rules live in [cc_monitor/default_rules.json](./cc_monitor/default_rules.json), covering: dangerous
 deletes, disk-overwrite commands, `curl|bash`, recursive `chmod 777`, `sudo`, `git push --force`,
-reading/writing SSH keys and credential files, writing to system directories, and more.
+reading/writing SSH keys and credential files, writing to system directories, attempts to kill the
+monitoring itself (`kill`/`pkill` targeting CC-Monitor's own probe process, `confirm` level; a
+generic `kill`/`pkill` is `log`-only to avoid alert fatigue), reading SSH keys/`.env`/credential
+files via `cat`/`less`/`head` and friends (a blind spot the `Read`-tool-only rule didn't cover),
+dumping the whole environment via `env`/`printenv`/`export -p`, `su`/`pkexec` privilege escalation
+(the same risk category as `sudo`), single-file non-recursive `chmod 777` (relative paths included,
+not just filesystem-rooted ones), and destructive direct database commands (`mysql`/`psql`/
+`redis-cli`/`mongo`/`sqlite3` followed by `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`), reading shell
+history files or running a bare `history` command (which can surface plaintext credentials typed
+in the past), and reverse-shell/backdoor execution (covering `-e`/`-c` variants of
+`nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell), and more.
 
 ## Development Progress
 
@@ -596,6 +631,42 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Home page Screenshot Audit: identifies Bash screenshot CLI commands / image files opened
       via Read / MCP screenshot-type tool actions; the drilldown shows only basic info (command
       / file path), never the screenshot's own image content
+- [x] New kill/pkill monitoring-tamper detection rules: specifically flags kill/pkill targeting
+      CC-Monitor's own probe/hook processes (`confirm` level); a generic kill/pkill is `log`-only
+      to avoid alert fatigue
+- [x] Home page Docker Operations stats (run/build/exec/compose/other), classified from Bash
+      command text; run/build/exec are broken out separately since they're a different risk tier
+      than read-only inspection
+- [x] Sensitive-file-read detection extended to Bash commands: `cat`/`less`/`head` and friends
+      reading SSH keys/`.env`/credential files are now covered (previously only the `Read` tool
+      opening them directly was), plus new detection for `env`/`printenv`/`export -p` dumping the
+      whole environment
+- [x] New `su`/`pkexec` privilege-escalation detection (same risk category as `sudo`, previously
+      a complete blind spot)
+- [x] New single-file, non-recursive `chmod 777` detection: relative-path, single-file cases
+      weren't covered by any existing rule before
+- [x] New destructive direct-database-command detection: `mysql`/`psql`/`redis-cli`/`mongo`/
+      `mongosh`/`sqlite3` followed by `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`/`FLUSHDB` had zero
+      rule coverage before
+- [x] New shell-history-read detection: `cat .bash_history` / running bare `history` had no rule
+      coverage before — command history can retain plaintext credentials typed in the past
+- [x] Strengthened reverse-shell/backdoor-execution detection: the previous
+      `reverse_shell_pattern` only recognized `nc -e` — expanded to cover the `-c` variant,
+      the `ncat`/`netcat` aliases, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell,
+      verified not to false-positive on ordinary network diagnostics like `nc -zv`/`nmap`
+- [x] New "Archive/Compression Operations" home card (tar/zip/7z/gzip/other), classified from
+      Bash command text
+- [x] New "Network Diagnostic Tools" home card (nc/nmap/telnet/other) — a pure visibility stat,
+      a separate concern from the reverse-shell risk judgment
+- [x] New "Process Management / Backgrounding" home card (nohup/disown/background job/other) —
+      "background job" is detected via an isolated trailing `&`, deliberately narrowed to avoid
+      false-positiving on the `&` inside a URL query string
+- [x] New "Subagent spawns" home card: grouped by `subagent_type`, previously buried inside the
+      generic "tool calls" count with no dedicated visibility
+- [x] Collapsed the GitHub/SSH/Download/Docker/Archive/Network-Diagnostics/Process-Management
+      home cards (33 sub-category cards across 7 rows) down to one summary card per group;
+      clicking one now shows a category breakdown table plus the full command list, the same
+      interaction as the MCP/Skill/Subagent call cards
 - [x] Appearance settings dialog: color-theme swatch grid, interface font, interface font size (new settings)
 - [x] Session quota shows "remaining %" with a conky-style stepped palette; weekly quotas show "used %" with a continuous red→yellow→green gradient; per-model quotas like Fable are detected dynamically
 - [x] **macOS platform support**: hooks (`PreToolUse`/`PostToolUse`/`PermissionRequest`), AI

@@ -354,6 +354,12 @@ app.get("/api/stats", (req, res) => {
 
 // ---- REST API: 首页概览 + 状态信息面板 ----
 
+// GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组首页卡片现在只显示一个汇总
+// 数字（点开才看分类明细），汇总数字就是分类小计表 n 字段加总。
+function sumN(rows) {
+  return rows.reduce((a, r) => a + r.n, 0);
+}
+
 app.get("/api/overview", async (req, res) => {
   const s = audit.stats();
   const netSummary = await network.summary();
@@ -362,13 +368,18 @@ app.get("/api/overview", async (req, res) => {
     liveSessionCount: sessions.list().filter((x) => x.alive).length,
     fileOps: audit.fileOpsStats(),
     installOps: audit.installStats(),
-    githubOps: audit.githubOpsStats(),
-    sshOps: audit.sshOpsStats(),
-    downloadOps: audit.downloadOpsStats(),
+    githubOpsTotal: sumN(audit.githubOpsBreakdown()),
+    sshOpsTotal: sumN(audit.sshOpsBreakdown()),
+    downloadOpsTotal: sumN(audit.downloadOpsBreakdown()),
+    dockerOpsTotal: sumN(audit.dockerOpsBreakdown()),
+    archiveOpsTotal: sumN(audit.archiveOpsBreakdown()),
+    netdiagOpsTotal: sumN(audit.netdiagOpsBreakdown()),
+    procbgOpsTotal: sumN(audit.procbgOpsBreakdown()),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
     skillCalls: audit.skillCallStats().total,
+    subagentCalls: audit.subagentCallStats().total,
     aiTrajectory: netSummary.distinctIps,
   });
 });
@@ -443,86 +454,43 @@ app.get("/api/drilldown/file-op/:type", (req, res) => {
   res.json(rows);
 });
 
-app.get("/api/drilldown/github-op/:type", (req, res) => {
-  const type = req.params.type;
-  if (!["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"].includes(type)) {
-    return res.status(400).json({ error: "type 必须是 push/clone/commit/pullFetch/ghCli/otherGit 之一" });
-  }
-  const rows = audit.githubOpsDetails(type).map((row) => {
-    let detail = {};
-    try {
-      detail = row.detail ? JSON.parse(row.detail) : {};
-    } catch (e) {
-      detail = {};
-    }
-    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
-    return {
-      id: row.id,
-      ts: row.ts,
-      sessionId: row.session_id,
-      cwd: row.cwd,
-      toolName: row.tool_name,
-      matchedRule: row.matched_rule,
-      label,
-      summaryHtml,
-    };
-  });
-  res.json(rows);
-});
+// GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组，首页现在都是"一张汇总卡片，
+// 点开看分类小计 + 事件明细"，接口形状也完全一样（跟 mcp-calls/skill-calls 那几个
+// 已有接口是同一个套路），抽成一个通用处理函数。
+function opsDrilldownHandler(breakdownFn, eventsFn) {
+  return (req, res) => {
+    const breakdown = breakdownFn();
+    const events = eventsFn().map((row) => {
+      let detail = {};
+      try {
+        detail = row.detail ? JSON.parse(row.detail) : {};
+      } catch (e) {
+        detail = {};
+      }
+      const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+      return {
+        id: row.id,
+        ts: row.ts,
+        sessionId: row.session_id,
+        cwd: row.cwd,
+        toolName: row.tool_name,
+        matchedRule: row.matched_rule,
+        kind: row.kind,
+        label,
+        summaryHtml,
+      };
+    });
+    res.json({ breakdown, events });
+  };
+}
 
-app.get("/api/drilldown/ssh-op/:type", (req, res) => {
-  const type = req.params.type;
-  if (!["ssh", "scp", "sftp", "keyManagement", "other"].includes(type)) {
-    return res.status(400).json({ error: "type 必须是 ssh/scp/sftp/keyManagement/other 之一" });
-  }
-  const rows = audit.sshOpsDetails(type).map((row) => {
-    let detail = {};
-    try {
-      detail = row.detail ? JSON.parse(row.detail) : {};
-    } catch (e) {
-      detail = {};
-    }
-    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
-    return {
-      id: row.id,
-      ts: row.ts,
-      sessionId: row.session_id,
-      cwd: row.cwd,
-      toolName: row.tool_name,
-      matchedRule: row.matched_rule,
-      label,
-      summaryHtml,
-    };
-  });
-  res.json(rows);
-});
-
-app.get("/api/drilldown/download-op/:type", (req, res) => {
-  const type = req.params.type;
-  if (!["wget", "curl", "aria2", "other"].includes(type)) {
-    return res.status(400).json({ error: "type 必须是 wget/curl/aria2/other 之一" });
-  }
-  const rows = audit.downloadOpsDetails(type).map((row) => {
-    let detail = {};
-    try {
-      detail = row.detail ? JSON.parse(row.detail) : {};
-    } catch (e) {
-      detail = {};
-    }
-    const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
-    return {
-      id: row.id,
-      ts: row.ts,
-      sessionId: row.session_id,
-      cwd: row.cwd,
-      toolName: row.tool_name,
-      matchedRule: row.matched_rule,
-      label,
-      summaryHtml,
-    };
-  });
-  res.json(rows);
-});
+app.get("/api/drilldown/github-ops", opsDrilldownHandler(audit.githubOpsBreakdown, audit.githubOpsEvents));
+app.get("/api/drilldown/ssh-ops", opsDrilldownHandler(audit.sshOpsBreakdown, audit.sshOpsEvents));
+app.get("/api/drilldown/download-ops", opsDrilldownHandler(audit.downloadOpsBreakdown, audit.downloadOpsEvents));
+app.get("/api/drilldown/docker-ops", opsDrilldownHandler(audit.dockerOpsBreakdown, audit.dockerOpsEvents));
+app.get("/api/drilldown/archive-ops", opsDrilldownHandler(audit.archiveOpsBreakdown, audit.archiveOpsEvents));
+app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakdown, audit.netdiagOpsEvents));
+app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdown, audit.procbgOpsEvents));
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;
@@ -587,6 +555,10 @@ app.get("/api/drilldown/mcp-calls", (req, res) => {
 
 app.get("/api/drilldown/skill-calls", (req, res) => {
   res.json({ breakdown: audit.skillCallBreakdown(), events: audit.skillCallEvents() });
+});
+
+app.get("/api/drilldown/subagent-calls", (req, res) => {
+  res.json({ breakdown: audit.subagentCallBreakdown(), events: audit.subagentCallEvents() });
 });
 
 app.get("/api/drilldown/ai-trajectory-events", (req, res) => {

@@ -122,12 +122,23 @@ The system layer's mandatory sandbox (Landlock/sandbox-exec/containerization) is
 ### 4.3 Policy Engine
 Example rules (configurable, stored as YAML/JSON):
 
-- **High risk (deny + alert by default)**: `rm -rf`, `dd`, `chmod -R 777 /`, `curl|bash`, `sudo`,
-  writing to `~/.ssh/*`, `.env`, `~/.aws/credentials`, accessing a non-whitelisted domain combined
-  with reading a sensitive file (a read + exfiltrate combination triggers higher risk).
+- **High risk (deny + alert by default)**: `rm -rf`, `dd`, `chmod -R 777 /`, `curl|bash`,
+  `sudo`/`su`/`pkexec` privilege escalation, writing to `~/.ssh/*`, `.env`, `~/.aws/credentials`,
+  accessing a non-whitelisted domain combined with reading a sensitive file (a read + exfiltrate
+  combination triggers higher risk), attempting to `kill`/`pkill` the monitoring's own
+  probe/hook process (a concrete rule-level instance of the "two layers cross-check each other"
+  idea from §3 — the act itself is a signal that bypass is being attempted), and database clients
+  (`mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3`, etc.) running `DROP`/`DELETE`/`TRUNCATE`/
+  `FLUSHALL` directly (the same risk category as "deleting files," but entirely outside the
+  filesystem monitoring's field of view), and reverse-shell/backdoor execution (the `-e`/`-c`
+  variants of `nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell —
+  coverage keeps expanding here since the sneaky ways to write one of these keep multiplying).
 - **Medium risk (log + confirmation dialog)**: writes outside the project directory, modifying
   system config files (`/etc/*`), bulk file deletion.
-- **Low risk (log only)**: routine reads/writes inside the project directory, git operations.
+- **Low risk (log only)**: routine reads/writes inside the project directory, git operations,
+  reading shell history files or running a bare `history` command (command history can retain
+  plaintext credentials typed in the past — a real but lesser risk than reading a key file
+  directly, not high-risk but still worth a trail).
 
 Matching approach: commands are matched with rules + keywords/regex, optionally combined with a
 lightweight local model for semantic judgment (e.g. having it explain "what is this command
@@ -195,3 +206,10 @@ block's intent, does it match a known destructive pattern"); file paths use glob
   Terminal, and the network-layer probe are all independent of it.
 - Semantic-layer rules can't cover every "looks harmless but actually isn't" command combination —
   the rule set should keep iterating, with human confirmation kept as a backstop.
+- The policy engine currently matches command text with plain `re.search` and has no quote/heredoc
+  awareness — content inside a multi-line quoted argument or a heredoc body could in theory get
+  misread as part of the command itself by a rule (the Web UI side solved the equivalent problem
+  for its command-classification display with a small shell tokenizer,
+  `splitShellSegments()`, but the policy engine hasn't been brought in line with that yet; this is
+  a pre-existing characteristic shared by every rule, not something introduced by any single new
+  rule).

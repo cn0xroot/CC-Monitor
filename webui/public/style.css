@@ -759,6 +759,16 @@ html, body {
   vertical-align: middle;
   cursor: help;
 }
+.dd-badge-category {
+  display: inline-block;
+  font-size: 0.7143rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;

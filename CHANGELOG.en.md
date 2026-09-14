@@ -111,6 +111,163 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   page shouldn't be serving. Verified end-to-end with an isolated test database and a headless
   browser: the home card count is correct, the drilldown lists exactly the matching events, and
   non-matching commands (`ls -la`, opening a plain text file) are correctly excluded.
+- **New kill/pkill monitoring-tamper detection rules**: `default_rules.json` gains two rules —
+  `kill_monitoring_process` (`risk: high`, `action: confirm`) matches `kill`/`pkill`/`killall`
+  followed by one of CC-Monitor's own process names (the probe binary, `probe_linux.bt`/
+  `probe_darwin.py`, `cc_monitor.probe`, `bpftrace`) — this is the "someone is trying to shut
+  down the monitoring itself" scenario, set to `confirm` rather than `block` since restarting
+  the probe for legitimate maintenance is a normal action that shouldn't be hard-blocked, just
+  surfaced for a human to confirm; a generic `kill`/`pkill`/`killall` (`process_kill`, `risk: low`,
+  `action: log`) sits after it as a catch-all, log-only, since killing processes is extremely
+  common in day-to-day dev work and flagging every instance for confirmation would cause alert
+  fatigue. Both rules are inserted between `disable_security_controls` and `sudo_pip_install`,
+  with ordering ensuring the CC-Monitor-specific rule matches first. An existing user's
+  `~/.cc-monitor/rules.json` is a copy made on first run and does not auto-update — delete it to
+  regenerate, or add these rules manually, to pick them up.
+- **New "Docker Operations" home card**: same approach as the SSH/Download operation stats —
+  split on `;`/`&`/`|`/newlines and check only each sub-command's start, into five cards: run
+  (start a container) / build (build an image) / exec (run inside a running container) / compose
+  (`docker compose` or the standalone `docker-compose`) / other (read-only inspection commands
+  like `ps`/`logs`/`images`). run/build/exec are broken out separately because they can execute
+  arbitrary code from an external image, Dockerfile, or a running container — not the same risk
+  tier as pure read-only inspection. Added `classifyDockerOp`/`dockerOpsStats`/`dockerOpsDetails`
+  and the `cc_docker_op` SQL custom function in `webui/lib/audit.js`, plus a new
+  `/api/drilldown/docker-op/:type` endpoint. Verified against 9 real commands in an isolated test
+  database (including an `echo "docker run..."` string, confirmed not to be misread as an actual
+  `docker run`) — all classified correctly; also verified the home card counts and the drilldown
+  modal via a headless-browser screenshot.
+- **Sensitive-file-read detection extended to Bash commands**: previously the
+  `sensitive_file_read` rule only covered the `Read` tool opening sensitive paths
+  (`.ssh/`, `.aws/credentials`, `.env`, private keys, etc.) directly — reading the same files via
+  a Bash command like `cat`/`less`/`head` was a complete blind spot. Added
+  `sensitive_file_read_bash` (`risk: medium`, `action: log`) covering
+  `cat`/`less`/`more`/`head`/`tail`/`strings`/`xxd`/`hexdump`/`od` followed by one of those
+  sensitive paths, plus `env_dump` (`risk: low`, `action: log`) logging
+  `env`/`printenv`/`export -p` — commands that print the entire current-process environment
+  (which can include API keys/tokens) to the terminal. Both rules are inserted between the
+  existing `sensitive_file_read` and `system_config_write`. These rules reuse `policy.py`'s
+  existing plain `re.search` matching and do not get the same quote/heredoc awareness as the
+  webui-side `splitShellSegments()` — that's a pre-existing characteristic shared by all 30+
+  rules in the Python policy engine, not something newly introduced by these rules; fixing it
+  properly would mean reworking the whole policy engine, which is out of scope here. As with the
+  rules above, an existing user's `~/.cc-monitor/rules.json` won't auto-update to pick these up.
+- **New `su`/`pkexec` privilege-escalation detection**: previously only `sudo_usage` covered
+  privilege escalation — `su`/`pkexec`, which achieve the same thing (switch to, or run as,
+  another user — typically root), were a complete blind spot. Added
+  `su_pkexec_privilege_escalation` (`risk: medium`, `action: confirm`), matching `su`/`pkexec`
+  only at the start of a command or right after `;`/`&&`/`||` (the same shape as the existing
+  `sudo_usage` pattern, `(^|;|&&|\|\|)\s*sudo\b`), so an `echo su`-style string or the token "su"
+  appearing inside something like `subprocess.run(...)` isn't misread as an actual escalation.
+  Inserted right after `sudo_usage`.
+- **New single-file, non-recursive `chmod 777` detection**: `chmod_world_writable_recursive` only
+  matched when the target path started with `/` or `~`, and `chmod_recursive_generic` only
+  matched when `-R` was present — `chmod 777 file.txt` (a relative path, single file, no
+  recursion) fell through both. Added `chmod_777_single_file` (`risk: medium`, `action: confirm`),
+  inserted right after `chmod_recursive_generic` so rule ordering guarantees it only fires when
+  neither of the earlier two already matched (a `-R` call or a `/`- or `~`-rooted target is
+  already handled, at its appropriate severity, by an earlier rule — no double-firing or
+  downgrade).
+- **New destructive direct-database-command detection**: `mysql`/`psql`/`redis-cli`/`mongo`/
+  `mongosh`/`sqlite3` followed by `DROP`/`DELETE`/`TRUNCATE` (SQL) or `FLUSHALL`/`FLUSHDB` (Redis)
+  previously had zero rule coverage — these can write directly to production data, the same risk
+  category as "deleting files," but were completely off the radar. Added `db_destructive_command`
+  (`risk: high`, `action: confirm`), inserted between `history_tampering` and
+  `docker_privileged_or_host_mount`. Verified with 23 positive/negative test cases covering both
+  matching and the interaction with existing rules' precedence (e.g. `chmod -R 777 subdir`
+  correctly hits the earlier `chmod_recursive_generic` rather than the new one, and
+  `chmod 777 ~/.ssh/id_rsa` correctly hits `chmod_world_writable_recursive`); `node --test` still
+  passes 5/5 — not a regression. These three rules reuse `policy.py`'s existing plain regex
+  matching without the webui-side quote/heredoc awareness, for the same reason noted above for
+  `sensitive_file_read_bash`/`env_dump`; an existing user's `~/.cc-monitor/rules.json` likewise
+  won't auto-update.
+- **New shell-history-read detection**: commands reading shell history files (`cat
+  ~/.bash_history`, `cat .history`, etc.) and running the bare `history` builtin (which dumps the
+  current session's command history straight to stdout) had zero rule coverage — command history
+  frequently retains plaintext passwords/tokens typed as CLI arguments in the past, a real
+  information-leak path. Added `history_read` (`risk: low`, `action: log`), covering
+  `cat`/`less`/`more`/`head`/`tail`/`strings` reading `.bash_history`/`.zsh_history`/
+  `.python_history`/`.mysql_history`/`.psql_history`/`.node_repl_history`/any `*.history` file, and
+  a bare `history` at the start of a command or right after `;`/`&&`/`||` (the destructive
+  `history -c` case is already covered by the earlier `history_tampering` rule; ordering plus an
+  explicit `(?!\s*-c\b)` exclusion avoids double-firing). Inserted right after `history_tampering`.
+  Verified with 13 positive/negative test cases covering matching and precedence — not a
+  regression.
+- **Strengthened reverse-shell / backdoor-execution detection**: the previous
+  `reverse_shell_pattern` only recognized `nc ... -e /bin/sh` — real attacker/red-team toolkits
+  have several common variants that were a complete blind spot: `nc`/`ncat`/`netcat` using `-c`
+  instead of `-e` (how some nc variants invoke a command), `ncat`/`netcat` — nc's own aliases —
+  weren't recognized at all, `socat` doing a reverse shell via an `exec:` target (many hardened
+  systems ship an nc without `-e` support, making `socat` the most common substitute), and a
+  reverse shell hand-assembled from a `mkfifo` named pipe plus `nc` + a shell without any `-e`/`-c`
+  flag at all (stealthier, since it evades any check keyed on those flags). Expanded
+  `reverse_shell_pattern`'s regex to cover all four new variants, keeping `risk`/`action` at the
+  existing `high`/`block`. Verified with 17 positive/negative test cases (the original `nc -e`,
+  `/dev/tcp`, and `sh -i` forms had to keep matching — no regression from the change — while
+  ordinary network-diagnostic usage like `nc -zv`, `nmap`, `ncat --ssl` had to stay unflagged).
+  Deliberately out of scope: one-liner reverse shells in scripting languages (Python/Perl/PHP/Ruby,
+  e.g. `python3 -c "import socket,subprocess..."`) — their "danger" depends entirely on the
+  script's semantics, and a plain regex would either miss most variants or flag a large amount of
+  legitimate code that happens to use the `socket` module; the false-positive cost was judged too
+  high for this pass.
+- **New "Archive/Compression Operations" home card**: same approach as the SSH/Download/Docker
+  operation stats — split into tar / zip (including unzip) / 7z / gzip (including gunzip/zcat) /
+  other (bzip2/xz/zstd/rar, etc.), five cards, classified from the Bash command text. Added
+  `classifyArchiveOp`/`archiveOpsStats`/`archiveOpsDetails` and the `cc_archive_op` SQL custom
+  function in `webui/lib/audit.js`, plus a new `/api/drilldown/archive-op/:type` endpoint.
+- **New "Network Diagnostic Tools" home card**: nc (including the ncat/netcat aliases) / nmap /
+  telnet / other (socat), four cards — purely a "was this tool used" visibility stat, a separate
+  concern from the reverse-shell risk judgment above: `nc -zv example.com 443`, an ordinary port
+  probe, is still counted on this card without implying danger. Added
+  `classifyNetdiagOp`/`netdiagOpsStats`/`netdiagOpsDetails` and the `cc_netdiag_op` SQL custom
+  function, plus a new `/api/drilldown/netdiag-op/:type` endpoint.
+- **New "Process Management / Backgrounding" home card**: nohup / disown / background job (a bare
+  trailing `&`) / other (setsid), four cards. The first two are classified by sub-command start,
+  the same approach as the other classifiers; "background job" is different — a bare `&` isn't a
+  command name, it's a shell-syntax marker at the end of the whole command, and
+  `splitShellSegments()` itself treats a lone `&` as a separator, so it can't be identified by
+  "look at the sub-command's start." Instead it's detected by scanning the raw command text for an
+  "isolated `&`": not immediately preceded by `&`/`>` (excludes `&&`, `2>&1`, `&>` — none of which
+  are real background markers), not immediately followed by a digit/`&`/`>` (excludes file
+  descriptor redirection), and, after that `&` (skipping whitespace), immediately the end of the
+  command or a `;`. This is deliberately narrow to avoid false-positiving on the `&` inside a URL
+  query string like `curl 'http://x.com/a&b=c'`, at the cost of missing a rarer form like
+  `task1 & task2` (backgrounding immediately followed by another command with no `;` in between).
+  Added `classifyProcessBackground`/`procbgOpsStats`/`procbgOpsDetails` and the `cc_procbg_op` SQL
+  custom function, plus a new `/api/drilldown/procbg-op/:type` endpoint.
+- **New "Subagent spawns" home card**: same approach as the MCP/Skill call stats, just grouped by
+  the `subagent_type` field in `tool_input` (`general-purpose`/`Explore`/`Plan`/`fork`, or a
+  user-defined subagent name). Different Claude Code versions call this tool "Task" or "Agent" —
+  both are recognized. Subagents consume independent resources and have their own full trail of
+  operations, previously buried inside the generic "tool calls" count with no dedicated
+  visibility. Added `subagentCallStats`/`subagentCallBreakdown`/`subagentCallEvents` and a new
+  `/api/drilldown/subagent-calls` endpoint, reusing the same SQL `json_extract` grouping technique
+  already used by `mcpCallBreakdown`/`skillCallBreakdown`.
+  All four of the above stat cards, plus the reverse-shell detection expansion and the
+  history-read detection, were verified against isolated test databases (the archive/netdiag/
+  procbg classifiers additionally verified that a `&` inside a curl URL query string, `cmd1 &&
+  cmd2`, and `echo '...'` — three known false-positive sources — are correctly excluded) plus a
+  headless-browser screenshot of the end-to-end flow: home card counts are correct, and the
+  drilldown lists exactly the matching events. `node --test` still passes 5/5 — not a regression.
+- **Collapsed the GitHub/SSH/Download/Docker/Archive/Network-Diagnostics/Process-Management home
+  cards into one card per group**: these seven groups previously each rendered a full row of
+  sub-category cards (6+5+4+5+5+4+4 = 33 cards total), which stacked up into a wall of cards. Each
+  group now shows a single summary card (the number is the sum across that group's categories);
+  clicking it reveals a category breakdown table plus the full command list (each entry tagged
+  with a category badge) — the same interaction pattern already used by the MCP/Skill/Subagent
+  call cards. In `webui/lib/audit.js`, each group's separate `xxxOpsStats()`/`xxxOpsDetails(type)`
+  pair was replaced with two generic functions, `opsBreakdown(sqlFn)`/`opsEvents(sqlFn)` (all
+  seven groups were already the same "classify via a `cc_xxx_op()` SQL custom function, `GROUP BY
+  kind`" query shape, just with a different function name — extracting it removed about 190 lines
+  of duplication). `server.js` correspondingly replaced the 14 single-category
+  `/api/drilldown/xxx-op/:type` endpoints with 7 `/api/drilldown/xxx-ops` endpoints (no `:type`),
+  each returning `{breakdown, events}` in one call; the home card totals now read
+  `sumN(audit.xxxOpsBreakdown())`. The now-unused per-group constants that existed only to
+  validate the old `:type` URL parameter (e.g. `GITHUB_OP_TYPES`) and the orphaned
+  `drilldown.githubOp.suffix` i18n key were removed along with them — no backwards-compat
+  leftovers. Verified against an isolated test database plus a headless-browser screenshot: the
+  home page went from 7 rows of 33 cards down to 1 row of 7 cards, and opening one (GitHub
+  operations was the one screenshotted) correctly shows the category breakdown table and the
+  syntax-highlighted command list. `node --test` still passes 5/5 — not a regression.
 
 ### Fixed
 - **Command classifiers false-positiving: heredoc/quoted multi-line strings misread as
