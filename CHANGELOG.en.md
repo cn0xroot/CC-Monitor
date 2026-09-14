@@ -8,6 +8,19 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [1.6.0] - 2026-09-14
 
 ### Added
+- **New "New Window" button on Terminal Sessions**: shares the same working-directory picker
+  modal as "New Session" (the modal's title/hint text swap dynamically based on which button
+  opened it), the only behavioral difference being it never types `claude\r` into the freshly
+  spawned PTY — "New Session" always drops you straight into a Claude Code session, and there
+  was previously no entry point for just wanting a plain terminal to run a script or poke
+  around files. `SessionManager.create()` gained a `launchClaude` parameter (defaults to
+  `true`, so passing nothing keeps the old behavior); `POST /api/sessions` passes through
+  `launchClaude: false` to skip it. The modal's dynamic title/hint also get re-applied on a
+  language switch (reusing the same pattern as `syncGridToggleBtnText()` and friends for
+  "state-dependent" text — a plain `data-i18n` static attribute alone isn't enough here).
+  Verified by capturing terminal output over a real WebSocket connection for both modes:
+  `launchClaude:false` shows only a bare shell prompt, `launchClaude:true` shows `claude\r`
+  actually typed into the terminal.
 - **World map gained an animated "this machine ↔ destination" arc with a travelling light
   dot**: a direct port of [BeeEye](https://github.com/cn0xroot/BeeEye) (another project by the
   same author)'s `WorldMap.jsx` — each connection draws a quadratic-bezier arc from a

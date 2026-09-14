@@ -47,7 +47,7 @@ class SessionManager {
     this.sessions = new Map(); // id -> session record
   }
 
-  create({ cwd, cols = 100, rows = 30 } = {}) {
+  create({ cwd, cols = 100, rows = 30, launchClaude = true } = {}) {
     const id = crypto.randomUUID();
     const shell = process.env.SHELL || "/bin/bash";
     const workDir = cwd && fs.existsSync(cwd) ? cwd : os.homedir();
@@ -110,10 +110,14 @@ class SessionManager {
 
     this.sessions.set(id, session);
 
-    // Launch Claude Code directly in this session's shell, like a user typing it.
-    setTimeout(() => {
-      if (session.alive) term.write("claude\r");
-    }, 150);
+    // "新建窗口"（launchClaude:false）要的就是一个裸 shell，不自动敲 claude——
+    // 跟"新建会话"共用同一套 PTY/信任确认框逻辑，唯一区别就这一行要不要执行。
+    if (launchClaude) {
+      // Launch Claude Code directly in this session's shell, like a user typing it.
+      setTimeout(() => {
+        if (session.alive) term.write("claude\r");
+      }, 150);
+    }
 
     return session;
   }

@@ -309,6 +309,10 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   and answered automatically (down-arrow + enter, selecting "Yes, I trust this folder") — otherwise
   the very next stray Enter keypress would silently exit Claude Code back to a bare shell while the
   terminal still looked perfectly functional.
+  - **New Window**: shares the same working-directory picker modal as "New Session," the only
+    difference being it never types `claude\r` — for when you just want a terminal (running a
+    script, poking around files) without being dropped straight into a Claude Code session.
+    Backend-wise it's just `POST /api/sessions` with `launchClaude: false`.
 - **Data persistence/archiving**: "Archive current data" on the Home tab uses SQLite's own `backup()`
   API to take a full snapshot of the current `events.db` (not a plain file copy — `backup()` correctly
   handles data that hasn't been checkpointed out of the WAL journal yet), saved under
@@ -549,6 +553,12 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
       Canvas 2D when WebGL2 isn't available, so the map never disappears entirely just because
       WebGL2 is missing — both rendering paths were verified with real screenshots from a
       headless browser, confirming both the animation and the direction logic
+- [x] Terminal Sessions gained a "New Window" button: shares the same working-directory picker
+      modal as "New Session," the only difference being it never types `claude\r` into the
+      PTY — for when you just want a terminal without being dropped into a Claude Code
+      session. `POST /api/sessions` takes a `launchClaude: false` flag; verified over a real
+      WebSocket connection that the "New Window" shell prompt never has `claude` typed in
+      front of it, while "New Session" does
 - [x] Home page Screenshot Audit: identifies Bash screenshot CLI commands / image files opened
       via Read / MCP screenshot-type tool actions; the drilldown shows only basic info (command
       / file path), never the screenshot's own image content

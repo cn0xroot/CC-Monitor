@@ -8,6 +8,16 @@
 ## [1.6.0] - 2026-09-14
 
 ### 新增
+- **"终端会话"新增"新建窗口"按钮**：跟"新建会话"共用同一个选工作目录的弹窗
+  （弹窗标题/说明文字跟着按钮动态换），唯一的行为区别是不会自动往新建的 PTY 里
+  敲 `claude\r`——原来"新建会话"打开的窗口固定会自动进 Claude Code 会话，单纯
+  想要个终端跑跑脚本、看看文件的场景之前没有对应的入口。`SessionManager.
+  create()` 新增 `launchClaude`（默认 `true`，不传就是原来的行为）参数，
+  `POST /api/sessions` 透传 `launchClaude: false` 即可跳过。语言切换时弹窗的
+  动态标题/说明文字也会跟着重新套用当前语言（复用 `syncGridToggleBtnText()`
+  这些"状态相关文案"函数同一个模式，不能只靠 `data-i18n` 静态属性）。用真实
+  WebSocket 连接分别抓了两种模式下的终端输出对比：`launchClaude:false` 只有
+  裸 shell 提示符，`launchClaude:true` 能看到 `claude\r` 被写入终端。
 - **世界地图新增"本机 ↔ 目的地"连线弧光点动画**：参考
   [BeeEye](https://github.com/cn0xroot/BeeEye)（同一个作者的另一个项目）的
   `WorldMap.jsx` 直接移植——每条连接画一条从示意起点到目的地的二次贝塞尔弧线

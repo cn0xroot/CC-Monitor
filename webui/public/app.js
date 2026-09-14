@@ -455,12 +455,31 @@ document.getElementById("grid-toggle-btn").addEventListener("click", async () =>
 
 const newSessionModal = document.getElementById("new-session-modal");
 const newSessionCwdInput = document.getElementById("new-session-cwd");
+const newSessionTitleEl = document.getElementById("new-session-title");
+const newSessionHintEl = document.getElementById("new-session-hint");
+// "新建会话"（自动敲 claude）和"新建窗口"（裸 shell，不进 Claude Code）共用同一个
+// 弹窗——挑目录这一步两边完全一样，没必要做成两个弹窗。靠这个变量记住是哪个按钮
+// 打开的，弹窗标题/说明文字跟着换，确认时决定要不要把 launchClaude:false 传给后端。
+let newSessionLaunchClaude = true;
 
-document.getElementById("new-session-btn").addEventListener("click", () => {
+// 弹窗标题/说明文字是根据 newSessionLaunchClaude 这个"状态"动态选的，不是纯粹
+// 靠 data-i18n 静态属性翻译——切换语言时 applyStaticI18n() 只会把它们打回
+// data-i18n 属性里写死的默认文案（新建会话那版），跟 syncGridToggleBtnText() 这些
+// 处理"状态相关文案"的函数是同一个道理，得在语言切换后单独重新套一遍当前状态对应的文案。
+function syncNewSessionModalText() {
+  if (newSessionModal.hidden) return;
+  newSessionTitleEl.textContent = newSessionLaunchClaude ? t("modal.newSession.title") : t("modal.newWindow.title");
+  newSessionHintEl.innerHTML = newSessionLaunchClaude ? t("modal.newSession.hint") : t("modal.newWindow.hint");
+}
+function openNewSessionModal(launchClaude) {
+  newSessionLaunchClaude = launchClaude;
   newSessionCwdInput.value = "";
   newSessionModal.hidden = false;
+  syncNewSessionModalText();
   newSessionCwdInput.focus();
-});
+}
+document.getElementById("new-session-btn").addEventListener("click", () => openNewSessionModal(true));
+document.getElementById("new-window-btn").addEventListener("click", () => openNewSessionModal(false));
 document.getElementById("new-session-cancel").addEventListener("click", () => {
   newSessionModal.hidden = true;
 });
@@ -469,11 +488,12 @@ newSessionModal.addEventListener("click", (ev) => {
 });
 async function createSessionFromModal() {
   const cwd = newSessionCwdInput.value.trim();
+  const launchClaude = newSessionLaunchClaude;
   newSessionModal.hidden = true;
   const session = await api("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: cwd || undefined }),
+    body: JSON.stringify({ cwd: cwd || undefined, launchClaude }),
   });
   if (!session) return;
   await refreshSessionList();
@@ -2495,6 +2515,7 @@ document.getElementById("lang-toggle-btn").addEventListener("click", () => {
   setLang(currentLang === "zh" ? "en" : "zh");
   syncGridToggleBtnText();
   syncApprovalsNotifyBtn();
+  syncNewSessionModalText();
   setGpuState(gpuState);
   // 静态文案已经在 setLang -> applyStaticI18n 里刷新了；已经拼好 append 到列表里的
   // 日志/Tap 条目不会自动重新翻译（是已经生成的 DOM，不是"状态"），干脆清空重新拉一遍。

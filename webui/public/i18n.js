@@ -173,6 +173,7 @@ const I18N = {
 
     "terminal.title": "终端会话",
     "terminal.newSession": "+ 新建会话",
+    "terminal.newWindow": "+ 新建窗口",
     "terminal.toGrid": "⊞ 切换到网格视图",
     "terminal.toSingle": "▤ 切换到单会话视图",
     "terminal.empty": "点击左侧“新建会话”启动一个 Claude Code 终端，可以直接在这里对话，不用再切到终端软件",
@@ -194,6 +195,8 @@ const I18N = {
 
     "modal.newSession.title": "新建终端会话",
     "modal.newSession.hint": "会在这个目录下打开一个 shell，并自动帮你敲好 <code>claude</code> 启动命令。",
+    "modal.newWindow.title": "新建窗口",
+    "modal.newWindow.hint": "会在这个目录下打开一个裸 shell，不会自动进入 Claude Code——适合单纯想用个终端，不想被自动拉进 <code>claude</code> 会话的场景。",
     "modal.newSession.cwdLabel": "工作目录",
     "modal.newSession.cwdPlaceholder": "/home/you/project（留空用默认目录）",
     "modal.newSession.browse": "📁 浏览",
@@ -586,6 +589,7 @@ const I18N = {
 
     "terminal.title": "Terminal Sessions",
     "terminal.newSession": "+ New Session",
+    "terminal.newWindow": "+ New Window",
     "terminal.toGrid": "⊞ Switch to grid view",
     "terminal.toSingle": "▤ Switch to single view",
     "terminal.empty": "Click “New Session” on the left to start a Claude Code terminal — chat right here, no need to switch to a terminal app",
@@ -607,6 +611,8 @@ const I18N = {
 
     "modal.newSession.title": "New Terminal Session",
     "modal.newSession.hint": "Opens a shell in this directory and types the <code>claude</code> launch command for you.",
+    "modal.newWindow.title": "New Window",
+    "modal.newWindow.hint": "Opens a plain shell in this directory — it never auto-launches Claude Code, for when you just want a terminal without being dropped into a <code>claude</code> session.",
     "modal.newSession.cwdLabel": "Working directory",
     "modal.newSession.cwdPlaceholder": "/home/you/project (leave blank for default)",
     "modal.newSession.browse": "📁 Browse",

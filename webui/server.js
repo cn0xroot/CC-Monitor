@@ -152,8 +152,10 @@ app.get("/api/sessions", (req, res) => {
 });
 
 app.post("/api/sessions", (req, res) => {
-  const { cwd } = req.body || {};
-  const session = sessions.create({ cwd });
+  const { cwd, launchClaude } = req.body || {};
+  // launchClaude 不传就是 true（"新建会话"的默认行为，保持原样）；"新建窗口"
+  // 显式传 false，要一个不自动敲 claude 的裸 shell。
+  const session = sessions.create({ cwd, launchClaude: launchClaude !== false });
   res.json({ id: session.id, cwd: session.cwd, createdAt: session.createdAt });
 });
 

@@ -222,6 +222,7 @@
       <aside id="sidebar">
         <div class="panel-title" data-i18n="terminal.title">终端会话</div>
         <button id="new-session-btn" class="btn-primary" data-i18n="terminal.newSession">+ 新建会话</button>
+        <button id="new-window-btn" class="btn-secondary" style="width:100%;margin-bottom:10px;" data-i18n="terminal.newWindow">+ 新建窗口</button>
         <button id="grid-toggle-btn" class="btn-secondary" style="width:100%;margin-bottom:10px;">⊞ 切换到网格视图</button>
         <div id="session-list" class="session-list"></div>
       </aside>
@@ -352,8 +353,8 @@
 
 <div id="new-session-modal" class="modal-backdrop" hidden>
   <div class="modal">
-    <h3 data-i18n="modal.newSession.title">新建终端会话</h3>
-    <p class="modal-hint" data-i18n-html="modal.newSession.hint">会在这个目录下打开一个 shell，并自动帮你敲好 <code>claude</code> 启动命令。</p>
+    <h3 id="new-session-title" data-i18n="modal.newSession.title">新建终端会话</h3>
+    <p id="new-session-hint" class="modal-hint" data-i18n-html="modal.newSession.hint">会在这个目录下打开一个 shell，并自动帮你敲好 <code>claude</code> 启动命令。</p>
     <label for="new-session-cwd" data-i18n="modal.newSession.cwdLabel">工作目录</label>
     <div class="cwd-input-row">
       <input id="new-session-cwd" type="text" data-i18n-placeholder="modal.newSession.cwdPlaceholder" placeholder="/home/you/project（留空用默认目录）" autocomplete="off">
