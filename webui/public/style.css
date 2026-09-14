@@ -392,6 +392,8 @@ html, body {
 .card.clickable:hover .click-hint { opacity: 1; }
 .card.accent-red .card-num { color: var(--red); }
 .card.accent-yellow .card-num { color: var(--yellow); }
+.card.accent-red-strong .card-num { color: var(--red); }
+.card.accent-red-strong .card-label { color: var(--red); font-weight: 700; }
 
 .home-columns { display: flex; gap: 16px; flex-wrap: wrap; }
 .home-credit { font-size: 0.8571rem; font-weight: 700; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; }

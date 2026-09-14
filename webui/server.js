@@ -375,6 +375,7 @@ app.get("/api/overview", async (req, res) => {
     archiveOpsTotal: sumN(audit.archiveOpsBreakdown()),
     netdiagOpsTotal: sumN(audit.netdiagOpsBreakdown()),
     procbgOpsTotal: sumN(audit.procbgOpsBreakdown()),
+    sensitiveOpsTotal: sumN(audit.sensitiveOpsBreakdown()),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
@@ -491,6 +492,7 @@ app.get("/api/drilldown/docker-ops", opsDrilldownHandler(audit.dockerOpsBreakdow
 app.get("/api/drilldown/archive-ops", opsDrilldownHandler(audit.archiveOpsBreakdown, audit.archiveOpsEvents));
 app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakdown, audit.netdiagOpsEvents));
 app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdown, audit.procbgOpsEvents));
+app.get("/api/drilldown/sensitive-ops", opsDrilldownHandler(audit.sensitiveOpsBreakdown, audit.sensitiveOpsEvents));
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;

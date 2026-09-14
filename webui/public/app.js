@@ -907,6 +907,7 @@ async function refreshOverview() {
   document.getElementById("stat-archive-total").textContent = s.archiveOpsTotal;
   document.getElementById("stat-netdiag-total").textContent = s.netdiagOpsTotal;
   document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
+  document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -1713,6 +1714,7 @@ async function openDrilldown(kind) {
     "archive-ops": { titleKey: "home.archiveOps.title", labels: { tar: "home.archiveOps.tar", zip: "home.archiveOps.zip", sevenZip: "home.archiveOps.sevenZip", gzip: "home.archiveOps.gzip", other: "home.archiveOps.other" } },
     "netdiag-ops": { titleKey: "home.netdiagOps.title", labels: { nc: "home.netdiagOps.nc", nmap: "home.netdiagOps.nmap", telnet: "home.netdiagOps.telnet", other: "home.netdiagOps.other" } },
     "procbg-ops": { titleKey: "home.procbgOps.title", labels: { nohup: "home.procbgOps.nohup", disown: "home.procbgOps.disown", backgroundJob: "home.procbgOps.backgroundJob", other: "home.procbgOps.other" } },
+    "sensitive-ops": { titleKey: "home.sensitiveOps.title", labels: { sshKey: "home.sensitiveOps.sshKey", credential: "home.sensitiveOps.credential", envVar: "home.sensitiveOps.envVar", other: "home.sensitiveOps.other" } },
   };
   if (GROUPED_OPS_KINDS[kind]) {
     // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组——首页原来每组一整排
