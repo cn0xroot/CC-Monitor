@@ -88,9 +88,9 @@ flowchart TB
 
 | Capability | Linux approach | macOS approach |
 |---|---|---|
-| Process/network event auditing | **Implemented**: a `bpftrace` script (`cc_monitor/probe_linux.bt`) tracks `execve`/`connect` across the entire descendant process tree spawned by the `claude` process, without depending on auditd | Endpoint Security Framework (`eslogger` allows quick validation without writing a custom System Extension; a production build needs a signed ES client + user-granted Full Disk Access) — not yet implemented |
+| Process event auditing (`execve`-level bypass detection) | **Implemented**: a `bpftrace` script (`cc_monitor/probe_linux.bt`) tracks `execve`/`connect` across the entire descendant process tree spawned by the `claude` process, without depending on auditd | Endpoint Security Framework (`eslogger` allows quick validation without writing a custom System Extension; a production build needs a signed ES client + user-granted Full Disk Access) — not yet implemented; this layer underlies `CC-Monitor verify`'s bypass detection, which remains Linux-only |
 | Mandatory sandbox (blocking, not just auditing) | Landlock LSM (kernel ≥5.13, restricts reads/writes by path) or wrapping the process with bubblewrap/firejail, restricting writable directories and mounting a read-only root — not yet implemented | `sandbox-exec` (with a custom profile) or running inside a container/lightweight VM (OrbStack/Docker Desktop) — not yet implemented |
-| Network monitoring | **Implemented**: captures the destination IP:port of `connect()` syscalls directly via eBPF (+ best-effort reverse DNS), plus `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes for upload/download byte counts — no TLS termination, no CA certificate needed; the Web UI has a dedicated Network tab with a detail table, IP geolocation (local MaxMind database), and a WebGL2 world map | The same idea (connection-level visibility instead of MITM) is not yet implemented on macOS |
+| Network monitoring | **Implemented**: captures the destination IP:port of `connect()` syscalls directly via eBPF (+ a `uprobe:libc:getaddrinfo` that records the hostname the moment the application resolves it, reverse DNS as a fallback), plus `tcp_sendmsg`/`tcp_cleanup_rbuf` kernel probes for upload/download byte counts — no TLS termination, no CA certificate needed; the Web UI has a dedicated Network tab with a detail table, IP geolocation (local MaxMind/DB-IP Lite database), and a WebGL2 world map | **Implemented** (`cc_monitor/probe_darwin.py`): samples the claude process tree's connections every 2s with the built-in `nettop`, recording destination IP:port and upload/download byte deltas into the same `network_traffic` table as Linux — **no root required**; unlike the Linux version it has no `getaddrinfo` hostname capture (falls back to reverse DNS) and no `execve` observation (the bypass detection in the row above doesn't apply on macOS) |
 
 **How the process tree is identified**: after a child process forks but before it actually execs
 a new program, its `comm` hasn't changed yet — it still inherits the parent's ("claude"). The
@@ -107,8 +107,9 @@ flagged as `hook_bypass_suspected` — the typical scenario being "the approved 
 short, but at runtime it went on to exec something that was never reviewed at all." Inspect these
 with `CC-Monitor verify`.
 
-Requires root to run (bpftrace needs `CAP_BPF`/`CAP_PERFMON` or plain root); currently started
-manually, not yet packaged as an autostart persistent service (whether to install it as a systemd
+On Linux, requires root to run (bpftrace needs `CAP_BPF`/`CAP_PERFMON` or plain root); the macOS
+`nettop` network probe **does not** require root. Both platforms are currently started manually,
+not yet packaged as an autostart persistent service (whether to install one as a systemd/launchd
 service is an operational decision — during the MVP phase it's run manually).
 
 Recommendation for the MVP phase: have the system layer do **auditing only** at first (no
@@ -160,18 +161,24 @@ block's intent, does it match a known destructive pattern"); file paths use glob
   optional requirement that the user click "allow once / always allow / deny" in the notification
   or a local web page.
 - A local CLI (e.g. `CC-Monitor tail`, `CC-Monitor rules`) for live-viewing the event stream and adjusting
-  rules; the MVP does not include a web dashboard.
+  rules — the MVP phase originally didn't plan a web dashboard, but one got built anyway
+  (`webui/`) and is now the most feature-complete entry point; see [README.md](./README.md)
+  for what it covers. This design doc tracks architecture, not per-page detail.
 
 ## 5. Phased Roadmap
 
 1. **MVP (done)**: hook interceptor + policy engine (rule matching) + local SQLite audit log + CLI
-   viewer (`CC-Monitor tail/rules/stats`). Covers Linux/macOS (macOS untested).
-2. **Phase 2 (Linux portion done)**: `CC-Monitor-probe` (bpftrace) tracks the exec/connect activity of
-   the claude process tree for audit cross-verification; `CC-Monitor verify` detects "application layer
-   bypassed" situations; the network layer captures `connect()` directly via eBPF instead of a MITM
-   proxy. Still not done: a graphical desktop confirmation dialog for high-risk operations
-   (currently a terminal tty confirmation), the macOS counterpart (ESF), and running it as a
-   persistent service.
+   viewer (`CC-Monitor tail/rules/stats`). Covers Linux/macOS, both verified: hooks / AI Approvals /
+   usage display / Web Terminal have all been tested and confirmed working on macOS.
+2. **Phase 2 (Linux portion done; macOS network portion done)**: `CC-Monitor-probe` (bpftrace on
+   Linux, `nettop` on macOS) tracks the process tree's exec/connect activity or network connections
+   for audit cross-verification; `CC-Monitor verify` detects "application layer bypassed"
+   situations; the network layer captures `connect()` directly instead of a MITM proxy; high-risk
+   operations already get both a web-based confirmation UI (AI Approvals, including mirroring
+   Claude Code's own native `PermissionRequest` dialog) and desktop alerts (Electron: Dock bounce +
+   badge + system notification). Still not done: `execve`-level bypass detection on macOS
+   (Endpoint Security Framework, the first row of the §4.2 table above), and running it as a
+   persistent service on either platform.
 3. **Phase 3 (platformization, not started)**: an optional mandatory sandbox mode
    (Landlock/bwrap, sandbox-exec/containerization), cross-machine log aggregation, a
    community-shared rule set.
@@ -181,8 +188,10 @@ block's intent, does it match a known destructive pattern"); file paths use glob
 - The application-layer hooks depend on Claude Code calling them honestly; if `settings.json` is
   tampered with (e.g. permission misconfiguration lets another process rewrite it), the hooks can
   be turned off — this is exactly why the system-layer backstop audit exists.
-- macOS's mandatory sandbox/system-level audit (ESF) requires the user to manually approve it in
-  System Settings (Full Disk Access, System Extension signing), so fully silent deployment isn't
-  possible; the MVP phase does not depend on this path yet.
+- macOS's mandatory sandbox, and its `execve`-level system audit (ESF), both require the user to
+  manually approve them in System Settings (Full Disk Access, System Extension signing), so fully
+  silent deployment isn't possible for those two pieces — neither is implemented yet. This doesn't
+  affect what's already usable on macOS without ESF: hooks, AI Approvals, usage display, the Web
+  Terminal, and the network-layer probe are all independent of it.
 - Semantic-layer rules can't cover every "looks harmless but actually isn't" command combination —
   the rule set should keep iterating, with human confirmation kept as a backstop.

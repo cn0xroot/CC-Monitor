@@ -64,9 +64,9 @@ flowchart TB
 
 | 能力 | Linux 方案 | macOS 方案 |
 |---|---|---|
-| 进程/网络事件审计 | **已实现**：`bpftrace` 脚本（`cc_monitor/probe_linux.bt`），跟踪从 `claude` 进程派生出来的整棵子孙进程树的 `execve`/`connect`，不依赖 auditd | Endpoint Security Framework（`eslogger` 可无需自研 System Extension 快速验证；生产版本需签名的 ES 客户端 + 用户授权 Full Disk Access），暂未实现 |
+| 进程事件审计（`execve` 级绕过检测） | **已实现**：`bpftrace` 脚本（`cc_monitor/probe_linux.bt`），跟踪从 `claude` 进程派生出来的整棵子孙进程树的 `execve`/`connect`，不依赖 auditd | Endpoint Security Framework（`eslogger` 可无需自研 System Extension 快速验证；生产版本需签名的 ES 客户端 + 用户授权 Full Disk Access），暂未实现——这一层是 `CC-Monitor verify` 绕过检测的基础，目前仍是 Linux 独有 |
 | 强制沙箱（拦截而非只审计） | Landlock LSM（内核 ≥5.13，按路径限制读写）或 bubblewrap/firejail 包一层，限制可写目录、挂载只读根——暂未实现 | `sandbox-exec`（配合自定义 profile）或跑在容器/轻量 VM（OrbStack/Docker Desktop）中——暂未实现 |
-| 网络监测 | **已实现**：直接用 eBPF 抓 `connect()` 系统调用拿目标 IP:port（+ 反向 DNS 尽力还原域名），再加 `tcp_sendmsg`/`tcp_cleanup_rbuf` 两个内核探点统计上传/下载字节数，不解密 TLS、不用装 CA 证书；Web UI 有专门的"网络流量"页做明细表 + IP 归属地（本地 MaxMind 数据库）+ WebGL2 世界地图 | 同左的思路（连接层可视化而非 MITM）尚未在 macOS 上实现 |
+| 网络监测 | **已实现**：直接用 eBPF 抓 `connect()` 系统调用拿目标 IP:port（+ `uprobe:libc:getaddrinfo` 在应用层解析域名的那一刻记下来，反向 DNS 兜底），再加 `tcp_sendmsg`/`tcp_cleanup_rbuf` 两个内核探点统计上传/下载字节数，不解密 TLS、不用装 CA 证书；Web UI 有专门的"网络流量"页做明细表 + IP 归属地（本地 MaxMind/DB-IP Lite 数据库）+ WebGL2 世界地图 | **已实现**（`cc_monitor/probe_darwin.py`）：用系统自带的 `nettop` 每 2 秒采样 claude 进程树的连接，拿目标 IP:port 和上传/下载字节增量，写进跟 Linux 一致的 `network_traffic` 表，**不需要 root**；跟 Linux 版的差异是没有 `getaddrinfo` 域名捕获（域名只能靠反向 DNS 兜底）、也没有 `execve` 观测（上一行的绕过检测在 macOS 上不成立） |
 
 **进程树识别方式**：子进程 fork 出来、真正 exec 新程序之前，`comm` 还没变，仍然继承自父进程
 （"claude"）；一旦这个子进程 execve 到别的程序，就是它是 Claude Code 派生进程的证据，用
@@ -79,8 +79,9 @@ flowchart TB
 `hook_bypass_suspected`，典型场景是"被批准执行的命令本身很短，但运行时自己又 exec 了一个完全
 没被审查过的命令"——用 `CC-Monitor verify` 查看。
 
-需要 root 权限运行（bpftrace 需要 `CAP_BPF`/`CAP_PERFMON` 或直接 root），目前是手动启动，
-还没有做成开机自启的常驻服务（要不要装成 systemd service 属于运维决定，MVP 阶段先手动跑）。
+Linux 上需要 root 权限运行（bpftrace 需要 `CAP_BPF`/`CAP_PERFMON` 或直接 root）；macOS 上的
+`nettop` 网络探针**不需要 root**。两个平台目前都是手动启动，还没有做成开机自启的常驻服务
+（要不要装成 systemd/launchd service 属于运维决定，MVP 阶段先手动跑）。
 
 MVP 阶段建议：系统层先只做**审计**（不强制阻断，成本低、无需内核扩展/签名），文件与命令的**拦截**主要靠应用层 Hook 完成；网络层用本地代理统一管控（这个方案 Linux/macOS 完全一致，性价比最高）。系统层的强制沙箱（Landlock/sandbox-exec/容器化）作为 Phase 2 的"高安全模式"可选开启。
 
@@ -114,16 +115,21 @@ MVP 阶段建议：系统层先只做**审计**（不强制阻断，成本低、
 
 ### 4.5 告警与人工确认
 - 高危操作：终端/系统通知（`notify-send` / macOS `osascript` 弹通知）+ 可选需要用户在通知或本地网页上点"允许一次/永久允许/拒绝"。
-- 提供本地 CLI（如 `CC-Monitor tail`、`CC-Monitor rules`）实时查看事件流和调整规则，MVP 不做 Web Dashboard。
+- 提供本地 CLI（如 `CC-Monitor tail`、`CC-Monitor rules`）实时查看事件流和调整规则——MVP 阶段
+  本来不打算做 Web Dashboard，后来还是做了（`webui/`），并且是现在功能最全的入口，具体能力见
+  [README.md](./README.md)，这份设计文档只记录架构思路，不追更每个页面细节。
 
 ## 5. 分阶段路线图
 
-1. **MVP（已完成）**：Hook 拦截器 + 策略引擎（规则匹配）+ 本地 SQLite 审计日志 + CLI 查看器（`CC-Monitor tail/rules/stats`）。覆盖 Linux/macOS（macOS 未实测）。
-2. **Phase 2（Linux 部分已完成）**：`CC-Monitor-probe`（bpftrace）跟踪 claude 进程树的 exec/connect，做审计交叉验证，`CC-Monitor verify` 检测"应用层被绕过"的情况；网络层直接用 eBPF 抓 `connect()`，不做 MITM 代理。剩余未做：高危操作的桌面弹窗人工确认（目前是终端 tty 确认）、macOS 对应方案（ESF）、持久化为常驻服务。
+1. **MVP（已完成）**：Hook 拦截器 + 策略引擎（规则匹配）+ 本地 SQLite 审计日志 + CLI 查看器（`CC-Monitor tail/rules/stats`）。覆盖 Linux/macOS，两个平台都已验证：macOS 上 hooks / AI 审批台 / 额度显示 / Web 终端已实测跑通。
+2. **Phase 2（Linux 部分已完成，macOS 网络部分已完成）**：`CC-Monitor-probe`（Linux 用 bpftrace，macOS 用 `nettop`）跟踪进程树的 exec/connect 或网络连接，做审计交叉验证，`CC-Monitor verify` 检测"应用层被绕过"的情况；网络层直接抓 `connect()`，不做 MITM 代理；高危操作的人工确认已经有了网页版（AI 审批台，含 Claude Code 原生 `PermissionRequest` 确认框的镜像）和桌面版通知（Electron：Dock 跳动 + 角标 + 系统通知）。剩余未做：macOS 上 `execve` 级别的绕过检测（Endpoint Security Framework，上面 4.2 节表格的第一行）、两个平台都还没做成持久化常驻服务。
 3. **Phase 3（平台化，未开始）**：可选的强制沙箱模式（Landlock/bwrap、sandbox-exec/容器化）、多机日志集中上报、规则库社区化。
 
 ## 6. 已知局限性
 
 - 应用层 Hook 依赖 Claude Code 诚实调用；`settings.json` 若被篡改（比如权限配置不当被其它进程改写），Hook 可被关闭——这正是需要系统层兜底审计的原因。
-- macOS 的强制沙箱/系统级审计（ESF）需要用户手动在系统设置里批准（Full Disk Access、System Extension 签名），无法做到完全静默部署，MVP 阶段先不依赖这条路径。
+- macOS 的强制沙箱、以及 `execve` 级别的系统级审计（ESF）需要用户手动在系统设置里批准（Full
+  Disk Access、System Extension 签名），无法做到完全静默部署，目前都还没做；但这不影响 macOS
+  上已经能用的部分——hooks、AI 审批台、额度显示、Web 终端、网络层探针都不依赖 ESF，是独立
+  实现的。
 - 语义层规则无法覆盖所有"看起来无害实则有害"的命令组合，建议规则库持续迭代 + 保留人工确认兜底。
