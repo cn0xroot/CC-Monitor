@@ -250,8 +250,11 @@ CC-Monitor 是双层监测架构：
 - **网络流量页的 GeoIP 归属地（可选）**：装了 `maxmind` 这个 npm 包读本地数据库文件，
   数据库本身不随仓库分发。不配置的话网络流量页照样能用，只是归属地列和世界地图上的点
   没有数据，页面上会诚实标出来，不影响连接明细/字节数统计。两种拿数据库的方式：
-  - **不用注册账号（推荐）**：[sapics/ip-location-db](https://github.com/sapics/ip-location-db)
-    项目每天/每月自动转出 DB-IP Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 开放许可，city 级精度），直接下载现成的 `.mmdb`：
+  - **不用注册账号（推荐，`./install.sh` 默认就是这个）**：[sapics/ip-location-db](https://github.com/sapics/ip-location-db)
+    项目每天/每月自动转出 DB-IP Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 开放许可，city 级精度）。
+    `install.sh` 的第 4 步会自动把它下到 `~/.cc-monitor/dbip-city.mmdb`（已有任何 `.mmdb`
+    就不重复下；下载失败只提示不中断；GitHub 访问不畅可用 `CC_MONITOR_GEOIP_URL` 指向镜像）。
+    手动下载也行：
     ```bash
     curl -L -o ~/.cc-monitor/dbip-city.mmdb \
       https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.mmdb
@@ -270,7 +273,8 @@ Electron 33.x 在这颗 CPU 上打包出来的应用启动即崩溃（详见下�
 44.x 后正常——这也是为什么 `webui/package.json` 里 Electron 版本没有随便往回调的
 原因。
 
-**赶时间的话**：`./install.sh` 一键装好（hooks 注册 + Web UI 依赖），装完用 `./start.sh`
+**赶时间的话**：`./install.sh` 一键装好（hooks 注册 + Web UI 依赖 + GeoIP 数据库下载，
+加 `--skip-geoip` 或设 `CC_MONITOR_SKIP_GEOIP=1` 可跳过最后这步），装完用 `./start.sh`
 一键启动 Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，往下看手动步骤。
 
 有两种装法，效果一样，选一种就行：

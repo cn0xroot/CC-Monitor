@@ -29,6 +29,12 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   Linux-only); hostnames fall back to reverse DNS. SIGTERM also tears down the nettop child.
   The network page hints now tell you to run `bin/CC-Monitor-probe`, and mention that with a
   local proxy every remote is 127.0.0.1 so the map has nothing to plot.
+- **`install.sh` step 4 downloads the GeoIP database**: DB-IP Lite (CC BY 4.0, ~60MB) to
+  `~/.cc-monitor/dbip-city.mmdb` (honours `CC_MONITOR_HOME`). Skipped if any `.mmdb` is
+  already present; downloads to a `.part` file first and treats anything under 1MB as a
+  failure (deleted), so a truncated file can never make geoip.js fail silently; a failed
+  download warns without aborting. `--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` skips it,
+  `CC_MONITOR_GEOIP_URL` points at a mirror.
 
 ### Fixed
 - **Web terminal "new session" returned 500 (`posix_spawnp failed.`)**: node-pty spawns

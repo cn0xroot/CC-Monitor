@@ -24,6 +24,11 @@
   独有），域名只能靠反向 DNS 兜底。SIGTERM 时会把 nettop 子进程一起收掉。
   Web UI 上网络页的几条提示文案改成会告诉你"去跑 bin/CC-Monitor-probe"，并提到走本地
   代理时远端全是 127.0.0.1、地图上不会有点这种情况。
+- **`install.sh` 第 4 步自动下载 GeoIP 数据库**：DB-IP Lite（CC BY 4.0，约 60MB）下到
+  `~/.cc-monitor/dbip-city.mmdb`（尊重 `CC_MONITOR_HOME`）。已有任何 `.mmdb` 就跳过；
+  先下到 `.part` 再改名、小于 1MB 视为失败并删掉，不会留半截文件让 geoip.js 静默打不开；
+  失败只提示不中断。`--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` 跳过，`CC_MONITOR_GEOIP_URL`
+  换镜像。
 
 ### 修复
 - **Web 终端"新建会话"直接 500（`posix_spawnp failed.`）**：node-pty 靠

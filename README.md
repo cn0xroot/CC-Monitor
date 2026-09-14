@@ -295,9 +295,13 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   local database file, which isn't shipped in this repo. Without one, the Network tab still
   works — the location column and map just have no data, and the page says so honestly
   rather than affecting the connection/byte-count stats. Two ways to get a database:
-  - **No account needed (recommended)**: [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
+  - **No account needed (recommended — this is what `./install.sh` does by default)**:
+    [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
     republishes DB-IP Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
-    city-level accuracy) as ready-to-use `.mmdb` files, updated automatically:
+    city-level accuracy) as ready-to-use `.mmdb` files, updated automatically. Step 4 of
+    `install.sh` downloads it to `~/.cc-monitor/dbip-city.mmdb` (skipped if any `.mmdb` is
+    already there; a failed download only warns; set `CC_MONITOR_GEOIP_URL` to use a mirror).
+    Manual download works too:
     ```bash
     curl -L -o ~/.cc-monitor/dbip-city.mmdb \
       https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.mmdb
@@ -319,8 +323,9 @@ additionally verified to crash on startup on this CPU with the originally-pinned
 is why that version isn't pinned back down.
 
 **In a hurry?** Run `./install.sh` to do it all in one step (hook registration + Web UI
-dependencies), then `./start.sh` to launch the Web UI (it installs dependencies on first run if
-needed). For more control, the manual steps are below.
+dependencies + GeoIP database download — pass `--skip-geoip` or set `CC_MONITOR_SKIP_GEOIP=1`
+to skip that last step), then `./start.sh` to launch the Web UI (it installs dependencies on
+first run if needed). For more control, the manual steps are below.
 
 There are two ways to install it, with identical end results — pick whichever fits:
 
