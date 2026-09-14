@@ -70,6 +70,11 @@ const I18N = {
     "approvals.notify.title": "CC-Monitor：有操作待批准",
     "approvals.notify.questionTitle": "CC-Monitor：有个问题在等你回答",
     "approvals.notify.goToTerminal": "💬 这不是权限确认，是 Claude Code 在问你问题——去触发它的那个终端里选一个选项，答完这里会自动消失",
+    "approvals.permission.rule": "Claude Code 原生权限确认",
+    "approvals.permission.hint": "🛡 这是 Claude Code 自己的\"Do you want to proceed?\"询问（没命中 CC-Monitor 的规则）。在这里点了就替你答掉，不点的话 90 秒后会转回终端里的原生确认框",
+    "approvals.notify.permissionTitle": "CC-Monitor：Claude 请求权限",
+    "approvals.history.status.deferred": "已转回原生确认框",
+    "approvals.history.via.timeout": "超时",
 
     "gpu.detecting": "检测渲染方式中…",
     "gpu.webgl": "渲染: WebGL (GPU 加速)",
@@ -459,6 +464,11 @@ const I18N = {
     "approvals.notify.title": "CC-Monitor: action needs approval",
     "approvals.notify.questionTitle": "CC-Monitor: a question is waiting for you",
     "approvals.notify.goToTerminal": "💬 This isn't a permission prompt — Claude Code is asking you a question. Pick an option in the terminal that triggered it; this will disappear automatically once answered.",
+    "approvals.permission.rule": "Claude Code native permission prompt",
+    "approvals.permission.hint": "🛡 This is Claude Code's own \"Do you want to proceed?\" prompt (no CC-Monitor rule matched). Answering here answers it for you; otherwise it falls back to the native dialog in the terminal after 90s",
+    "approvals.notify.permissionTitle": "CC-Monitor: Claude is asking for permission",
+    "approvals.history.status.deferred": "Handed back to native dialog",
+    "approvals.history.via.timeout": "Timed out",
 
     "gpu.detecting": "Detecting renderer…",
     "gpu.webgl": "Renderer: WebGL (GPU-accelerated)",

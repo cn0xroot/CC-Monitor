@@ -56,8 +56,12 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
 - **Claude Tap**：查看某个会话发给/收到模型的**完整对话内容**（不只是"调用了哪个工具"）——文本、思考、工具调用、工具结果、token 用量，按字段分色渲染。数据来源是 Claude Code 自己写在本地的 transcript JSONL 文件（hook payload 里的 `transcript_path`），不是抓包/MITM。CLI 等价命令：`CC-Monitor tap [--session ID] [-f]`。
 - **AI 审批台**：把 Claude Code 的"是否允许执行"确认框同步到网页上——效果类似 Mac 平台
   [Vibe Island](https://vibeisland.app/) 在灵动岛里弹卡片让你点 Allow/Deny，区别是跨平台
-  （网页而不是 Mac 专属 UI），且目前只接管规则表里标为 `confirm` 的操作（其余工具仍走
-  Claude Code 自己的原生询问，不会被静默放行）。
+  （网页而不是 Mac 专属 UI）。两类询问都会出现在这里：
+  - 规则表里标为 `confirm` 的操作（`PreToolUse` 阶段由我们的规则判出来的）；
+  - **Claude Code 自己的原生 "Do you want to proceed?" 确认框**（`PermissionRequest` hook 事件，
+    没命中任何规则、但 Claude Code 的权限系统要问人的那些）——网页/终端给了答案就通过
+    `decision.behavior` 替你答掉；没人答（90s 超时）或在终端里敲回车，就原样交还给终端里的
+    原生确认框，不会因为装了 CC-Monitor 就把安全网撤了。
   - 同一条请求既可以在触发它的终端里直接按 y/N，也可以在网页上点按钮，谁先给结果就用
     谁的；网页选"允许"会通过 hook 的 `permissionDecision: allow` 直接让 Claude Code
     跳过原生弹窗，不会二次询问。
@@ -210,8 +214,9 @@ CC-Monitor 是双层监测架构：
 - **Claude Tap**：hook 的 JSON payload 里有个 `transcript_path` 字段，指向 Claude Code 自己写在本地
   的对话 transcript JSONL 文件。直接读这个文件、解析里面的 `user`/`assistant`/`tool_use`/`tool_result`
   等条目就能还原完整对话——不抓包、不用装 CA 证书、不需要中间人代理。
-- **账号额度显示**：读 `~/.claude/.credentials.json` 里 Claude Code 自己保存的 OAuth token，
-  拿它去调 Anthropic 官方的 `api.anthropic.com/api/oauth/usage` 接口（带上
+- **账号额度显示**：读 Claude Code 自己保存的 OAuth token（Linux 在 `~/.claude/.credentials.json`，
+  macOS 不落文件、存在登录钥匙串里 service 名为 `Claude Code-credentials` 的那一条，用
+  `security find-generic-password` 读），拿它去调 Anthropic 官方的 `api.anthropic.com/api/oauth/usage` 接口（带上
   `anthropic-beta: oauth-2025-04-20` 请求头）——跟 [ccstatusline](https://github.com/sirmalloc/ccstatusline)
   读的是同一份凭证、查的是同一个接口，不是我们自己另外维护了一套用量统计。
 - **Web 终端**：用 `node-pty` 起一个真正的伪终端（PTY），跟你在本地开一个终端窗口没有本质区别；
@@ -278,7 +283,7 @@ sudo apt install bpftrace        # Debian/Ubuntu
 # 其它发行版参考 bpftrace 官方文档；macOS 暂不支持系统层探针
 ```
 
-安装脚本按 `command` 字段去重合并写入 `PreToolUse`/`PostToolUse` hook 数组，**不会覆盖**你已有
+安装脚本按 `command` 字段去重合并写入 `PreToolUse`/`PostToolUse`/`PermissionRequest` hook 数组，**不会覆盖**你已有
 的其它 hooks 配置；遇到损坏的 `settings.json` 会自动备份成 `.json.bak` 再重建。安装后**重启
 Claude Code** 新开的会话才会读到新配置。
 

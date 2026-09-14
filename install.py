@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""将 CC-Monitor 的 PreToolUse/PostToolUse hooks 安装到 Claude Code 的 settings.json。
+"""将 CC-Monitor 的 PreToolUse/PostToolUse/PermissionRequest hooks 安装到 Claude Code 的 settings.json。
 
 用法:
     python3 install.py                     # 安装到全局 ~/.claude/settings.json
@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 HOOK_BIN = REPO_ROOT / "bin" / "CC-Monitor-hook"
 
 
-def merge_hooks(settings, hook_cmd_pre, hook_cmd_post):
+def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None):
     hooks = settings.setdefault("hooks", {})
 
     def add(event_name, command):
@@ -29,6 +29,11 @@ def merge_hooks(settings, hook_cmd_pre, hook_cmd_post):
 
     add("PreToolUse", hook_cmd_pre)
     add("PostToolUse", hook_cmd_post)
+    # PermissionRequest：Claude Code 自己准备弹原生"Do you want to proceed?"时触发，
+    # 用来把那些没命中我们 confirm 规则、但 Claude Code 自己要问的工具调用也同步到
+    # "AI 审批台"（老版本装的配置里没有这一条，重跑 install 会补上，已有的两条不动）。
+    if hook_cmd_permission:
+        add("PermissionRequest", hook_cmd_permission)
     return settings
 
 
@@ -71,7 +76,8 @@ def main():
 
     hook_cmd_pre = '"{}" pre'.format(HOOK_BIN)
     hook_cmd_post = '"{}" post'.format(HOOK_BIN)
-    settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post)
+    hook_cmd_permission = '"{}" permission'.format(HOOK_BIN)
+    settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission)
 
     target.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

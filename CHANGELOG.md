@@ -5,6 +5,34 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.5.0] - 2026-09-13
+
+### 新增
+- **AI 审批台接管 Claude Code 原生确认框**：新注册 `PermissionRequest` hook（`install.py`
+  重跑会自动补上这一条，已有的两条不动）。以前审批台只镜像规则表里 `confirm` 的操作，
+  Claude Code 自己要弹的 "Do you want to proceed?"（没命中任何规则的那些）在网页上完全
+  看不到——`PreToolUse` 阶段根本不知道它接下来会不会弹。现在这类询问以 `kind='permission'`
+  出现在审批台，按钮跟 confirm 一样（允许/拒绝/10、30 分钟/一直允许，"一直允许"按
+  `session + 工具名` 记），网页或终端给了答案就通过 `hookSpecificOutput.decision.behavior`
+  替用户答掉；没人答（90s 超时）或终端里敲回车，hook 静默退出、原生确认框照常弹出。
+  审批历史新增 "已转回原生确认框" 状态。
+
+### 修复
+- **macOS 上额度/套餐永远显示"没找到 Claude Code 的登录凭证"**：Claude Code 在 macOS 上
+  不写 `~/.claude/.credentials.json`，OAuth 凭证存在登录钥匙串里（service
+  `Claude Code-credentials`，内容是同一份 JSON）。全新的 Mac 必现。新增
+  `webui/lib/credentials.js`：先读文件，没有再 `security find-generic-password -s
+  "Claude Code-credentials" -w` 读钥匙串，`usage.js`/`account.js` 共用。跟有没有装
+  ccstatusline 无关——我们不调用它，只是复刻它的读取逻辑（它在 macOS 上走的正是钥匙串）。
+- **macOS 上终端里永远看不到 CC-Monitor 的 `[y/N]` 确认提示**：`notify.py` 用文本模式
+  `open("/dev/tty", "r+")`，这会套一层要求可 seek 的 BufferedRandom；Linux 上对 tty
+  `lseek` 返回 0 所以没事，macOS 返回 `ESPIPE`，`open()` 直接抛 `io.UnsupportedOperation`
+  （`OSError` 子类）被静默吞掉，tty 一直是 None，只剩网页一条路。改成 `"r+b", buffering=0`
+  的裸 FileIO。
+- **终端处于 raw 模式时敲 y/N 可能把 hook 卡死**：Claude Code 的 TUI 让终端处于 raw 模式，
+  回车发过来的是 `\r` 不是 `\n`，原来的 `readline()` 会一直等那个不来的换行，连网页那条
+  路的轮询也一起卡住。改为直接读当前可读的字节、看首字符。
+
 ## [1.4.3] - 2026-09-13
 
 ### 新增

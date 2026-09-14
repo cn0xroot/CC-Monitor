@@ -7,9 +7,9 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { readClaudeOauth } = require("./credentials");
 
 const CLAUDE_JSON_PATH = path.join(os.homedir(), ".claude.json");
-const CREDENTIALS_PATH = path.join(os.homedir(), ".claude", ".credentials.json");
 
 function getAccountInfo() {
   const info = {};
@@ -32,19 +32,14 @@ function getAccountInfo() {
     // 文件不存在/读不了/格式不对——账号信息留空就好，不当错误处理
     // （usage.js 那边已经会在读不到登录凭证时单独报错）
   }
-  // subscriptionType/rateLimitTier 是 .credentials.json 里的字段，跟 oauthAccount
-  // 是两个不同的本地文件，两边字段不完全重叠（比如这边这两个是 OAuth token 申请时
-  // 记录的档位快照，可能跟 oauthAccount.organizationType 不是同一个东西）。
-  try {
-    const raw = fs.readFileSync(CREDENTIALS_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    const oauth = parsed?.claudeAiOauth;
-    if (oauth) {
-      info.subscriptionType = oauth.subscriptionType || null;
-      info.rateLimitTier = oauth.rateLimitTier || null;
-    }
-  } catch (e) {
-    // 同上，读不到就留空
+  // subscriptionType/rateLimitTier 是 OAuth 凭证里的字段（Linux 在 .credentials.json，
+  // macOS 在钥匙串，见 lib/credentials.js），跟 oauthAccount 是两个不同的来源，两边字段
+  // 不完全重叠（比如这边这两个是 OAuth token 申请时记录的档位快照，可能跟
+  // oauthAccount.organizationType 不是同一个东西）。读不到就留空。
+  const oauth = readClaudeOauth();
+  if (oauth) {
+    info.subscriptionType = oauth.subscriptionType || null;
+    info.rateLimitTier = oauth.rateLimitTier || null;
   }
   return info;
 }

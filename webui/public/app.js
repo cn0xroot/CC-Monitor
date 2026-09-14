@@ -1156,7 +1156,9 @@ function notifyNewApprovals(rows) {
   for (const r of rows) {
     if (notifiedApprovalIds.has(r.id)) continue;
     notifiedApprovalIds.add(r.id);
-    const n = new Notification(r.kind === "notify" ? t("approvals.notify.questionTitle") : t("approvals.notify.title"), {
+    const notifTitle =
+      r.kind === "notify" ? t("approvals.notify.questionTitle") : r.kind === "permission" ? t("approvals.notify.permissionTitle") : t("approvals.notify.title");
+    const n = new Notification(notifTitle, {
       body: `${toolLabel(r.tool_name, r.tool_name)} · ${folderName(r.cwd)}\n${plainTextSummary(r)}`.slice(0, 200),
       tag: `cc-monitor-approval-${r.id}`,
     });
@@ -1209,19 +1211,25 @@ async function refreshApprovals() {
   list.innerHTML = rows
     .map((r) => {
       const isNotify = r.kind === "notify";
+      // kind='permission'：Claude Code 自己要弹的原生确认框（PermissionRequest hook），
+      // matched_rule 存的是 "permission:<工具名>" 这种记忆用的 key，不是规则表里的 id，
+      // 展示成人话；按钮跟 confirm 一样，选了就通过 decision.behavior 替用户答掉。
+      const isPermission = r.kind === "permission";
+      const ruleLabel = isPermission ? t("approvals.permission.rule") : r.matched_rule || "-";
       return `
-    <div class="approval-item${isNotify ? " approval-item-notify" : ""}" data-id="${r.id}">
+    <div class="approval-item${isNotify ? " approval-item-notify" : ""}${isPermission ? " approval-item-permission" : ""}" data-id="${r.id}">
       <div class="row1">
         <span class="ts">${escapeHtml(r.ts)}</span>
         <span class="risk ${r.risk}">${escapeHtml(riskLabel(r.risk))}</span>
         <span class="session-tag">📁 ${escapeHtml(folderName(r.cwd))} · ${r.session_id ? escapeHtml(r.session_id.slice(0, 8)) + "…" : "-"}</span>
       </div>
-      <div class="approval-rule">${escapeHtml(r.matched_rule || "-")} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}</div>
+      <div class="approval-rule">${escapeHtml(ruleLabel)} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}</div>
       ${
         isNotify
           ? `<div class="approval-value">${formatQuestionValue(r.matched_value)}</div>
              <div class="approval-notify-hint">${t("approvals.notify.goToTerminal")}</div>`
           : `<div class="approval-value">${escapeHtml(r.matched_value)}</div>
+             ${isPermission ? `<div class="approval-notify-hint">${t("approvals.permission.hint")}</div>` : ""}
              <div class="approval-actions">
                <button class="btn-primary approval-allow" data-id="${r.id}">${t("approvals.allowOnce")}</button>
                <button class="btn-danger approval-deny" data-id="${r.id}">${t("approvals.denyOnce")}</button>
@@ -1263,6 +1271,7 @@ const APPROVAL_STATUS_I18N_KEY = {
   allowed_30m: "approvals.history.status.allowed30m",
   expired: "approvals.history.status.expired",
   answered: "approvals.history.status.answered",
+  deferred: "approvals.history.status.deferred",
 };
 const APPROVAL_STATUS_CLASS = {
   allowed: "risk low",
@@ -1272,12 +1281,18 @@ const APPROVAL_STATUS_CLASS = {
   answered: "risk info",
   denied: "risk high",
   expired: "risk medium",
+  deferred: "risk info",
 };
 function approvalStatusLabel(status) {
   const key = APPROVAL_STATUS_I18N_KEY[status];
   return key ? t(key) : status || "-";
 }
-const APPROVAL_VIA_I18N_KEY = { web: "approvals.history.via.web", tty: "approvals.history.via.tty", post_tool_use: "approvals.history.via.auto" };
+const APPROVAL_VIA_I18N_KEY = {
+  web: "approvals.history.via.web",
+  tty: "approvals.history.via.tty",
+  post_tool_use: "approvals.history.via.auto",
+  timeout: "approvals.history.via.timeout",
+};
 function approvalViaLabel(via) {
   const key = APPROVAL_VIA_I18N_KEY[via];
   return key ? t(key) : via || "-";
@@ -1329,8 +1344,8 @@ async function refreshApprovalHistory() {
             return `<tr>
           <td class="dd-mono">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19))}</td>
           <td class="dd-mono">${sessionIdCell(r.session_id, r.cwd)}</td>
-          <td>${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : ""}</td>
-          <td>${escapeHtml(r.matched_rule || "-")}</td>
+          <td>${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : r.kind === "permission" ? " (native)" : ""}</td>
+          <td>${escapeHtml(r.kind === "permission" ? t("approvals.permission.rule") : r.matched_rule || "-")}</td>
           <td class="dd-mono" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
           <td><span class="${APPROVAL_STATUS_CLASS[r.status] || ""}">${escapeHtml(approvalStatusLabel(r.status))}</span></td>
           <td title="${escapeHtml(answer || "")}">${answer ? escapeHtml(answer.slice(0, 60)) : "-"}</td>

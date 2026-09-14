@@ -277,6 +277,12 @@ html, body {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
 }
+/* kind='permission'（Claude Code 自己的原生确认框被同步过来）——跟 confirm 一样能点，
+   但它不是我们规则判出来的，用中性的边框色区分"这是 Claude Code 在问"。 */
+.approval-item-permission {
+  border-color: var(--text-dim);
+  border-style: dashed;
+}
 .approval-question { font-weight: 600; margin-bottom: 4px; }
 .approval-question-options { margin: 0; padding-left: 18px; font-size: 0.8571rem; }
 .approval-question-options li { margin-bottom: 2px; }

@@ -66,9 +66,15 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
 - **Claude Tap**: view the **full conversation content** sent to/received from the model for a given session (not just "which tool was called") — text, thinking, tool calls, tool results, token usage, each field color-coded. The data source is Claude Code's own local transcript JSONL file (the `transcript_path` field in the hook payload) — not packet capture or MITM. CLI equivalent: `CC-Monitor tap [--session ID] [-f]`.
 - **AI Approvals**: mirrors Claude Code's "allow this action?" confirmation into the Web UI
   — similar in spirit to [Vibe Island](https://vibeisland.app/) popping an Allow/Deny card in
-  the Mac notch, except cross-platform (a web page instead of a Mac-only UI) and, for now,
-  scoped to the operations our own rule table flags as `confirm` (anything else still goes
-  through Claude Code's own native prompt — we never silently wave it through).
+  the Mac notch, except cross-platform (a web page instead of a Mac-only UI). Two kinds of
+  prompts land here:
+  - operations our own rule table flags as `confirm` (decided by our rules at `PreToolUse`);
+  - **Claude Code's own native "Do you want to proceed?" dialog** (the `PermissionRequest`
+    hook event — calls that matched no rule but that Claude Code's permission system wants
+    a human to approve). An answer from the web page or the terminal is returned via
+    `decision.behavior`; if nobody answers (90s timeout) or you press Enter at the terminal,
+    the request is handed back untouched to the native dialog — installing CC-Monitor never
+    removes that safety net.
   - The same request can be answered either at the terminal that triggered it (y/N) or from
     this page — whichever answers first wins. Choosing "allow" on the web page makes Claude
     Code skip its own native popup entirely, via the hook's `permissionDecision: allow`
@@ -248,8 +254,10 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   own local conversation transcript JSONL file. Reading that file and parsing its `user`/`assistant`/
   `tool_use`/`tool_result` entries reconstructs the full conversation — no packet capture, no CA
   certificate, no MITM proxy involved.
-- **Account usage display**: reads the OAuth token Claude Code itself stores in
-  `~/.claude/.credentials.json`, then calls Anthropic's own
+- **Account usage display**: reads the OAuth token Claude Code itself stores (Linux:
+  `~/.claude/.credentials.json`; macOS: no file — it lives in the login Keychain as the
+  generic-password item `Claude Code-credentials`, read via `security find-generic-password`),
+  then calls Anthropic's own
   `api.anthropic.com/api/oauth/usage` endpoint with that token (adding the
   `anthropic-beta: oauth-2025-04-20` header) — the exact same credential and endpoint
   [ccstatusline](https://github.com/sirmalloc/ccstatusline) uses, not a separately maintained usage
@@ -327,7 +335,7 @@ sudo apt install bpftrace        # Debian/Ubuntu
 # see bpftrace's own docs for other distros; the system-layer probe is not implemented on macOS yet
 ```
 
-The installer merges into the `PreToolUse`/`PostToolUse` hook arrays and de-duplicates by exact
+The installer merges into the `PreToolUse`/`PostToolUse`/`PermissionRequest` hook arrays and de-duplicates by exact
 `command` string, so it **never overwrites** any hooks you already have configured; a corrupted
 `settings.json` gets backed up to `.json.bak` before being rebuilt. **Restart Claude Code** —
 only new sessions pick up the updated config.

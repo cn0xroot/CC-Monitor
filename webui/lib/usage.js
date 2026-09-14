@@ -2,18 +2,16 @@
 // 账号级用量/额度信息——跟 ccstatusline (https://github.com/sirmalloc/ccstatusline) 读的是
 // 同一份东西：Claude Code 自己写在本地的 OAuth 凭证文件，用它调 Anthropic 的用量查询接口。
 // 不是我们自己的接口，是逆向 ccstatusline 实现确认过的：
-//   凭证: ~/.claude/.credentials.json -> claudeAiOauth.accessToken
+//   凭证: claudeAiOauth.accessToken（Linux 在 ~/.claude/.credentials.json，macOS 在钥匙串，
+//         见 lib/credentials.js）
 //   接口: GET https://api.anthropic.com/api/oauth/usage  (Bearer token)
 // 只读查询，用的是 Claude Code 本来就持有、本来就信任的凭证，不做任何写操作。
-const fs = require("fs");
 const https = require("https");
-const os = require("os");
-const path = require("path");
+const { readClaudeOauth, credentialsLocationHint } = require("./credentials");
 // https-proxy-agent 装的是纯 ESM 包（package.json 里 "type":"module"，没有 require 导出条件），
 // 普通 node（本环境是 v22，支持同步 require(esm)）能 require 但 Electron 自带的旧版 Node 不行，
 // 会直接抛 ERR_REQUIRE_ESM 把桌面版启动流程崩掉——改成动态 import() 两边都兼容。
 
-const CREDENTIALS_PATH = path.join(os.homedir(), ".claude", ".credentials.json");
 const USAGE_API_HOST = "api.anthropic.com";
 const USAGE_API_PATH = "/api/oauth/usage";
 const CACHE_MAX_AGE_MS = 180 * 1000; // 跟 ccstatusline 一样，避免把接口打太狠
@@ -32,13 +30,7 @@ async function proxyAgent() {
 let cached = null; // { fetchedAt, data } | { fetchedAt, error }
 
 function readAccessToken() {
-  try {
-    const raw = fs.readFileSync(CREDENTIALS_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed?.claudeAiOauth?.accessToken || null;
-  } catch (e) {
-    return null;
-  }
+  return readClaudeOauth()?.accessToken || null;
 }
 
 function bucketInfo(bucket) {
@@ -149,7 +141,7 @@ async function getUsage() {
 
   const token = readAccessToken();
   if (!token) {
-    cached = { fetchedAt: now, error: "没找到 Claude Code 的登录凭证 (~/.claude/.credentials.json)，无法查询额度" };
+    cached = { fetchedAt: now, error: `没找到 Claude Code 的登录凭证 (${credentialsLocationHint()})，无法查询额度` };
     return cached;
   }
   const result = await fetchUsageOnce(token);

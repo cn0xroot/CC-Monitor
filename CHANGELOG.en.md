@@ -5,6 +5,40 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.5.0] - 2026-09-13
+
+### Added
+- **AI Approvals now covers Claude Code's native permission dialog**: a new
+  `PermissionRequest` hook is registered (re-running `install.py` adds it; the existing two
+  entries are left alone). Previously the approvals page only mirrored operations our rule
+  table flags as `confirm`; Claude Code's own "Do you want to proceed?" prompts (calls that
+  matched no rule) never showed up — at `PreToolUse` time there is no way to know whether a
+  prompt is coming. These now appear as `kind='permission'` with the same buttons as confirm
+  (allow / deny / 10 or 30 min / always — "always" is remembered per `session + tool name`).
+  An answer from the web page or the terminal is returned through
+  `hookSpecificOutput.decision.behavior`; if nobody answers (90s timeout) or Enter is
+  pressed at the terminal, the hook exits silently and the native dialog appears as usual.
+  Approval history gains a "Handed back to native dialog" status.
+
+### Fixed
+- **macOS always showed "Claude Code credentials not found" for usage/plan**: on macOS
+  Claude Code does not write `~/.claude/.credentials.json`; the OAuth credential lives in
+  the login Keychain (service `Claude Code-credentials`, same JSON payload). Every fresh Mac
+  hit this. New `webui/lib/credentials.js` reads the file first and falls back to
+  `security find-generic-password -s "Claude Code-credentials" -w`; shared by `usage.js`
+  and `account.js`. Unrelated to whether ccstatusline is installed — we never invoke it, we
+  only replicate its lookup (which uses the Keychain on macOS too).
+- **macOS never showed CC-Monitor's `[y/N]` prompt in the terminal**: `notify.py` opened
+  `/dev/tty` in text mode `"r+"`, which wraps a `BufferedRandom` that requires a seekable
+  stream; `lseek` on a tty returns 0 on Linux but `ESPIPE` on macOS, so `open()` raised
+  `io.UnsupportedOperation` (an `OSError` subclass), was silently swallowed, and the tty
+  path was permanently disabled — only the web path worked. Now opens as a raw `FileIO`
+  (`"r+b", buffering=0`).
+- **Typing y/N while the terminal is in raw mode could hang the hook**: Claude Code's TUI
+  keeps the terminal in raw mode, so Enter arrives as `\r` rather than `\n`; the old
+  `readline()` waited forever for a newline and stalled the web-side polling too. Now reads
+  whatever bytes are available and inspects the first character.
+
 ## [1.4.3] - 2026-09-13
 
 ### Added

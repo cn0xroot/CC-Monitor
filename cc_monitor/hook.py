@@ -133,6 +133,65 @@ def handle_post(data):
     sys.exit(0)
 
 
+# PermissionRequest 的 tool_input 里挑一个最能代表"这次要干什么"的字段拿去网页上
+# 展示：Bash 看 command，文件类工具看路径，抓网页看 url……都没有就整个 tool_input
+# 原样 JSON。跟 policy.FIELD_CANDIDATES 是两回事——那边是规则匹配用的，这边只管展示。
+PERMISSION_SUMMARY_FIELDS = ("command", "file_path", "path", "notebook_path", "url", "query", "pattern", "prompt")
+
+
+def summarize_tool_input(tool_input):
+    for key in PERMISSION_SUMMARY_FIELDS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    try:
+        return json.dumps(tool_input, ensure_ascii=False)[:2000]
+    except (TypeError, ValueError):
+        return str(tool_input)[:2000]
+
+
+def handle_permission(data):
+    """PermissionRequest 事件：Claude Code 自己的权限系统判定这次工具调用需要问人
+    （马上要弹原生的 "Do you want to proceed?"）。PreToolUse 阶段我们没法知道它接下来
+    会不会弹，所以光靠 confirm 规则镜像不到这些原生确认框——这个事件就是专门补这个
+    缺口的：把询问同步到 Web UI 的"AI 审批台"，网页/终端给了答案就通过
+    hookSpecificOutput.decision 替用户答掉；没人答（超时）或者用户主动交还，就静默
+    退出（不输出任何 JSON），Claude Code 该弹原生框还弹——绝不会因为我们在场就把
+    安全网撤了。文档明确 exit 2 对这个事件无效，拒绝只能走 decision.behavior=deny。
+    """
+    state = audit_state.get_state()
+    if state in ("stopped", "paused"):
+        # 停止：完全不介入。暂停：不真的拦截/弹确认，原生框自己弹。
+        sys.exit(0)
+
+    tool_name = data.get("tool_name", "")
+    tool_input = data.get("tool_input", {}) or {}
+    session_id = data.get("session_id", "")
+    cwd = data.get("cwd", "")
+
+    if storage.is_session_always_allowed(session_id, notify.permission_session_key(tool_name)):
+        behavior = "allow"
+    else:
+        behavior = notify.permission_request(
+            tool_name, summarize_tool_input(tool_input), session_id=session_id, cwd=cwd
+        )
+        if behavior is None:
+            sys.exit(0)  # 交还 Claude Code 原生确认框
+
+    # 按文档的字段形状：decision.message 只对 deny 有意义（告诉模型为什么被拒），allow
+    # 不带任何多余字段。
+    decision = {"behavior": behavior}
+    if behavior == "deny":
+        decision["message"] = "CC-Monitor: 用户在 AI 审批台拒绝了这次操作"
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": decision,
+        }
+    }))
+    sys.exit(0)
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "pre"
     try:
@@ -141,6 +200,8 @@ def main():
             handle_pre(data)
         elif mode == "post":
             handle_post(data)
+        elif mode == "permission":
+            handle_permission(data)
         else:
             sys.exit(0)
     except SystemExit:
