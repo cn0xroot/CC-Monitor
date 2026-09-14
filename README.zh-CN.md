@@ -11,17 +11,17 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 
 ## 截图
 
-| 审计日志 |
+| 首页概览 |
 |---|
-| ![审计日志](./pic/audit-log-zh.png) |
+| ![首页](./pic/home-zh.png) |
 
-| 事件类型明细 | 被拦截的高危操作 |
+| 会话列表详情 | 事件类型明细 |
 |---|---|
-| ![事件类型明细](./pic/home-events-zh.png) | ![被拦截的高危操作](./pic/home-blocked-zh.png) |
+| ![会话列表](./pic/home-sessions-zh.png) | ![事件类型明细](./pic/home-events-zh.png) |
 
-| 首页概览 | 会话列表详情 |
+| 被拦截的高危操作 | 审计日志 |
 |---|---|
-| ![首页](./pic/home-zh.png) | ![会话列表](./pic/home-sessions-zh.png) |
+| ![被拦截的高危操作](./pic/home-blocked-zh.png) | ![审计日志](./pic/audit-log-zh.png) |
 
 ## 快速安装
 

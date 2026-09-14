@@ -13,17 +13,17 @@ carries, what third-party modules it depends on, and where your data actually go
 
 ## Screenshots
 
-| Audit log |
+| Home overview |
 |---|
-| ![Audit log](./pic/audit-log-en.png) |
+| ![Home](./pic/home-en.png) |
 
-| Event type breakdown | Blocked high-risk operations |
+| Session list drilldown | Event type breakdown |
 |---|---|
-| ![Event type breakdown](./pic/home-events-en.png) | ![Blocked operations](./pic/home-blocked-en.png) |
+| ![Session list](./pic/home-sessions-en.png) | ![Event type breakdown](./pic/home-events-en.png) |
 
-| Home overview | Session list drilldown |
+| Blocked high-risk operations | Audit log |
 |---|---|
-| ![Home](./pic/home-en.png) | ![Session list](./pic/home-sessions-en.png) |
+| ![Blocked operations](./pic/home-blocked-en.png) | ![Audit log](./pic/audit-log-en.png) |
 
 ## Quick Install
 
