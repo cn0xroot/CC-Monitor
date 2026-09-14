@@ -13,6 +13,9 @@ npm-debug.log*
 # electron-builder 打包产物——几十上百 MB 的二进制，不该进仓库
 webui/dist/
 
+# 本地临时存放、还没决定要不要合并的补丁文件
+patches/
+
 # CC-Monitor 运行时数据（不属于代码，不该进仓库）
 .cc-monitor/
 *.db
