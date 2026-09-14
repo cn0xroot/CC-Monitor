@@ -4,6 +4,7 @@
   "private": true,
   "description": "CC-Monitor Web UI: multi-session Claude Code terminal + live audit log viewer",
   "author": "cn0xroot",
+  "license": "MIT",
   "main": "electron-main.js",
   "engines": {
     "node": ">=22"

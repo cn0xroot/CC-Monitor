@@ -470,3 +470,7 @@ sudo ./bin/CC-Monitor-probe
   控制 UI 怎么渲染 API 已经返回的内容，新模型下开着也没用）；Opus 4.6 / Sonnet 4.6
   及更早的模型默认就是 `"summarized"`，会有正文。CC-Monitor 的"显示思考详情"开关
   在有正文的时候能完整展开，没有正文时如实说明原因，不会假装能变出不存在的数据。
+
+## 许可协议
+
+[MIT](./LICENSE)

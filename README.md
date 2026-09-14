@@ -540,3 +540,7 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
   especially for mobile/CDN egress IPs that often resolve to a carrier's datacenter rather
   than the user's actual location) — an inherent limitation of IP geolocation, not something
   CC-Monitor can fix.
+
+## License
+
+[MIT](./LICENSE)
