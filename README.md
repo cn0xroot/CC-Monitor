@@ -81,6 +81,17 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
     output, instead of asking twice.
   - Options: allow once, deny once, allow and don't ask again for 10/30 minutes, or always
     allow (scoped to this session only).
+  - **Desktop app (Electron)** does not use the browser path (in an Electron renderer
+    `Notification.permission` is always "granted", yet macOS silently refuses notifications
+    from an app that isn't properly signed): the main process polls the pending list itself
+    and on a new request plays the system alert sound + bounces the Dock icon + sets a badge
+    count, plus a system notification when the OS allows one (click → approvals tab).
+    `npm run electron` runs the ad-hoc-signed Electron.app from node_modules, so on macOS the
+    system notification always fails (`UNErrorDomain error 1`) — you get sound/Dock/badge only;
+    a Developer-ID-signed build is needed for real notifications. The hook side additionally
+    sends one `osascript` notification per request (attributed to "Script Editor"); macOS asks
+    once whether to allow it — if declined, re-enable it under System Settings → Notifications
+    → Script Editor.
   - Supports browser desktop notifications (the Notification API) — new requests raise a
     system notification even when this tab isn't open, click it to jump straight back in.
   - **History table**: every resolved request stays on record (the underlying table is never

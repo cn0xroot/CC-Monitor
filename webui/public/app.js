@@ -1107,12 +1107,24 @@ async function refreshArchivesList() {
 const notifiedApprovalIds = new Set();
 const APPROVALS_NOTIFY_PREF_KEY = "cc-monitor-approvals-notify-enabled";
 
+// 套在 Electron 桌面版里时，这条浏览器 Notification API 的路不能用：Electron 渲染进程里
+// Notification.permission 永远是 "granted"，new Notification() 也不报错，但 macOS 上未正式
+// 签名的 app 会被系统静默拒绝（详见 electron-main.js 顶部那段说明）。桌面版由主进程自己
+// 轮询待批准列表来提醒（系统通知 + Dock 跳动 + 角标），这里整条关掉，免得两边重复。
+const IS_ELECTRON = /\bElectron\//.test(navigator.userAgent);
+
 function approvalsNotifySupported() {
-  return typeof Notification !== "undefined";
+  return !IS_ELECTRON && typeof Notification !== "undefined";
 }
 
 function syncApprovalsNotifyBtn() {
   const btn = document.getElementById("approvals-notify-btn");
+  if (IS_ELECTRON) {
+    btn.hidden = false;
+    btn.textContent = t("approvals.notify.electron");
+    btn.disabled = true;
+    return;
+  }
   if (!approvalsNotifySupported()) {
     btn.hidden = true;
     return;

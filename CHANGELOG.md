@@ -31,6 +31,14 @@
   换镜像。
 
 ### 修复
+- **桌面版（Electron）在 macOS 上 AI 审批台完全没有提醒**：页面里走的是浏览器 Notification
+  API，Electron 渲染进程里 `Notification.permission` 永远是 "granted"、`new Notification()`
+  也不报错，但底层 UNUserNotificationCenter 对未正式签名的 app（`npm run electron` 用的
+  node_modules 里那个 Electron.app 只有 ad-hoc 签名）直接拒绝，实测主进程侧是 failed 事件
+  `UNErrorDomain error 1`（NotificationsNotAllowed），渲染进程侧静默失败。改为主进程自己
+  每 2 秒轮询 `pending_approvals`：新请求 → `shell.beep()` + Dock 图标跳动 + 角标数字（这
+  三样不需要任何授权），能弹系统通知就一并弹（点击跳到审批台），弹失败只警告一次不再重试。
+  页面按 UA 识别 Electron 后关掉浏览器那条路，按钮改成说明文字，避免两边重复。
 - **Web 终端"新建会话"直接 500（`posix_spawnp failed.`）**：node-pty 靠
   `prebuilds/<平台>/spawn-helper` 这个小程序起 pty，npm 解包时（实测 macOS + npm 11）
   会丢掉它的可执行位。新增 `webui/scripts/fix-node-pty-perms.js`，作为 `postinstall`

@@ -37,6 +37,17 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `CC_MONITOR_GEOIP_URL` points at a mirror.
 
 ### Fixed
+- **Desktop app (Electron) on macOS gave no alert at all for AI Approvals**: the page used
+  the browser Notification API; in an Electron renderer `Notification.permission` is always
+  "granted" and `new Notification()` doesn't throw, but the underlying
+  UNUserNotificationCenter refuses apps that aren't properly signed (`npm run electron` runs
+  the ad-hoc-signed Electron.app from node_modules) — the main-process side gets a `failed`
+  event with `UNErrorDomain error 1` (NotificationsNotAllowed), the renderer side fails
+  silently. The main process now polls `pending_approvals` every 2s itself: a new request →
+  `shell.beep()` + Dock bounce + badge count (none of which need permission), plus a system
+  notification when possible (click → approvals tab); a failed notification warns once and
+  isn't retried. The page detects Electron via UA, disables the browser path and turns the
+  button into an explanatory label so the two never double-notify.
 - **Web terminal "new session" returned 500 (`posix_spawnp failed.`)**: node-pty spawns
   the pty through its bundled `prebuilds/<platform>/spawn-helper` binary, and npm dropped
   its executable bit when unpacking (seen on macOS + npm 11). New

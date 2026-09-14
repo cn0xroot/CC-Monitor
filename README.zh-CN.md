@@ -68,6 +68,14 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
   - 选项：允许一次、拒绝一次、批准且 10/30 分钟内不再询问、一直允许（仅当前 session）。
   - 支持浏览器桌面通知（Notification API），没开着这个页面也能弹系统通知，点一下直接
     跳回来处理。
+  - **桌面版（Electron）** 不走浏览器那条路（Electron 渲染进程里 `Notification.permission`
+    永远是 "granted"，但 macOS 会静默拒绝未正式签名 app 的通知）：由主进程自己轮询待批准
+    列表，新请求 → 系统提示音 + Dock 图标跳动 + 角标数字，能弹系统通知就一并弹（点了跳到
+    审批台）。`npm run electron` 跑的是 node_modules 里 ad-hoc 签名的 Electron.app，macOS
+    上系统通知必定弹不出来（`UNErrorDomain error 1`），只有提示音/Dock/角标；要系统通知
+    得用 Developer ID 签名打包的版本。hook 那边每条请求还会额外用 `osascript` 发一条通知
+    （以 "Script Editor" 名义），第一次会问你要不要允许，拒绝了就去"系统设置 → 通知 →
+    Script Editor" 打开。
   - **历史记录表格**：每条处理完的请求都留底（底层表没有任何清空逻辑，"清空当前数据"
     按钮不会碰它），记录时间、Session、工具、命中规则、匹配内容、结果、处理方式；
     `notify` 类记录（`AskUserQuestion` 这类）还会存下用户在终端里实际给的答案。
