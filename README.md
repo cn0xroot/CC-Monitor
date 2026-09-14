@@ -539,6 +539,16 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
       real system-layer-probe data with an "inferred" tag (not guaranteed to have actually
       connected, and no byte counts) — many people never start the probe by hand, so this used
       to be empty entirely
+- [x] World map gained an animated "this machine ↔ destination" arc with a travelling light
+      dot (modeled on [BeeEye](https://github.com/cn0xroot/BeeEye)'s approach): each connection
+      draws an arc from a schematic anchor (fixed at (0,0), open ocean — explicitly not this
+      machine's real location; no extra request is made to ask a third party for the public
+      IP just for this) to the destination, with the dot's direction following whichever
+      direction moved more bytes (download-heavy animates back toward the anchor; inferred
+      targets have no real byte counts, so they default to animating outward). Falls back to
+      Canvas 2D when WebGL2 isn't available, so the map never disappears entirely just because
+      WebGL2 is missing — both rendering paths were verified with real screenshots from a
+      headless browser, confirming both the animation and the direction logic
 - [x] Home page Screenshot Audit: identifies Bash screenshot CLI commands / image files opened
       via Read / MCP screenshot-type tool actions; the drilldown shows only basic info (command
       / file path), never the screenshot's own image content
@@ -629,3 +639,4 @@ third-party packages. The Web UI (`webui/`) builds on these open-source projects
 **Inspiration / prior art**
 - [ccstatusline](https://github.com/sirmalloc/ccstatusline) — CC-Monitor's account/usage display independently re-implements the same OAuth-credential lookup and Anthropic usage-API call ccstatusline uses (no code shared, no dependency on it); `install.sh` also offers to install and wire it up as a companion terminal statusline
 - [Vibe Island](https://vibeisland.app/) — the interaction model AI Approvals is modeled after (an Allow/Deny card for pending actions), reimplemented here as a cross-platform web page instead of a macOS-only notch UI
+- [BeeEye](https://github.com/cn0xroot/BeeEye) (another project by the same author) — the Network tab's world map (WebGL2 equirectangular projection, coastline rendering, glowing points, the connection arc/travelling-dot animation, Canvas 2D fallback) is a direct port of its `WorldMap.jsx`, borrowed between the two projects

@@ -8,6 +8,27 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [1.6.0] - 2026-09-14
 
 ### Added
+- **World map gained an animated "this machine ↔ destination" arc with a travelling light
+  dot**: a direct port of [BeeEye](https://github.com/cn0xroot/BeeEye) (another project by the
+  same author)'s `WorldMap.jsx` — each connection draws a quadratic-bezier arc from a
+  schematic anchor to the destination (`arc2d()`, bowed toward the pole for a great-circle
+  feel), with a travelling dot at the head: direction follows whichever side of the connection
+  moved more bytes (download-heavy animates back toward the anchor; inferred command-text
+  targets have no real byte counts, so they default outward), a 2.2s cycle, the dot itself
+  drawn as a single batched `drawArrays` call reusing the same `pointProg`/`FRAG_POINT` shader
+  already used for destination glows — not just alpha-modulating the arc line itself, which
+  the first version did and which a real screenshot showed was barely perceptible; the
+  separate dot is what actually reads as "something travelling." The anchor has no real
+  geographic meaning here (this is the machine running Claude Code, not the public egress the
+  traffic actually passes through), so it's pinned at (0, 0) (open ocean off the Gulf of
+  Guinea, "Null Island") — no extra request is made to ask a third party for the public IP
+  just for this, and the legend explicitly says it isn't a real location. Falls back to Canvas
+  2D (coastlines/arcs/dots/glows all present, `globalCompositeOperation='lighter'` standing in
+  for the GL side's additive blending) when WebGL2 isn't available, so the map never
+  disappears entirely just because of that. Verified both rendering paths with real
+  screenshots from a headless browser: the dot correctly travels along the arc and the
+  direction is correct in both GL and 2D mode (upload-heavy animates outward, download-heavy
+  animates back toward the anchor).
 - **New "SSH Operations" and "Downloads" cards on the Home page**: SSH operations split into
   five cards — ssh (remote login/exec) / scp (file copy) / sftp (file transfer) / key
   management (`ssh-keygen`/`ssh-copy-id`/`ssh-add`/`ssh-agent`) / other

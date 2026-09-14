@@ -145,6 +145,10 @@ async function geoPairs(limit = 500) {
       country: geo.country,
       city: geo.city,
       bytes: r.tx_bytes + r.rx_bytes,
+      // 世界地图的"连线光点来回"动画要按方向画（上传为主 vs 下载为主，箭头朝向不一样）：
+      // 单独把 tx/rx 拆出来，而不是只给合计的 bytes。
+      txBytes: r.tx_bytes,
+      rxBytes: r.rx_bytes,
       lastSeen: r.last_seen,
       inferred: !!r.inferred,
     });
