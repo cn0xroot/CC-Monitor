@@ -92,6 +92,30 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   browser: the home card count is correct, the drilldown lists exactly the matching events, and
   non-matching commands (`ls -la`, opening a plain text file) are correctly excluded.
 
+### Fixed
+- **Command classifiers false-positiving: heredoc/quoted multi-line strings misread as
+  several independent sub-commands**: Screenshot Audit, GitHub/SSH/Download operation stats,
+  and the AI Trajectory command-hostname extraction all share the same "split on
+  `;`/`&`/`|`/newlines, check each sub-command's start" approach — but the naive newline split
+  has a hole: a newline inside a double-quoted argument or a heredoc body (`<<'EOF' ... EOF`)
+  is part of the content, not a shell-syntax command separator. This machine's own audit data
+  caught two real cases: in `python3 -c "\nimport json,sys\n..."`, the line `import json,sys`
+  inside the quoted argument got read as an invocation of ImageMagick's `import` screenshot
+  command; in `git commit -m "$(cat <<'EOF' ... EOF)"`, a word-wrapped line inside the heredoc
+  body (which happened to be this project's own previous commit describing the screenshot
+  feature, mentioning the "spectacle" screenshot tool by name) got read as an actual call to
+  `spectacle` — this is exactly what the "too many false positives" report was catching. Added
+  `splitShellSegments()`, a small shell tokenizer (tracks whether the cursor is currently
+  inside a single/double quote or a heredoc body) that replaces every classifier's old
+  `cmd.split(/[;&|\n]+/)` — only separators at the true "top level" now split. Also dropped
+  `import` from the screenshot CLI list entirely (ImageMagick's `import` is already marginal
+  on modern Linux desktops, and "import" is too common a Python keyword to be worth the
+  collision risk even with the tokenizer fixed). Verified against the two real reproduction
+  cases: both false-matched before the fix and are correctly excluded after, while genuine
+  `scrot`/`gnome-screenshot` invocations still match; the other classifiers (GitHub/SSH/
+  Download operation stats) were re-run through their existing unit tests with identical
+  results — not a regression.
+
 ## [1.5.0] - 2026-09-13
 
 ### Added

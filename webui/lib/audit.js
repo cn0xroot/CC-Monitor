@@ -8,15 +8,93 @@ function dbPath() {
   return path.join(home, "events.db");
 }
 
-// 判断一条 Bash 命令里是不是真的在删文件——按 ; & | 换行 切成子命令分别看开头，
-// 而不是对整条命令文本做子串匹配。之前用 SQL LIKE '%rm %' 之类的写法会把
+// 按 ; & | 换行 把一条 Bash 命令切成"子命令"分别看开头——这是本文件好几个分类器
+// 共用的手法（不对整条命令文本做子串匹配，避免 echo 出来的字符串被误判成真的
+// 执行了什么）。但天真地对整条命令文本做 cmd.split(/[;&|\n]+/) 有个漏洞：引号内的
+// 多行字符串参数、heredoc（<<'EOF' ... EOF）的正文里，换行是内容的一部分，不是
+// shell 语法意义上的命令分隔符——如果不管这些，会被当成一堆"独立子命令"分别去看
+// 开头，实测线上数据抓到两个真实案例：
+//   1. `python3 -c "\nimport json, sys\n..."` —— 双引号参数里的 "import json, sys"
+//      单独成一行，被当成了 ImageMagick 截图命令 import 的调用；
+//   2. `git commit -m "$(cat <<'EOF' ... EOF)"` —— heredoc 正文里 word-wrap 过的一行
+//      刚好以 "spectacle" 开头（描述 KDE 截图工具名字的说明文字），被当成了真的在
+//      调用 spectacle 截图。
+// splitShellSegments() 用一个简化版的 shell 分词器解决这个问题：跟踪当前在不在
+// 单/双引号、在不在 heredoc 正文里，只有真正在"顶层"（不在引号/heredoc 内部）的
+// ; & | 换行才当分隔符。不追求 100% 还原 bash 语法（比如反引号/嵌套 $() 里的换行
+// 没特殊处理），但已经覆盖了实际观测到的两种误判来源。
+function splitShellSegments(cmd) {
+  const segments = [];
+  let cur = "";
+  let i = 0;
+  let quote = null; // "'" | '"' | null
+  let heredocEnd = null; // 结束定界符，或者 null（不在 heredoc 正文里）
+  const n = cmd.length;
+  while (i < n) {
+    if (heredocEnd !== null) {
+      const lineEnd = cmd.indexOf("\n", i);
+      const line = lineEnd === -1 ? cmd.slice(i) : cmd.slice(i, lineEnd);
+      cur += line;
+      if (line.trim() === heredocEnd) heredocEnd = null;
+      if (lineEnd === -1) {
+        i = n;
+      } else {
+        cur += "\n";
+        i = lineEnd + 1;
+      }
+      continue;
+    }
+    const ch = cmd[i];
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      cur += ch;
+      i++;
+      continue;
+    }
+    if (ch === "<" && cmd[i + 1] === "<") {
+      const m = /^<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(cmd.slice(i));
+      if (m) {
+        cur += m[0];
+        i += m[0].length;
+        const nl = cmd.indexOf("\n", i);
+        if (nl === -1) {
+          i = n;
+        } else {
+          cur += cmd.slice(i, nl + 1);
+          i = nl + 1;
+          heredocEnd = m[2];
+        }
+        continue;
+      }
+    }
+    if (ch === ";" || ch === "&" || ch === "|" || ch === "\n") {
+      segments.push(cur);
+      cur = "";
+      i++;
+      continue;
+    }
+    cur += ch;
+    i++;
+  }
+  if (cur) segments.push(cur);
+  return segments;
+}
+
+// 判断一条 Bash 命令里是不是真的在删文件——按 splitShellSegments() 切成子命令分别
+// 看开头，而不是对整条命令文本做子串匹配。之前用 SQL LIKE '%rm %' 之类的写法会把
 // "confirm "/"warm "/"term " 这些词尾带 "rm " 的普通输出也算成删除，
 // 或者把 echo 出来的字符串（比如 echo "rm -rf 很危险"）也算成真的删除，误报非常多。
 function commandDeletesFiles(cmd) {
   if (!cmd) return false;
   // find -exec rm ... \; / cmd | xargs rm 这类不在子命令开头，单独兜底判断一下。
   if (/(?:^|\s)(?:-exec\s+|xargs\s+(?:-\S+\s+)*)(?:rm|shred|unlink)\b/.test(cmd)) return true;
-  const segments = cmd.split(/[;&|\n]+/);
+  const segments = splitShellSegments(cmd);
   for (const raw of segments) {
     const seg = raw.trim().replace(/^sudo\s+/, "");
     if (/^(rm|rmdir|unlink|shred|trash-put|trash)\b/.test(seg)) return true;
@@ -43,7 +121,7 @@ function isDeleteEvent(detailJson) {
 const GITHUB_OP_ORDER = ["push", "clone", "commit", "pullFetch", "ghCli", "otherGit"];
 function classifyGithubOp(cmd) {
   if (!cmd) return null;
-  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
   const found = new Set();
   for (const seg of segments) {
     if (/^git\s+push\b/.test(seg)) found.add("push");
@@ -75,7 +153,7 @@ function githubOpType(detailJson) {
 const SSH_OP_ORDER = ["ssh", "scp", "sftp", "keyManagement", "other"];
 function classifySshOp(cmd) {
   if (!cmd) return null;
-  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
   const found = new Set();
   for (const seg of segments) {
     if (/^ssh(\s|$)/.test(seg)) found.add("ssh");
@@ -109,7 +187,7 @@ const DOWNLOAD_OP_ORDER = ["wget", "curl", "aria2", "other"];
 const CURL_OUTPUT_FLAG_RE = /(^|\s)(-O\b|--remote-name\b|-o\s|--output(\s|=))/;
 function classifyDownloadOp(cmd) {
   if (!cmd) return null;
-  const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
   const found = new Set();
   for (const seg of segments) {
     if (/^wget2?(\s|$)/.test(seg)) found.add("wget");
@@ -197,7 +275,7 @@ function commandNetworkHosts(limit = 2000) {
         continue;
       }
       const cmd = detail.command || "";
-      const segments = cmd.split(/[;&|\n]+/).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+      const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
       const hostsInCmd = new Set();
       for (const seg of segments) {
         if (!isNetworkTouchingSegment(seg)) continue;
@@ -214,10 +292,14 @@ function commandNetworkHosts(limit = 2000) {
 // 截屏审计——Claude Code 没有内置"截图"工具，实际观测到的截屏行为分三种路子，
 // 判断方式各自独立、按"最可能"的信号来源分开看：
 //   1. Bash 命令调用了截图类 CLI 工具——跟 commandDeletesFiles() 一个思路，按
-//      ; & | 换行拆成子命令分别看开头，不对整条命令文本做子串匹配（避免
-//      "echo 截图完成" 这种输出内容被误判）。import 单独放宽了一点——ImageMagick
-//      的 import 命令在真实场景里绝大多数就是拿来截屏用的，虽然理论上有极小概率
-//      是别的用途，这跟规则表其它地方"近似识别，非精确"的一贯尺度是一致的。
+//      splitShellSegments() 拆成子命令分别看开头，不对整条命令文本做子串匹配
+//      （避免 "echo 截图完成" 这种输出内容被误判）。原来列表里还有 ImageMagick 的
+//      import 命令，线上实测发现这是个坏主意——"import" 是 Python 极常用的关键字，
+//      即使用了 splitShellSegments() 正确跳过引号/heredoc 内部的换行，只要用户
+//      自己的 shell 脚本里有一行真的以裸 "import ..." 开头（比如反引号/未加引号的
+//      command substitution 里），还是会被误判成在调用截图工具。ImageMagick 的
+//      import 命令本身在现代 Linux 桌面上也已经边缘化（grim/flameshot/spectacle/
+//      gnome-screenshot 这些更常见），删掉它换来的误判下降比丢的召回率划算得多。
 //      Wayland 下常见的走法是通过 xdg-desktop-portal 发 D-Bus 请求（gdbus/dbus-send
 //      调 org.freedesktop.portal.Screenshot 接口），命令行工具反而用不了，单独判断。
 //   2. Read 工具打开的文件本身就是图片——不严格等于"截屏"（也可能是用户自己的照片/
@@ -227,13 +309,13 @@ function commandNetworkHosts(limit = 2000) {
 //      Playwright/Puppeteer 这类浏览器自动化 MCP server 暴露出来的工具名，比如
 //      mcp__playwright__browser_take_screenshot），或者 Anthropic Computer Use 的
 //      "computer" 工具、action 字段等于 "screenshot"。
-const SCREENSHOT_CLI_RE = /^(scrot|gnome-screenshot|spectacle|flameshot|maim|grim|xwd|deepin-screenshot|xfce4-screenshooter|screencapture|import)\b/;
+const SCREENSHOT_CLI_RE = /^(scrot|gnome-screenshot|spectacle|flameshot|maim|grim|xwd|deepin-screenshot|xfce4-screenshooter|screencapture)\b/;
 const SCREENSHOT_PORTAL_RE = /^(gdbus|dbus-send)\b/;
 const SCREENSHOT_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 function commandTakesScreenshot(cmd) {
   if (!cmd) return false;
-  const segments = cmd.split(/[;&|\n]+/);
+  const segments = splitShellSegments(cmd);
   for (const raw of segments) {
     const seg = raw.trim().replace(/^sudo\s+/, "");
     if (SCREENSHOT_CLI_RE.test(seg)) return true;
