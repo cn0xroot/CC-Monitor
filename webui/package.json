@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "postinstall": "node scripts/fix-node-pty-perms.js",
     "test": "node --test test/",
     "electron": "node scripts/electron-start.js",
     "electron:rebuild": "electron-rebuild -f -w node-pty,better-sqlite3",

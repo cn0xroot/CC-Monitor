@@ -3,6 +3,13 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const pty = require("node-pty");
+// 启动时顺手确认 node-pty 的 spawn-helper 有可执行位（见 scripts/fix-node-pty-perms.js，
+// 没有的话 pty.spawn 会直接抛 "posix_spawnp failed."）。幂等，通常什么都不做。
+try {
+  require("../scripts/fix-node-pty-perms").fixNodePtyPerms();
+} catch (e) {
+  // 修不了（只读文件系统之类）就算了，真有问题下面 spawn 时会报出来
+}
 
 const SCROLLBACK_LIMIT = 5000;
 

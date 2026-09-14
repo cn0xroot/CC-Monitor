@@ -16,8 +16,20 @@
   `session + 工具名` 记），网页或终端给了答案就通过 `hookSpecificOutput.decision.behavior`
   替用户答掉；没人答（90s 超时）或终端里敲回车，hook 静默退出、原生确认框照常弹出。
   审批历史新增 "已转回原生确认框" 状态。
+- **macOS 系统层探针（网络部分）**：新增 `cc_monitor/probe_darwin.py`，`bin/CC-Monitor-probe`
+  在 macOS 上自动切过去。用系统自带的 `nettop -d -L 0` 每 2 秒采样 claude 进程树（claude
+  + 子孙进程，每次采样重新算）每条连接的远端 IP:port 和上传/下载字节增量，写进跟 Linux
+  探针同一张 `network_traffic` 表和同一种 `os_net` 事件，网络流量页/世界地图/AI 轨迹在
+  Mac 上不再永远是空的。不需要 root。没有 `execve` 观测（`verify` 的绕过检测仍是 Linux
+  独有），域名只能靠反向 DNS 兜底。SIGTERM 时会把 nettop 子进程一起收掉。
+  Web UI 上网络页的几条提示文案改成会告诉你"去跑 bin/CC-Monitor-probe"，并提到走本地
+  代理时远端全是 127.0.0.1、地图上不会有点这种情况。
 
 ### 修复
+- **Web 终端"新建会话"直接 500（`posix_spawnp failed.`）**：node-pty 靠
+  `prebuilds/<平台>/spawn-helper` 这个小程序起 pty，npm 解包时（实测 macOS + npm 11）
+  会丢掉它的可执行位。新增 `webui/scripts/fix-node-pty-perms.js`，作为 `postinstall`
+  跑一次，`lib/sessions.js` 加载时再幂等地跑一次（打包后没有 postinstall）。
 - **macOS 上额度/套餐永远显示"没找到 Claude Code 的登录凭证"**：Claude Code 在 macOS 上
   不写 `~/.claude/.credentials.json`，OAuth 凭证存在登录钥匙串里（service
   `Claude Code-credentials`，内容是同一份 JSON）。全新的 Mac 必现。新增

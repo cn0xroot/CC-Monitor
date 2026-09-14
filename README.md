@@ -214,6 +214,11 @@ CC-Monitor has a two-layer architecture:
   at the kernel level, every `execve`/`connect` made by the entire process subtree spawned by the
   `claude` process — completely independent of Claude Code's own cooperation. This is the second
   line of defense: it can still catch anomalies even if the hooks config itself gets tampered with
+  - **macOS**: the same `CC-Monitor-probe` command switches to `cc_monitor/probe_darwin.py`, which
+    samples the claude process tree's connections and byte counts every 2s with the built-in
+    `nettop` — **no root needed**. Network only (traffic page / world map / AI trajectory): there
+    is no `execve` observation (the bypass detection behind `CC-Monitor verify` stays Linux-only)
+    and hostnames fall back to reverse DNS.
   or bypassed.
 
 Capabilities:
@@ -332,7 +337,7 @@ python3 install.py --target /path/to/settings.json  # explicit settings.json pat
 
 # 3. (optional) install bpftrace if you want the system-layer probe
 sudo apt install bpftrace        # Debian/Ubuntu
-# see bpftrace's own docs for other distros; the system-layer probe is not implemented on macOS yet
+# see bpftrace's own docs for other distros; macOS needs nothing extra (the probe uses the built-in nettop)
 ```
 
 The installer merges into the `PreToolUse`/`PostToolUse`/`PermissionRequest` hook arrays and de-duplicates by exact
@@ -463,9 +468,10 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 
 ### Not implemented / TODO
 
-- [ ] **macOS support**: the Endpoint Security Framework approach sketched in the design doc
-      (requires a signed system extension + user-granted Full Disk Access) is entirely
-      unimplemented; CC-Monitor has only been validated on Linux so far
+- [ ] **macOS support**: hooks / AI Approvals / usage (Keychain) / web terminal / the nettop
+      network probe now work on macOS; the Endpoint Security Framework approach sketched in the
+      design doc (`execve`-level bypass detection, requires a signed system extension +
+      user-granted Full Disk Access) is still unimplemented
 - [ ] **Mandatory sandboxing** (Phase 3): Landlock LSM / bubblewrap (Linux), `sandbox-exec` /
       containerization (macOS) — currently the tool can only block-and-alert, not actually cage
       Claude Code inside a hard sandbox

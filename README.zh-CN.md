@@ -87,7 +87,11 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
   - cwd、git 分支、活跃时长、拦截情况。
 - **网络流量**：Claude Code 进程树实际发起过的网络连接——目标 IP/端口、域名、上传/下载
   字节数、连接次数，外加一张世界地图标出连接目的地的大致位置。数据完全来自系统层探针
-  （`cc_monitor/probe_linux.bt`，Linux + eBPF），不是抓包/中间人。
+  （Linux：`cc_monitor/probe_linux.bt`，eBPF；macOS：`cc_monitor/probe_darwin.py`，`nettop`
+  采样），不是抓包/中间人。**探针不跑这页就是空的**——启动 Web UI 不会自动拉起探针。
+  - 注意：Claude Code 走了本地代理（`HTTPS_PROXY=http://127.0.0.1:xxxx`）的话，任何进程级
+    探针看到的远端都只会是 `127.0.0.1:<代理端口>`，真正的目标在代理进程那边，地图上自然
+    没有可定位的点——这不是探针的 bug。
   - **域名捕获**：用 `uprobe:libc:getaddrinfo` 在应用层解析域名的那一刻就记下来，而不是
     事后对 IP 做反向 DNS——很多云厂商/CDN 出口 IP 根本没配 PTR 记录，反向解析注定拿不到
     域名，这个办法不受影响。
@@ -181,6 +185,10 @@ CC-Monitor 是双层监测架构：
 - **系统层（eBPF 探针，Linux）**：`CC-Monitor-probe` 用 `bpftrace` 独立于 Claude Code 之外，直接在
   内核层跟踪 `claude` 进程派生出的整棵子孙进程树的 `execve`/`connect`，交叉验证应用层 hooks
   有没有被绕过或篡改——这是第二道防线，即使 hooks 配置被破坏也能兜底发现异常。
+  - **macOS**：同一个 `CC-Monitor-probe` 命令自动切到 `cc_monitor/probe_darwin.py`——用系统
+    自带的 `nettop` 每 2 秒采样 claude 进程树的连接和字节数，**不需要 root**。只覆盖网络
+    部分（网络流量页/世界地图/AI 轨迹），没有 `execve` 观测（`CC-Monitor verify` 的绕过
+    检测仍是 Linux 独有），域名只能靠反向 DNS 兜底。
 
 具体能力：
 
@@ -280,7 +288,7 @@ python3 install.py --target /path/to/settings.json  # 显式指定 settings.json
 
 # 3.（可选）如果要用系统层探针，装 bpftrace
 sudo apt install bpftrace        # Debian/Ubuntu
-# 其它发行版参考 bpftrace 官方文档；macOS 暂不支持系统层探针
+# 其它发行版参考 bpftrace 官方文档；macOS 不需要装任何东西（探针用系统自带的 nettop）
 ```
 
 安装脚本按 `command` 字段去重合并写入 `PreToolUse`/`PostToolUse`/`PermissionRequest` hook 数组，**不会覆盖**你已有
@@ -403,8 +411,9 @@ sudo ./bin/CC-Monitor-probe
 
 ### 未实现 / 待办
 
-- [ ] **macOS 支持**：设计文档里规划的 Endpoint Security Framework 方案完全未实现（需要签名的
-      系统扩展 + 用户手动授权 Full Disk Access），目前 CC-Monitor 只在 Linux 上验证过
+- [ ] **macOS 支持**：hooks / AI 审批台 / 额度（钥匙串）/ Web 终端 / nettop 网络探针已在
+      macOS 上跑通；设计文档里规划的 Endpoint Security Framework 方案（`execve` 级别的绕过
+      检测，需要签名的系统扩展 + 用户手动授权 Full Disk Access）仍未实现
 - [ ] **强制沙箱**（Phase 3）：Landlock LSM / bubblewrap（Linux）、`sandbox-exec`/容器化（macOS），
       目前只能拦截+告警，不能把 Claude Code 关进一个真正强制隔离的沙箱里
 - [ ] **`CC-Monitor-probe` 常驻化**：目前需要手动 `sudo` 启动，没有 systemd unit / 开机自启，需要用户自己决定要不要装成常驻服务

@@ -29,7 +29,9 @@ else
 fi
 
 echo
-if command -v bpftrace >/dev/null 2>&1; then
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "[CC-Monitor] 3/3 macOS：系统层探针用系统自带的 nettop，不用装东西，直接 bin/CC-Monitor-probe（不需要 sudo）。"
+elif command -v bpftrace >/dev/null 2>&1; then
   echo "[CC-Monitor] 3/3 检测到 bpftrace，系统层探针（CC-Monitor-probe）可以直接用。"
 else
   echo "[CC-Monitor] 3/3 没检测到 bpftrace（系统层探针是可选的，跳过不影响主功能）。"

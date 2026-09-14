@@ -19,8 +19,23 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `hookSpecificOutput.decision.behavior`; if nobody answers (90s timeout) or Enter is
   pressed at the terminal, the hook exits silently and the native dialog appears as usual.
   Approval history gains a "Handed back to native dialog" status.
+- **macOS system-layer probe (network part)**: new `cc_monitor/probe_darwin.py`;
+  `bin/CC-Monitor-probe` switches to it automatically on macOS. It samples the claude process
+  tree (claude + descendants, recomputed each sample) every 2s with the built-in
+  `nettop -d -L 0`, recording each connection's remote IP:port and upload/download byte
+  deltas into the same `network_traffic` table and `os_net` events the Linux probe uses, so
+  the traffic page / world map / AI trajectory are no longer permanently empty on a Mac. No
+  root required. No `execve` observation (the bypass detection behind `verify` stays
+  Linux-only); hostnames fall back to reverse DNS. SIGTERM also tears down the nettop child.
+  The network page hints now tell you to run `bin/CC-Monitor-probe`, and mention that with a
+  local proxy every remote is 127.0.0.1 so the map has nothing to plot.
 
 ### Fixed
+- **Web terminal "new session" returned 500 (`posix_spawnp failed.`)**: node-pty spawns
+  the pty through its bundled `prebuilds/<platform>/spawn-helper` binary, and npm dropped
+  its executable bit when unpacking (seen on macOS + npm 11). New
+  `webui/scripts/fix-node-pty-perms.js` runs as `postinstall` and again, idempotently, when
+  `lib/sessions.js` loads (packaged builds have no postinstall step).
 - **macOS always showed "Claude Code credentials not found" for usage/plan**: on macOS
   Claude Code does not write `~/.claude/.credentials.json`; the OAuth credential lives in
   the login Keychain (service `Claude Code-credentials`, same JSON payload). Every fresh Mac
