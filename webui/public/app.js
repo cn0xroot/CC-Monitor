@@ -2323,7 +2323,11 @@ function renderLimitsInto(box, list, limits) {
             (l) => `
           <tr>
             <td>${escapeHtml(limitKindLabel(l.kind))}${l.scopeModel ? ` (${escapeHtml(l.scopeModel)})` : ""}</td>
-            <td class="neon-bar-cell">${neonPercentBar(l.percent, l.severity, big)}</td>
+            <!-- .neon-bar-cell 要包一层 div，不能直接扣在 <td> 上：display:flex 一旦
+                 直接加在 <td> 上，这个单元格就不再随行内最高的兄弟单元格（"重置时间"
+                 那一列带了两行内容，行高被撑高）一起拉伸到同样高度，百分比条就贴在
+                 单元格顶部、下面多出一截空白，看起来跟同一行的其它列错位。 -->
+            <td><div class="neon-bar-cell">${neonPercentBar(l.percent, l.severity, big)}</div></td>
             <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
             <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}${limitElapsedBar(l.resetsAt, l.kind)}</td>
             <td>${l.isActive ? "●" : "-"}</td>
