@@ -232,6 +232,14 @@
     "pattern": "\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*f[a-zA-Z]*d?[a-zA-Z]*\\b"
   },
   {
+    "id": "git_hooks_persistence",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bgit\\s+config\\b[^\\n]*\\b(core\\.hooksPath|url\\.\\S+\\.insteadOf)\\b|>>?\\s*\\.git/hooks/"
+  },
+  {
     "id": "history_tampering",
     "risk": "medium",
     "action": "confirm",
@@ -257,11 +265,11 @@
   },
   {
     "id": "docker_privileged_or_host_mount",
-    "risk": "medium",
+    "risk": "high",
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bdocker\\s+run\\b[^\\n]*(--privileged\\b|-v\\s+/:/)"
+    "pattern": "\\bdocker\\s+run\\b[^\\n]*(--privileged\\b|-v\\s+/:/|docker\\.sock)"
   },
   {
     "id": "sensitive_file_write",
@@ -278,6 +286,30 @@
     "tools": ["Write", "Edit"],
     "field": "file_path",
     "pattern": "(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile|\\.zprofile)$"
+  },
+  {
+    "id": "claude_config_tamper",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "file_path",
+    "pattern": "(^|/)\\.claude/settings(\\.local)?\\.json$|(^|/)\\.claude/hooks/|(^|/)CLAUDE\\.md$"
+  },
+  {
+    "id": "git_hooks_file_write",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "file_path",
+    "pattern": "(^|/)\\.git/hooks/"
+  },
+  {
+    "id": "secret_pattern_in_write",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----|\\bAKIA[0-9A-Z]{16}\\b|\\bASIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}\\b|\\bgithub_pat_[A-Za-z0-9_]{20,}\\b|\\bsk-ant-[A-Za-z0-9_-]{20,}\\b|\\bsk-proj-[A-Za-z0-9_-]{20,}\\b|\\bsk-[A-Za-z0-9]{32,48}\\b|\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b|\\bAIza[0-9A-Za-z_-]{35}\\b|\\bnpm_[A-Za-z0-9]{36}\\b|\\bsk_live_[0-9a-zA-Z]{24,}\\b"
   },
   {
     "id": "sensitive_file_read",

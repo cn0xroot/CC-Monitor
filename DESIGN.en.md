@@ -132,7 +132,18 @@ Example rules (configurable, stored as YAML/JSON):
   `FLUSHALL` directly (the same risk category as "deleting files," but entirely outside the
   filesystem monitoring's field of view), and reverse-shell/backdoor execution (the `-e`/`-c`
   variants of `nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell —
-  coverage keeps expanding here since the sneaky ways to write one of these keep multiplying).
+  coverage keeps expanding here since the sneaky ways to write one of these keep multiplying),
+  **tampering with Claude Code's own config** (`~/.claude/settings.json`, `.claude/hooks/`,
+  `CLAUDE.md` — if `kill_monitoring_process` is the process-layer version of "kill the
+  monitoring to bypass it," this is the config-layer version; rewriting the config to drop a
+  hook registration is stealthier than killing a process, since no process has to die for the
+  application-layer monitoring to go silently dark on the next tool call), Docker-socket-mount
+  container escapes (`-v /var/run/docker.sock:...`, a more common escape technique than
+  `--privileged`/`-v /:/`), private-key headers or fixed-prefix secret formats
+  (AWS/GitHub/Anthropic, etc.) appearing in written content (no longer requiring the file name
+  itself to look sensitive), and git-hooks/git-config persistence (`core.hooksPath`,
+  `url.insteadOf` — the git-ecosystem counterpart to the same "plant a persistent backdoor" risk
+  category as `crontab_persistence`/`systemd_persistence`).
 - **Medium risk (log + confirmation dialog)**: writes outside the project directory, modifying
   system config files (`/etc/*`), bulk file deletion.
 - **Low risk (log only)**: routine reads/writes inside the project directory, git operations,

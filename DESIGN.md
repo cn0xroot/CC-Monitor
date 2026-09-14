@@ -88,7 +88,7 @@ MVP 阶段建议：系统层先只做**审计**（不强制阻断，成本低、
 ### 4.3 策略引擎（Policy Engine）
 规则示例（可配置，YAML/JSON 存放）：
 
-- **高危（默认拦截+告警）**：`rm -rf`、`dd`、`chmod -R 777 /`、`curl|bash`、`sudo`/`su`/`pkexec` 提权、写入 `~/.ssh/*`、`.env`、`~/.aws/credentials`、访问白名单外域名并同时读取过敏感文件（读+外发组合触发更高风险）、试图 `kill`/`pkill` 掉监控自身的探针/hook 进程（第 3 节讲的"双层监测互为校验"在规则层面的具体落地——这个动作本身就是"正在尝试绕过监测"的信号）、`mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3` 等数据库客户端直接执行 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`（跟"删文件"是同一类风险，但完全在文件系统监测的视野之外）、反弹 shell/后门执行（`nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、`mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体，覆盖面持续在扩，因为这类命令的隐蔽写法本来就层出不穷）。
+- **高危（默认拦截+告警）**：`rm -rf`、`dd`、`chmod -R 777 /`、`curl|bash`、`sudo`/`su`/`pkexec` 提权、写入 `~/.ssh/*`、`.env`、`~/.aws/credentials`、访问白名单外域名并同时读取过敏感文件（读+外发组合触发更高风险）、试图 `kill`/`pkill` 掉监控自身的探针/hook 进程（第 3 节讲的"双层监测互为校验"在规则层面的具体落地——这个动作本身就是"正在尝试绕过监测"的信号）、`mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3` 等数据库客户端直接执行 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`（跟"删文件"是同一类风险，但完全在文件系统监测的视野之外）、反弹 shell/后门执行（`nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、`mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体，覆盖面持续在扩，因为这类命令的隐蔽写法本来就层出不穷）、**篡改 Claude Code 自身的配置**（`~/.claude/settings.json`、`.claude/hooks/`、`CLAUDE.md`——`kill_monitoring_process` 是"杀掉监测进程"这个绕过手法的进程层版本，这条是配置层版本，改配置删掉 hook 注册比杀进程更隐蔽，不需要任何进程死亡就能让应用层监测下一次调用起就失效）、Docker socket 挂载逃逸（`-v /var/run/docker.sock:...`，比 `--privileged`/`-v /:/` 更常见的容器逃逸手法）、写入内容里出现私钥文件头或 AWS/GitHub/Anthropic 等平台的固定前缀密钥格式（不再要求文件名本身看起来敏感）、git hooks/config 持久化（`core.hooksPath`、`url.insteadOf`，跟 `crontab_persistence`/`systemd_persistence` 同一类持久化后门风险的 git 生态版本）。
 - **中危（记录+弹窗确认）**：跨项目目录写入、修改系统配置文件（`/etc/*`）、大批量删除文件。
 - **低危（仅记录）**：项目目录内的常规读写、git 操作、读取 shell 历史文件或执行裸 `history`（历史命令里可能留着过去输入过的明文凭据，风险比直接读密钥文件低一档，够不上高危，但值得留痕）。
 

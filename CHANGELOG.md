@@ -5,6 +5,60 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.7.0] - 2026-09-14
+
+### 新增
+- **新增 Claude Code 自身配置文件篡改检测**：改 `~/.claude/settings.json`（或项目内
+  `.claude/settings.json`/`settings.local.json`）、`.claude/hooks/` 目录下的脚本、
+  `CLAUDE.md` 之前完全没有规则覆盖。这是目前发现的最大缺口——改配置文件删掉 hook
+  注册，比 `kill -9` 探针进程更隐蔽（不需要杀任何进程，Claude Code 下次工具调用
+  时应用层监测就已经悄悄失效了），跟已有的 `kill_monitoring_process` 是同一个
+  "防绕过"目标，但覆盖的是配置层面而不是进程层面。新增 `claude_config_tamper`
+  （`risk: high`, `action: confirm`），`tools: ["Write", "Edit", "NotebookEdit"]`，
+  `field: "file_path"`。用 `confirm` 而不是 `block`，是因为正常给自己项目加一个
+  新 hook、改 `CLAUDE.md` 本来就是合理操作。插在 `shell_rc_write` 之后。
+- **Docker 特权/挂载检测新增 Docker socket 挂载识别**：`docker_privileged_or_host_mount`
+  原来只认 `--privileged` 和 `-v /:/` 这两种写法，`-v /var/run/docker.sock:/var/run/docker.sock`
+  这个更常见、更经典的容器逃逸手法（挂载宿主机 docker socket 等于把宿主机 root
+  权限直接送进容器）完全漏检。扩展正则加上 `docker.sock` 这个子串匹配，同时把
+  这条规则的 `risk` 从 `medium` 提到 `high`（`--privileged`/`docker.sock` 挂载都是
+  宿主机 root 等价的风险，`medium` 偏低了；`action` 维持 `confirm`，兼容合法的
+  DinD/CI 场景）。
+- **新增写入内容密钥格式扫描**：之前所有规则全部按文件路径/命令文本判断，Claude
+  把 API key 写进任意一个不带敏感文件名特征的文件（比如 `config.py`、
+  `notes.txt`）完全不会触发任何规则。新增 `secret_pattern_in_write`
+  （`risk: high`, `action: confirm`），`tools: ["Write", "Edit", "NotebookEdit"]`，
+  新增的 `field: "content"` 扫描私钥文件头（`-----BEGIN ... PRIVATE KEY-----`）、
+  AWS Access Key（`AKIA`/`ASIA` 前缀）、GitHub token（`ghp_`/`gho_`/`ghu_`/`ghs_`/
+  `ghr_`/`github_pat_`）、Anthropic/OpenAI key（`sk-ant-`/`sk-proj-`/`sk-`）、Slack
+  token（`xox[baprs]-`）、Google API key（`AIza`）、npm token（`npm_`）、Stripe
+  live key（`sk_live_`）这几类高置信度的固定前缀格式。`cc_monitor/policy.py` 的
+  `FIELD_CANDIDATES` 新增 `"content": ["content", "new_string", "new_source"]`
+  映射——Write 用 `content`、Edit 用 `new_string`、NotebookEdit 用
+  `new_source`，三个工具语义上都是"即将写进文件的内容"，一条规则要同时认这三个
+  字段名，跟已有 `file_path` 的多候选写法是同一个道理。已经写进 `.env`/`.ssh/`
+  这类本来就被 `sensitive_file_write` 覆盖的路径不会重复触发——规则顺序保证更
+  具体的路径规则先命中。局限性：按字符类型+长度的固定前缀匹配，不看信息熵，
+  文档里的示例占位符密钥（比如全用 `x` 填充的假 key）如果长度凑巧够长也会被
+  误判，这是所有轻量级密钥扫描工具（gitleaks/trufflehog 的非熵值模式）共有的
+  局限，`action: confirm` 而不是 `block` 也是为了给这种误判留人工确认的余地。
+- **新增 git hooks / git config 持久化攻击面检测**：`core.hooksPath`（把 git hooks
+  重定向到别的目录）、`url.<url>.insteadOf`（悄悄把依赖源换成攻击者控制的仓库，
+  真实供应链攻击手法）、直接用 Bash 重定向写入 `.git/hooks/`，之前都没有覆盖——
+  跟已有的 `crontab_persistence`/`systemd_persistence` 是同一类"植入持久化后门"
+  风险，但 git 生态里的对应手法完全是盲区。新增两条规则：`git_hooks_persistence`
+  （`risk: medium`, `action: confirm`，`tools: ["Bash"]`，覆盖上面三种命令行写法）
+  和 `git_hooks_file_write`（同样 `medium`/`confirm`，`tools: ["Write", "Edit",
+  "NotebookEdit"]`，`field: "file_path"`，覆盖直接用 Write/Edit 工具往
+  `.git/hooks/` 底下写文件这个命令行规则覆盖不到的写法）。`git_hooks_persistence`
+  插在 `git_hard_reset_clean` 之后。
+  以上四项用 26 个正负测试用例、外加 13 个覆盖全部旧规则类别的回归测试，全部
+  直接调用 `cc_monitor/policy.py` 的真实 `evaluate()` 函数验证（不是简化版
+  正则复现），确认新规则匹配正确、`FIELD_CANDIDATES` 新增 `"content"` 映射没有
+  影响 `command`/`file_path`/`url` 这些既有字段的解析，`node --test` 5/5 全部
+  通过。已有用户的 `~/.cc-monitor/rules.json` 不会自动更新，想要这些新规则生效
+  需要手动同步。
+
 ## [1.6.0] - 2026-09-14
 
 ### 新增

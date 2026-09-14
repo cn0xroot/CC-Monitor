@@ -7,7 +7,9 @@ along the way? Give this a try. It monitors what Claude Code does on your machin
 reads/writes, shell command execution, network access — and blocks or asks for confirmation
 on high-risk operations, so an AI coding agent can't quietly damage your system or leak data.
 Everything is audit-logged. The technical design doc is available in
-[English](./DESIGN.en.md) and [Chinese](./DESIGN.md).
+[English](./DESIGN.en.md) and [Chinese](./DESIGN.md). For what risks installing this actually
+carries, what third-party modules it depends on, and where your data actually goes, see
+[SECURITY.md](./SECURITY.en.md) ([Chinese](./SECURITY.md)).
 
 ## Quick Install
 
@@ -567,7 +569,12 @@ not just filesystem-rooted ones), and destructive direct database commands (`mys
 `redis-cli`/`mongo`/`sqlite3` followed by `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`), reading shell
 history files or running a bare `history` command (which can surface plaintext credentials typed
 in the past), and reverse-shell/backdoor execution (covering `-e`/`-c` variants of
-`nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell), and more.
+`nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell), tampering with
+Claude Code's own config (`~/.claude/settings.json`/`.claude/hooks/`/`CLAUDE.md` — the
+config-layer counterpart to the anti-bypass rules above), Docker-socket-mount container escapes
+(`-v /var/run/docker.sock:...`), common secret formats appearing in written content
+(AWS/GitHub/Anthropic/OpenAI/Slack/Google/npm/Stripe fixed prefixes plus private-key headers),
+and git-hooks/git-config persistence (`core.hooksPath`, `url....insteadOf`), and more.
 
 ## Development Progress
 
@@ -667,6 +674,18 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
       home cards (33 sub-category cards across 7 rows) down to one summary card per group;
       clicking one now shows a category breakdown table plus the full command list, the same
       interaction as the MCP/Skill/Subagent call cards
+- [x] New detection for tampering with Claude Code's own config (`settings.json`/
+      `.claude/hooks/`/`CLAUDE.md`) — the biggest anti-bypass gap found so far, since rewriting
+      the config is stealthier than killing the probe process
+- [x] Docker privileged/mount detection extended to Docker-socket mounts, risk bumped from
+      medium to high
+- [x] New secret-format scanning on written content (`secret_pattern_in_write`): no longer
+      judged by file path alone — recognizes AWS/GitHub/Anthropic/OpenAI/Slack/Google/npm/Stripe
+      fixed prefixes plus private-key headers; `policy.py` gained a multi-candidate `content`
+      field mapping (Write's `content`, Edit's `new_string`, NotebookEdit's `new_source`)
+- [x] New git-hooks/git-config persistence-attack-surface detection (`core.hooksPath`,
+      `url....insteadOf`, direct writes into `.git/hooks/`) — same risk category as the existing
+      crontab/systemd persistence rules, previously a complete blind spot for git
 - [x] Appearance settings dialog: color-theme swatch grid, interface font, interface font size (new settings)
 - [x] Session quota shows "remaining %" with a conky-style stepped palette; weekly quotas show "used %" with a continuous red→yellow→green gradient; per-model quotas like Fable are detected dynamically
 - [x] **macOS platform support**: hooks (`PreToolUse`/`PostToolUse`/`PermissionRequest`), AI
@@ -702,6 +721,10 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 
 ## Known Limitations
 
+> The fuller disclaimer, the supply-chain/system-stability risk Q&A, and the privacy notes live
+> separately in [SECURITY.md](./SECURITY.en.md) — this section only lists concrete, code-level
+> known limitations.
+
 - **The Web UI process and the terminal(s) you normally run `claude` in must be the same OS
   user**, or each writes to its own separate `~/.cc-monitor/` database and neither can see the
   other's data (confirmation prompts and audit events from your terminal simply never appear on
@@ -725,6 +748,32 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
   especially for mobile/CDN egress IPs that often resolve to a carrier's datacenter rather
   than the user's actual location) — an inherent limitation of IP geolocation, not something
   CC-Monitor can fix.
+
+## Disclaimer
+
+CC-Monitor is an individually-maintained open-source project, provided "as is" under the
+[MIT License](./LICENSE), without any warranty of any kind, express or implied. Before you rely
+on it:
+
+- **The policy engine does approximate matching, not formal verification.** Every rule is, at its
+  core, a regex matched against command text, file paths, or written content — there will always
+  be phrasings that slip past a rule, and always be legitimate operations that get misjudged.
+  **Don't treat it as your only line of defense**; when working with code/repos you genuinely
+  don't trust, the usual additional protections (container isolation, read-only mounts, a
+  dedicated sandboxed account) are still necessary.
+- **The system-layer probe currently only audits — it doesn't enforce isolation.** It can see and
+  record signs that the application-layer hooks were bypassed, but seeing it doesn't automatically
+  stop it — real mandatory isolation (Landlock/sandboxing) is still on the roadmap, not
+  implemented.
+- **The author is not liable for any direct or indirect loss arising from use or misuse of this
+  tool** (work interruption from a rule false-positive, a security incident from a rule
+  false-negative, an anomaly from the probe's permissions, or issues from your own modifications
+  to the rules/code). Use at your own risk — it's worth running it in a non-production environment
+  first and understanding what the default rules actually block.
+
+For the fuller Q&A on third-party dependencies, supply-chain risk, system-stability risk, and
+where your data actually goes, see the dedicated
+[SECURITY.md](./SECURITY.en.md) ([Chinese](./SECURITY.md)).
 
 ## License
 
@@ -754,4 +803,5 @@ third-party packages. The Web UI (`webui/`) builds on these open-source projects
 **Inspiration / prior art**
 - [ccstatusline](https://github.com/sirmalloc/ccstatusline) — CC-Monitor's account/usage display independently re-implements the same OAuth-credential lookup and Anthropic usage-API call ccstatusline uses (no code shared, no dependency on it); `install.sh` also offers to install and wire it up as a companion terminal statusline
 - [Vibe Island](https://vibeisland.app/) — the interaction model AI Approvals is modeled after (an Allow/Deny card for pending actions), reimplemented here as a cross-platform web page instead of a macOS-only notch UI
-- [BeeEye](https://github.com/cn0xroot/BeeEye) (another project by the same author) — the Network tab's world map (WebGL2 equirectangular projection, coastline rendering, glowing points, the connection arc/travelling-dot animation, Canvas 2D fallback) is a direct port of its `WorldMap.jsx`, borrowed between the two projects
+- [BeeEye](https://github.com/cn0xroot/BeeEye) (another project by author) — the Network tab's world map (WebGL2 equirectangular projection, coastline rendering, glowing points, the connection arc/travelling-dot animation, Canvas 2D fallback) is a direct port of its `WorldMap.jsx`, borrowed between the two projects
+- [slowmist-agent-security](https://github.com/evilcos/slowmist-agent-security) (SlowMist) — a manual security-review checklist for AI agents/MCP servers/skills, not a rule library; reading through it surfaced several policy-engine rule ideas under consideration for `default_rules.json` (credential-harvesting `grep` scans, `npx`/`pipx run` one-shot execution, reading another process's `/proc/<pid>/environ`/`cmdline`, browser cookie/login-data file access, and dynamic-exec code — `eval(`/`exec(`/`os.system(` — appearing in written content), not yet implemented as of this writing

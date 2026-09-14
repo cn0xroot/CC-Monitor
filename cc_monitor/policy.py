@@ -11,6 +11,10 @@ FIELD_CANDIDATES = {
     "command": ["command"],
     "file_path": ["file_path", "path", "notebook_path"],
     "url": ["url"],
+    # Write 用 "content"，Edit 用 "new_string"，NotebookEdit 用 "new_source"——
+    # 三个工具语义上都是"即将写进文件的内容"，一条按内容扫描密钥格式的规则要
+    # 同时认这三个字段名，跟上面 file_path 的多候选写法是同一个道理。
+    "content": ["content", "new_string", "new_source"],
 }
 
 

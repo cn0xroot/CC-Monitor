@@ -5,6 +5,66 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.7.0] - 2026-09-14
+
+### Added
+- **New detection for tampering with Claude Code's own config**: editing
+  `~/.claude/settings.json` (or a project's `.claude/settings.json`/`settings.local.json`),
+  scripts under `.claude/hooks/`, or `CLAUDE.md` had zero rule coverage before. This is the
+  biggest gap found so far — rewriting the config to drop a hook registration is stealthier
+  than `kill -9`-ing the probe process (no process needs to die; the application-layer
+  monitoring just silently stops firing on the next tool call). Same "anti-bypass" goal as the
+  existing `kill_monitoring_process`, just at the config layer instead of the process layer.
+  Added `claude_config_tamper` (`risk: high`, `action: confirm`),
+  `tools: ["Write", "Edit", "NotebookEdit"]`, `field: "file_path"`. `confirm` rather than
+  `block` since adding a new hook to your own project or editing `CLAUDE.md` is a completely
+  normal action. Inserted right after `shell_rc_write`.
+- **Docker privileged/mount detection extended to Docker-socket mounts**:
+  `docker_privileged_or_host_mount` previously only recognized `--privileged` and `-v /:/` —
+  `-v /var/run/docker.sock:/var/run/docker.sock`, a more common and classic container-escape
+  technique (mounting the host's Docker socket hands the container host-root-equivalent
+  control), was a complete blind spot. Extended the regex with a `docker.sock` substring match,
+  and bumped this rule's `risk` from `medium` to `high` (both `--privileged` and a docker.sock
+  mount are host-root-equivalent risk, `medium` undersold it; `action` stays `confirm` to
+  accommodate legitimate DinD/CI use cases).
+- **New secret-format scanning on written content**: every existing rule judged by file path or
+  command text — Claude writing an API key into a file with no sensitive-looking name (e.g.
+  `config.py`, `notes.txt`) triggered nothing at all. Added `secret_pattern_in_write`
+  (`risk: high`, `action: confirm`), `tools: ["Write", "Edit", "NotebookEdit"]`, using a new
+  `field: "content"` to scan for private-key headers (`-----BEGIN ... PRIVATE KEY-----`), AWS
+  access keys (`AKIA`/`ASIA` prefix), GitHub tokens (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/
+  `github_pat_`), Anthropic/OpenAI keys (`sk-ant-`/`sk-proj-`/`sk-`), Slack tokens
+  (`xox[baprs]-`), Google API keys (`AIza`), npm tokens (`npm_`), and Stripe live keys
+  (`sk_live_`) — high-confidence, fixed-prefix formats. Added a
+  `"content": ["content", "new_string", "new_source"]` mapping to `FIELD_CANDIDATES` in
+  `cc_monitor/policy.py` — Write uses `content`, Edit uses `new_string`, NotebookEdit uses
+  `new_source`, all three semantically "the content about to be written," so one rule needs to
+  recognize all three field names, the same trick already used for `file_path`. Writes to paths
+  already covered by `sensitive_file_write` (like `.env`/`.ssh/`) won't double-fire — rule
+  ordering ensures the more specific path rule wins first. Limitation: this is a fixed-prefix,
+  character-class-and-length match, not an entropy check, so a sufficiently long placeholder key
+  in documentation (all `x`s, say) can false-positive — the same limitation every lightweight,
+  non-entropy secret scanner (gitleaks/trufflehog's non-entropy patterns) shares; `confirm`
+  rather than `block` leaves room for a human to wave off exactly that case.
+- **New git-hooks/git-config persistence-attack-surface detection**: `core.hooksPath`
+  (redirecting git hooks to another directory), `url.<url>.insteadOf` (quietly swapping a
+  dependency's source for an attacker-controlled repo — a real supply-chain technique), and
+  writing directly into `.git/hooks/` via Bash redirection all had zero coverage before — the
+  same "plant a persistent backdoor" risk category as the existing `crontab_persistence`/
+  `systemd_persistence`, but the git-ecosystem equivalent was a complete blind spot. Added two
+  rules: `git_hooks_persistence` (`risk: medium`, `action: confirm`, `tools: ["Bash"]`, covering
+  the three command-line forms above) and `git_hooks_file_write` (same `medium`/`confirm`,
+  `tools: ["Write", "Edit", "NotebookEdit"]`, `field: "file_path"`, covering writing into
+  `.git/hooks/` directly via the Write/Edit tool — a form the command-based rule can't see).
+  `git_hooks_persistence` is inserted right after `git_hard_reset_clean`.
+  All four items above were verified with 26 positive/negative test cases, plus 13 regression
+  cases covering every pre-existing rule category, all calling `cc_monitor/policy.py`'s real
+  `evaluate()` directly (not a simplified regex re-implementation) — confirming the new rules
+  match correctly and that adding the `"content"` mapping to `FIELD_CANDIDATES` didn't disturb
+  how the existing `command`/`file_path`/`url` fields resolve. `node --test` still passes 5/5.
+  As with prior rule additions, an existing user's `~/.cc-monitor/rules.json` won't auto-update
+  to pick these up.
+
 ## [1.6.0] - 2026-09-14
 
 ### Added

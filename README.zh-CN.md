@@ -5,7 +5,9 @@
 还在为 AI 开发时不知道 AI Agent 在你的电脑上执行了哪些操作吗？试试这个工具吧，实时监测
 Claude Code 在本机的文件读写、命令执行、网络访问等操作，对高危操作拦截/确认，全部操作
 留痕审计，避免 AI 工具误操作破坏系统或泄露数据。技术方案见
-[DESIGN.md](./DESIGN.md)（[English](./DESIGN.en.md)）。
+[DESIGN.md](./DESIGN.md)（[English](./DESIGN.en.md)）；装这个工具会带来哪些风险、
+依赖了哪些第三方模块、你的数据到底存在哪——见
+[SECURITY.md](./SECURITY.md)（[English](./SECURITY.en.md)）。
 
 ## 快速安装
 
@@ -482,7 +484,11 @@ sudo ./bin/CC-Monitor-probe
 `mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3` 接 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL` 这类直连
 数据库的破坏性命令、读取 shell 历史文件或执行裸 `history` 命令（可能翻出过去输入过的明文
 凭据）、反弹 shell / 后门执行（覆盖 `nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、
-`mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体）等。
+`mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体）、篡改 Claude Code 自身配置
+（`~/.claude/settings.json`/`.claude/hooks/`/`CLAUDE.md`，防绕过的配置层版本）、
+Docker socket 挂载逃逸（`-v /var/run/docker.sock:...`）、写入内容里出现常见密钥格式
+（AWS/GitHub/Anthropic/OpenAI/Slack/Google/npm/Stripe 等固定前缀 + 私钥文件头）、
+git hooks/config 持久化攻击面（`core.hooksPath`、`url....insteadOf`）等。
 
 ## 功能开发进展
 
@@ -567,6 +573,16 @@ sudo ./bin/CC-Monitor-probe
 - [x] 首页折叠 GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组统计卡片：原来
       七排合计 33 张细分类卡片改成每组一张汇总卡片，点开才展示分类小计表 + 带
       语法高亮的完整命令明细，交互模式跟 MCP/Skill/子代理调用卡片一致
+- [x] 新增 Claude Code 自身配置文件篡改检测（`settings.json`/`.claude/hooks/`/
+      `CLAUDE.md`），目前发现的最大防绕过缺口——改配置比杀探针进程更隐蔽
+- [x] Docker 特权/挂载检测新增 Docker socket 挂载识别，risk 从 medium 提到 high
+- [x] 新增写入内容密钥格式扫描（`secret_pattern_in_write`）：不再只按文件路径
+      判断，AWS/GitHub/Anthropic/OpenAI/Slack/Google/npm/Stripe 等固定前缀 +
+      私钥文件头都能识别，`policy.py` 新增 `content` 字段的多候选映射
+      （Write 用 `content`、Edit 用 `new_string`、NotebookEdit 用 `new_source`）
+- [x] 新增 git hooks / git config 持久化攻击面检测（`core.hooksPath`、
+      `url....insteadOf`、直接写入 `.git/hooks/`），跟 crontab/systemd 持久化
+      同一类风险，之前完全是盲区
 - [x] 网络流量页"连接次数"支持点击查看每次连接的时间/进程/PID 明细
 - [x] 外观设置弹窗：主题色块网格、界面字体、界面字号（新设置项，之前没有）
 - [x] 单次额度显示"剩余百分比"（conky 分段配色），周额度"已用百分比"用红→黄→绿连续
@@ -593,6 +609,9 @@ sudo ./bin/CC-Monitor-probe
 
 ## 已知限制
 
+> 免责声明、供应链/系统稳定性风险 Q&A、隐私说明这些更完整的内容单独放在了
+> [SECURITY.md](./SECURITY.md)，这里只列代码层面的具体已知限制。
+
 - **Web UI 进程和你平时跑 `claude` 的终端必须是同一个操作系统用户**，否则各写各的
   `~/.cc-monitor/` 数据库，互相看不到彼此（终端里的确认框、审计事件，Web UI 的
   "AI 审批台"/审计日志页面会完全是空的）——`CONFIG_DIR` 是按当前进程的 `$HOME` 算的，
@@ -618,6 +637,27 @@ sudo ./bin/CC-Monitor-probe
   控制 UI 怎么渲染 API 已经返回的内容，新模型下开着也没用）；Opus 4.6 / Sonnet 4.6
   及更早的模型默认就是 `"summarized"`，会有正文。CC-Monitor 的"显示思考详情"开关
   在有正文的时候能完整展开，没有正文时如实说明原因，不会假装能变出不存在的数据。
+
+## 免责声明
+
+CC-Monitor 是个人维护的开源项目，按 [MIT 协议](./LICENSE)"现状"提供，不附带任何
+明示或暗示的担保。使用前请知悉：
+
+- **策略引擎是近似识别，不是形式化证明**。所有规则本质上是正则表达式匹配命令
+  文本/文件路径/写入内容——总能找到没被规则覆盖的写法绕过去，也总能找到被规则
+  误判的正常操作。**不要把它当成唯一的防线**，处理确实不信任的代码/仓库时，
+  容器隔离、只读挂载、专用沙箱账号这些防护该有的还是要有。
+- **系统层探针目前只做审计，不做强制隔离**。能看到、能记录应用层 hook 被绕过
+  的迹象，但看到之后并不会自动阻止——真正的强制隔离（Landlock/沙箱化）还在
+  路线图里，属于未实现。
+- **作者不对因使用/误用本工具造成的任何直接或间接损失负责**（规则误拦截导致
+  的工作中断、规则漏检导致的安全事件、探针权限问题导致的异常，或你自己修改
+  规则/代码引入的问题）。风险自负，建议先在非生产环境跑一遍、看懂默认规则都
+  在拦什么。
+
+依赖了哪些第三方模块、会不会有供应链风险、会不会让系统变得不稳定、你的数据
+到底存在哪——这些更完整的 Q&A 和隐私说明见专门的
+[SECURITY.md](./SECURITY.md)（[English](./SECURITY.en.md)）。
 
 ## 许可协议
 
@@ -647,4 +687,5 @@ Web UI（`webui/`）构建在下面这些开源项目之上：
 **灵感来源**
 - [ccstatusline](https://github.com/sirmalloc/ccstatusline) —— CC-Monitor 的账号额度显示是独立实现的同一套 OAuth 凭证读取逻辑和 Anthropic 用量接口调用（不共享代码、不依赖它）；`install.sh` 也提供自动安装并接线它作为配套终端状态栏的选项
 - [Vibe Island](https://vibeisland.app/) —— "AI 审批台"参照的交互模型（弹卡片让你 Allow/Deny 待处理操作），这里重新实现成了跨平台的网页，而不是 macOS 专属的灵动岛 UI
-- [BeeEye](https://github.com/cn0xroot/BeeEye)（同一个作者的另一个项目）—— 网络流量页的世界地图（WebGL2 等距柱状投影、海岸线画法、发光点、连线弧光点动画、Canvas 2D 兜底渲染）直接参考了它的 `WorldMap.jsx`，两个项目互相借用
+- [BeeEye](https://github.com/cn0xroot/BeeEye)（作者的另一个项目）—— 网络流量页的世界地图（WebGL2 等距柱状投影、海岸线画法、发光点、连线弧光点动画、Canvas 2D 兜底渲染）直接参考了它的 `WorldMap.jsx`，两个项目互相借用
+- [slowmist-agent-security](https://github.com/evilcos/slowmist-agent-security)（慢雾科技）—— 一份面向 AI Agent/MCP server/skill 的人工安全审查清单，不是规则库；翻读之后发现了几条值得加进 `default_rules.json` 的策略引擎规则思路（凭据搜刮式 `grep` 扫描、`npx`/`pipx run` 一次性执行、读取其它进程的 `/proc/<pid>/environ`/`cmdline`、浏览器 Cookie/登录态文件访问、写入内容里出现 `eval(`/`exec(`/`os.system(` 这类动态执行代码），截至目前还没有实现
