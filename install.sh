@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # 一键安装：把 hooks 注册进 Claude Code + 装好 Web UI 的依赖。
 # 用法：
-#   ./install.sh                    # hooks 全局安装（写 ~/.claude/settings.json）
-#   ./install.sh --project /path    # hooks 只对某个项目生效
-#   ./install.sh --skip-geoip       # 不下载 GeoIP 数据库（离线/不需要世界地图时）
+#   ./install.sh                        # hooks 全局安装（写 ~/.claude/settings.json）
+#   ./install.sh --project /path        # hooks 只对某个项目生效
+#   ./install.sh --skip-geoip           # 不下载 GeoIP 数据库（离线/不需要世界地图时）
+#   ./install.sh --skip-ccstatusline    # 不装/不接 ccstatusline 状态栏
 #   其它参数跟 install.py 支持的完全一样，原样透传过去。
 set -euo pipefail
 
-# --skip-geoip 是这个脚本自己认的，不能透传给 install.py（argparse 会报未知参数）。
-# 也可以用环境变量 CC_MONITOR_SKIP_GEOIP=1。
+# --skip-geoip / --skip-ccstatusline 是这个脚本自己认的，不能透传给 install.py
+# （argparse 会报未知参数）。也可以用环境变量 CC_MONITOR_SKIP_GEOIP=1 /
+# CC_MONITOR_SKIP_CCSTATUSLINE=1。
 SKIP_GEOIP="${CC_MONITOR_SKIP_GEOIP:-}"
+SKIP_CCSTATUSLINE="${CC_MONITOR_SKIP_CCSTATUSLINE:-}"
 PASSTHRU=()
 for arg in "$@"; do
-  if [ "$arg" = "--skip-geoip" ]; then
-    SKIP_GEOIP=1
-  else
-    PASSTHRU+=("$arg")
-  fi
+  case "$arg" in
+    --skip-geoip) SKIP_GEOIP=1 ;;
+    --skip-ccstatusline) SKIP_CCSTATUSLINE=1 ;;
+    *) PASSTHRU+=("$arg") ;;
+  esac
 done
 set -- "${PASSTHRU[@]+"${PASSTHRU[@]}"}"
 
@@ -30,11 +33,37 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[CC-Monitor] 1/4 注册 hooks 到 Claude Code..."
-python3 install.py "$@"
+echo "[CC-Monitor] 1/5 ccstatusline（终端状态栏，显示模型/额度/git 分支等）..."
+# 先装包，装完 install.py 那一步才能检测到 `ccstatusline` 命令、把它接进 statusLine
+# 配置——顺序不能反。两层都做"已经有就跳过"：这里检查命令是否已经在 PATH 上（不管是
+# 这个脚本之前装的还是用户自己装的），装过就不重复装/升级；接不接进 statusLine 配置
+# 由 install.py 的 configure_statusline() 再检查一遍 settings.json 里有没有 statusLine
+# 键，两边各自幂等，不会把用户已有的定制覆盖掉。
+if [ -n "$SKIP_CCSTATUSLINE" ]; then
+  echo "[CC-Monitor] 跳过 ccstatusline（--skip-ccstatusline）。"
+elif command -v ccstatusline >/dev/null 2>&1; then
+  echo "[CC-Monitor] 已检测到 ccstatusline，跳过安装（下一步会检查要不要接进 statusLine 配置）。"
+elif command -v npm >/dev/null 2>&1; then
+  if npm install -g ccstatusline; then
+    echo "[CC-Monitor] ccstatusline 安装完成。"
+  else
+    echo "[CC-Monitor] ccstatusline 安装失败（网络问题？）。这是可选功能，不影响其它部分，" \
+         "之后可以手动: npm install -g ccstatusline" >&2
+  fi
+else
+  echo "[CC-Monitor] 没找到 npm，跳过 ccstatusline 安装（可选功能，不影响主功能）。" >&2
+fi
 
 echo
-echo "[CC-Monitor] 2/4 安装 Web UI 依赖..."
+echo "[CC-Monitor] 2/5 注册 hooks 到 Claude Code..."
+if [ -n "$SKIP_CCSTATUSLINE" ]; then
+  python3 install.py "$@" --skip-statusline
+else
+  python3 install.py "$@"
+fi
+
+echo
+echo "[CC-Monitor] 3/5 安装 Web UI 依赖..."
 if command -v npm >/dev/null 2>&1; then
   (cd webui && npm install)
 else
@@ -44,11 +73,11 @@ fi
 
 echo
 if [ "$(uname -s)" = "Darwin" ]; then
-  echo "[CC-Monitor] 3/4 macOS：系统层探针用系统自带的 nettop，不用装东西，直接 bin/CC-Monitor-probe（不需要 sudo）。"
+  echo "[CC-Monitor] 4/5 macOS：系统层探针用系统自带的 nettop，不用装东西，直接 bin/CC-Monitor-probe（不需要 sudo）。"
 elif command -v bpftrace >/dev/null 2>&1; then
-  echo "[CC-Monitor] 3/4 检测到 bpftrace，系统层探针（CC-Monitor-probe）可以直接用。"
+  echo "[CC-Monitor] 4/5 检测到 bpftrace，系统层探针（CC-Monitor-probe）可以直接用。"
 else
-  echo "[CC-Monitor] 3/4 没检测到 bpftrace（系统层探针是可选的，跳过不影响主功能）。"
+  echo "[CC-Monitor] 4/5 没检测到 bpftrace（系统层探针是可选的，跳过不影响主功能）。"
   echo "             想用的话：Debian/Ubuntu 用 'sudo apt install bpftrace'，其它发行版参考 bpftrace 官方文档。"
 fi
 
@@ -63,11 +92,11 @@ GEOIP_TARGET="$GEOIP_DIR/dbip-city.mmdb"
 # 下载地址可以用 CC_MONITOR_GEOIP_URL 换成镜像（比如 GitHub 访问不畅的时候）。
 GEOIP_URL="${CC_MONITOR_GEOIP_URL:-https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.mmdb}"
 if [ -n "$SKIP_GEOIP" ]; then
-  echo "[CC-Monitor] 4/4 跳过 GeoIP 数据库下载（--skip-geoip）。"
+  echo "[CC-Monitor] 5/5 跳过 GeoIP 数据库下载（--skip-geoip）。"
 elif [ -f "$GEOIP_TARGET" ] || [ -f "$GEOIP_DIR/GeoLite2-City.mmdb" ] || [ -f "$GEOIP_DIR/GeoLite2-Country.mmdb" ]; then
-  echo "[CC-Monitor] 4/4 GeoIP 数据库已存在（$GEOIP_DIR 下已有 .mmdb），跳过下载。"
+  echo "[CC-Monitor] 5/5 GeoIP 数据库已存在（$GEOIP_DIR 下已有 .mmdb），跳过下载。"
 else
-  echo "[CC-Monitor] 4/4 下载 GeoIP 数据库（DB-IP Lite，约 60MB）到 $GEOIP_TARGET ..."
+  echo "[CC-Monitor] 5/5 下载 GeoIP 数据库（DB-IP Lite，约 60MB）到 $GEOIP_TARGET ..."
   mkdir -p "$GEOIP_DIR"
   GEOIP_TMP="$GEOIP_TARGET.part"
   geoip_ok=""

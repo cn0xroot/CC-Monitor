@@ -29,7 +29,18 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   Linux-only); hostnames fall back to reverse DNS. SIGTERM also tears down the nettop child.
   The network page hints now tell you to run `bin/CC-Monitor-probe`, and mention that with a
   local proxy every remote is 127.0.0.1 so the map has nothing to plot.
-- **`install.sh` step 4 downloads the GeoIP database**: DB-IP Lite (CC BY 4.0, ~60MB) to
+- **`install.sh` now installs and wires up ccstatusline**: new step 1 checks whether
+  [ccstatusline](https://github.com/sirmalloc/ccstatusline) is already on `PATH`
+  (`command -v ccstatusline`) and runs `npm install -g ccstatusline` if not; once it's
+  available, `install.py`'s `configure_statusline()` writes a `statusLine` entry into
+  `~/.claude/settings.json` if one isn't already there (`command: "ccstatusline"`,
+  `padding: 0`, `refreshInterval: 10`). Both conditions have to hold before anything is
+  written — not installed means nothing to wire up, and an existing `statusLine` (whether
+  it's ccstatusline or something else, with any settings) is never overwritten, respecting
+  whatever the user already configured. `--skip-ccstatusline` /
+  `CC_MONITOR_SKIP_CCSTATUSLINE=1` skips both the install and the wiring (internally passed
+  through as `install.py --skip-statusline`). The GeoIP download step is renumbered to 5.
+- **`install.sh` step 5 downloads the GeoIP database**: DB-IP Lite (CC BY 4.0, ~60MB) to
   `~/.cc-monitor/dbip-city.mmdb` (honours `CC_MONITOR_HOME`). Skipped if any `.mmdb` is
   already present; downloads to a `.part` file first and treats anything under 1MB as a
   failure (deleted), so a truncated file can never make geoip.js fail silently; a failed

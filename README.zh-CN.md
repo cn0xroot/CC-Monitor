@@ -255,12 +255,19 @@ CC-Monitor 是双层监测架构：
   Node ≥ 18，但 `better-sqlite3` 卡在 22，装了低于这个版本的 Node 大概率会在装依赖
   或者启动阶段直接报错）。用 [nvm](https://github.com/nvm-sh/nvm) 之类工具确认一下
   `node --version` 再装。
+- **终端状态栏 [ccstatusline](https://github.com/sirmalloc/ccstatusline)（可选）**：跟 CC-Monitor
+  额度页读的是同一份 OAuth 凭证、查的是同一个 Anthropic 接口（详见上面"账号额度显示"），但它是
+  一个独立维护的第三方 npm 包，CC-Monitor 不调用它、也不内置它的代码。`install.sh` 的第 1 步
+  会检测系统上有没有装（`command -v ccstatusline`），没有就跑 `npm install -g ccstatusline`；
+  装好之后如果 `~/.claude/settings.json` 里还没有 `statusLine` 配置，会自动接上（不会覆盖你已有
+  的任何 statusLine 定制，不管是不是 ccstatusline）。`--skip-ccstatusline` 或
+  `CC_MONITOR_SKIP_CCSTATUSLINE=1` 可以两件事都跳过。
 - **网络流量页的 GeoIP 归属地（可选）**：装了 `maxmind` 这个 npm 包读本地数据库文件，
   数据库本身不随仓库分发。不配置的话网络流量页照样能用，只是归属地列和世界地图上的点
   没有数据，页面上会诚实标出来，不影响连接明细/字节数统计。两种拿数据库的方式：
   - **不用注册账号（推荐，`./install.sh` 默认就是这个）**：[sapics/ip-location-db](https://github.com/sapics/ip-location-db)
     项目每天/每月自动转出 DB-IP Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 开放许可，city 级精度）。
-    `install.sh` 的第 4 步会自动把它下到 `~/.cc-monitor/dbip-city.mmdb`（已有任何 `.mmdb`
+    `install.sh` 的第 5 步会自动把它下到 `~/.cc-monitor/dbip-city.mmdb`（已有任何 `.mmdb`
     就不重复下；下载失败只提示不中断；GitHub 访问不畅可用 `CC_MONITOR_GEOIP_URL` 指向镜像）。
     手动下载也行：
     ```bash
@@ -281,9 +288,10 @@ Electron 33.x 在这颗 CPU 上打包出来的应用启动即崩溃（详见下�
 44.x 后正常——这也是为什么 `webui/package.json` 里 Electron 版本没有随便往回调的
 原因。
 
-**赶时间的话**：`./install.sh` 一键装好（hooks 注册 + Web UI 依赖 + GeoIP 数据库下载，
-加 `--skip-geoip` 或设 `CC_MONITOR_SKIP_GEOIP=1` 可跳过最后这步），装完用 `./start.sh`
-一键启动 Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，往下看手动步骤。
+**赶时间的话**：`./install.sh` 一键装好（ccstatusline 状态栏 + hooks 注册 + Web UI 依赖 +
+GeoIP 数据库下载，`--skip-ccstatusline`/`--skip-geoip`，或者对应的 `CC_MONITOR_SKIP_CCSTATUSLINE=1`/
+`CC_MONITOR_SKIP_GEOIP=1` 环境变量可以分别跳过这两步），装完用 `./start.sh` 一键启动
+Web UI（没装过依赖会先自动装一次）。想更细粒度控制的话，往下看手动步骤。
 
 有两种装法，效果一样，选一种就行：
 

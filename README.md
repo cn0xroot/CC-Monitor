@@ -302,6 +302,15 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   itself declares in its `package.json` `engines` field (`express` only needs Node ≥ 18, but
   `better-sqlite3` requires 22; an older Node will likely fail during install or at startup).
   Check `node --version` before installing, e.g. via [nvm](https://github.com/nvm-sh/nvm).
+- **Terminal statusline [ccstatusline](https://github.com/sirmalloc/ccstatusline) (optional)**:
+  reads the same OAuth credential and calls the same Anthropic endpoint as CC-Monitor's own
+  usage display (see "Account usage display" above), but it's an independently maintained
+  third-party npm package — CC-Monitor never calls into it or bundles its code. Step 1 of
+  `install.sh` checks whether it's already installed (`command -v ccstatusline`) and runs
+  `npm install -g ccstatusline` if not; once installed, if `~/.claude/settings.json` has no
+  `statusLine` entry yet, it wires one in automatically (never overwriting any existing
+  `statusLine` config, whether it's ccstatusline or something else). `--skip-ccstatusline` or
+  `CC_MONITOR_SKIP_CCSTATUSLINE=1` skips both the install and the wiring.
 - **GeoIP location on the Network tab (optional)**: uses the `maxmind` npm package to read a
   local database file, which isn't shipped in this repo. Without one, the Network tab still
   works — the location column and map just have no data, and the page says so honestly
@@ -309,7 +318,7 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   - **No account needed (recommended — this is what `./install.sh` does by default)**:
     [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
     republishes DB-IP Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
-    city-level accuracy) as ready-to-use `.mmdb` files, updated automatically. Step 4 of
+    city-level accuracy) as ready-to-use `.mmdb` files, updated automatically. Step 5 of
     `install.sh` downloads it to `~/.cc-monitor/dbip-city.mmdb` (skipped if any `.mmdb` is
     already there; a failed download only warns; set `CC_MONITOR_GEOIP_URL` to use a mirror).
     Manual download works too:
@@ -333,10 +342,11 @@ additionally verified to crash on startup on this CPU with the originally-pinned
 33.x, and to run correctly after upgrading to 44.x (see the Desktop app section below) — which
 is why that version isn't pinned back down.
 
-**In a hurry?** Run `./install.sh` to do it all in one step (hook registration + Web UI
-dependencies + GeoIP database download — pass `--skip-geoip` or set `CC_MONITOR_SKIP_GEOIP=1`
-to skip that last step), then `./start.sh` to launch the Web UI (it installs dependencies on
-first run if needed). For more control, the manual steps are below.
+**In a hurry?** Run `./install.sh` to do it all in one step (ccstatusline + hook registration +
+Web UI dependencies + GeoIP database download — `--skip-ccstatusline`/`--skip-geoip`, or the
+matching `CC_MONITOR_SKIP_CCSTATUSLINE=1`/`CC_MONITOR_SKIP_GEOIP=1` env vars, skip either one
+independently), then `./start.sh` to launch the Web UI (it installs dependencies on first run
+if needed). For more control, the manual steps are below.
 
 There are two ways to install it, with identical end results — pick whichever fits:
 

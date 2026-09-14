@@ -24,7 +24,16 @@
   独有），域名只能靠反向 DNS 兜底。SIGTERM 时会把 nettop 子进程一起收掉。
   Web UI 上网络页的几条提示文案改成会告诉你"去跑 bin/CC-Monitor-probe"，并提到走本地
   代理时远端全是 127.0.0.1、地图上不会有点这种情况。
-- **`install.sh` 第 4 步自动下载 GeoIP 数据库**：DB-IP Lite（CC BY 4.0，约 60MB）下到
+- **`install.sh` 自动安装并接线 ccstatusline**：新增第 1 步，检测系统上有没有
+  [ccstatusline](https://github.com/sirmalloc/ccstatusline)（`command -v ccstatusline`），
+  没有就 `npm install -g ccstatusline`；装好后如果 `~/.claude/settings.json` 里还没有
+  `statusLine` 配置，`install.py` 的 `configure_statusline()` 会自动写入一份（`command:
+  "ccstatusline"`，`padding: 0`，`refreshInterval: 10`）。两个条件都要满足才会真的写——
+  没装就不接（接了也是空跑），已经有 `statusLine`（不管是不是 ccstatusline、不管什么参数）
+  就绝不覆盖，尊重用户已有的定制。`--skip-ccstatusline` / `CC_MONITOR_SKIP_CCSTATUSLINE=1`
+  能把安装和接线两件事一起跳过（内部会转成 `install.py --skip-statusline` 透传下去）。
+  GeoIP 数据库下载顺延成第 5 步。
+- **`install.sh` 第 5 步自动下载 GeoIP 数据库**：DB-IP Lite（CC BY 4.0，约 60MB）下到
   `~/.cc-monitor/dbip-city.mmdb`（尊重 `CC_MONITOR_HOME`）。已有任何 `.mmdb` 就跳过；
   先下到 `.part` 再改名、小于 1MB 视为失败并删掉，不会留半截文件让 geoip.js 静默打不开；
   失败只提示不中断。`--skip-geoip` / `CC_MONITOR_SKIP_GEOIP=1` 跳过，`CC_MONITOR_GEOIP_URL`

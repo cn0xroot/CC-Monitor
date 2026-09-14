@@ -9,6 +9,7 @@
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -37,6 +38,31 @@ def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None)
     return settings
 
 
+def configure_statusline(settings):
+    """把 ccstatusline 接进 Claude Code 的终端状态栏（跟额度/账号页用的是同一份读取
+    逻辑，见 webui/lib/usage.js 顶部注释）。两个条件都要满足才动手：
+      1. 系统上已经装了 ccstatusline（install.sh 会先跑 npm install -g，这里只管接线，
+         不负责装包——直接调 python 装 npm 包不现实，也不该跨语言耦合）；
+      2. settings.json 里还没有 statusLine 这个键。
+    任何一个条件不满足就什么都不做：没装就没法接（接了也是空跑），已经配置过（不管是不是
+    ccstatusline、不管什么参数）就绝不覆盖——用户可能特地调过 padding/refreshInterval，或者
+    换了别的状态栏工具，这些定制都不该被 install.py 静默冲掉。
+    返回 True 表示这次真的写了配置，False 表示跳过（没装 / 已配置，调用方用这个决定要不要
+    打印提示）。
+    """
+    if "statusLine" in settings:
+        return False
+    if not shutil.which("ccstatusline"):
+        return False
+    settings["statusLine"] = {
+        "type": "command",
+        "command": "ccstatusline",
+        "padding": 0,
+        "refreshInterval": 10,
+    }
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -46,6 +72,11 @@ def main():
     parser.add_argument(
         "--target",
         help="直接指定 settings.json 的绝对路径（优先级最高，用于跨用户安装）",
+    )
+    parser.add_argument(
+        "--skip-statusline",
+        action="store_true",
+        help="不把 ccstatusline 接进 statusLine 配置（install.sh 的 --skip-ccstatusline 会转成这个）",
     )
     args = parser.parse_args()
 
@@ -78,12 +109,20 @@ def main():
     hook_cmd_post = '"{}" post'.format(HOOK_BIN)
     hook_cmd_permission = '"{}" permission'.format(HOOK_BIN)
     settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission)
+    statusline_configured = False if args.skip_statusline else configure_statusline(settings)
 
     target.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print("已写入: {}".format(target))
     print("Hook 脚本: {}".format(HOOK_BIN))
     print("重启 Claude Code 后生效。可用 `{}/bin/CC-Monitor tail` 实时查看监测事件。".format(REPO_ROOT))
+    if statusline_configured:
+        print("已配置 statusLine: ccstatusline（终端里会显示模型/额度/git 分支等状态栏信息）")
+    elif args.skip_statusline:
+        print("跳过 statusLine 配置（--skip-statusline）。")
+    elif "statusLine" not in settings:
+        print("未配置 statusLine：没有检测到 ccstatusline，跑一遍 install.sh 会自动装上并接线，"
+              "或者手动 `npm install -g ccstatusline` 后重跑 install.py")
 
 
 if __name__ == "__main__":
