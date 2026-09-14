@@ -2,12 +2,12 @@
 // CC-Monitor 系统层探针（Linux / eBPF）
 //
 // 独立于 Claude Code 自身的 hooks，直接在内核层跟踪所有从 `claude` 进程派生出来的
-// 子孙进程树的 execve（真正执行了什么命令）和 connect（真正连了哪个 IP:port）。
+// 子进程树的 execve（真正执行了什么命令）和 connect（真正连了哪个 IP:port）。
 // 用于交叉验证应用层 hooks 是否被绕过/篡改——hooks 是"自证清白"，这里是独立的第三方观察。
 //
 // 边界识别：子进程 fork 出来后、真正 exec 新程序之前，comm 仍然继承自父进程（"claude"）；
 // 一旦这个子进程 execve 到别的程序（比如 /bin/bash），就是它从 Claude Code 派生出来的证据。
-// 之后再用 sched_process_fork 把这条"血统"持续传播给后续所有子孙进程。
+// 之后再用 sched_process_fork 把这层派生关系持续传播给后续所有子进程。
 
 BEGIN
 {

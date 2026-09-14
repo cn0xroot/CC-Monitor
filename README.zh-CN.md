@@ -211,7 +211,7 @@ CC-Monitor 是双层监测架构：
 - **应用层（Claude Code Hooks）**：注册 `PreToolUse`/`PostToolUse` hook，拿到每次工具调用的
   语义信息（工具名、命令、文件路径），按规则判定放行/拦截/需要确认。这是主力，成本低、覆盖面广。
 - **系统层（Linux 用 eBPF，macOS 用 nettop）**：`CC-Monitor-probe` 用 `bpftrace` 独立于 Claude Code 之外，直接在
-  内核层跟踪 `claude` 进程派生出的整棵子孙进程树的 `execve`/`connect`，交叉验证应用层 hooks
+  内核层跟踪 `claude` 进程派生出的所有子进程的 `execve`/`connect`，交叉验证应用层 hooks
   有没有被绕过或篡改——这是第二道防线，即使 hooks 配置被破坏也能兜底发现异常。
   - **macOS**：同一个 `CC-Monitor-probe` 命令自动切到 `cc_monitor/probe_darwin.py`——用系统
     自带的 `nettop` 每 2 秒采样 claude 进程树的连接和字节数，**不需要 root**。只覆盖网络
@@ -244,7 +244,7 @@ CC-Monitor 是双层监测架构：
   `~/.cc-monitor/rules.json`，之后可以自己改。
 - **系统层 eBPF 探针**：`probe_linux.bt` 挂在内核的 `execve`/`connect` 等 tracepoint 上，先用
   `comm=="claude"` 认出 Claude Code 自己的进程，再监听 `sched_process_fork` 事件，把"正在被监控"
-  这个标记沿着进程树一路传给它 fork 出来的所有子孙进程——不管子进程改名叫什么都跟得上。
+  这个标记沿着进程树一路传给它 fork 出来的所有子进程——不管子进程改名叫什么都跟得上。
   `CC-Monitor verify` 拿探针观测到的命令去匹配同一时间窗口内 hook 记录的命令文本（做了引号归一化，
   兼容 zsh 快照包装命令时对引号的转义），标出"探针看到了、hook 却没记录"的可疑差异。
 - **Claude Tap**：hook 的 JSON payload 里有个 `transcript_path` 字段，指向 Claude Code 自己写在本地

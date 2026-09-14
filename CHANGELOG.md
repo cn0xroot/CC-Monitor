@@ -62,7 +62,7 @@
   审批历史新增 "已转回原生确认框" 状态。
 - **macOS 系统层探针（网络部分）**：新增 `cc_monitor/probe_darwin.py`，`bin/CC-Monitor-probe`
   在 macOS 上自动切过去。用系统自带的 `nettop -d -L 0` 每 2 秒采样 claude 进程树（claude
-  + 子孙进程，每次采样重新算）每条连接的远端 IP:port 和上传/下载字节增量，写进跟 Linux
+  + 子进程，每次采样重新算）每条连接的远端 IP:port 和上传/下载字节增量，写进跟 Linux
   探针同一张 `network_traffic` 表和同一种 `os_net` 事件，网络流量页/世界地图/AI 轨迹在
   Mac 上不再永远是空的。不需要 root。没有 `execve` 观测（`verify` 的绕过检测仍是 Linux
   独有），域名只能靠反向 DNS 兜底。SIGTERM 时会把 nettop 子进程一起收掉。
@@ -532,7 +532,7 @@
   30+ 条规则）判定放行/拦截/确认，覆盖高危删除、系统级软件安装（apt/yum/pip 未用虚拟
   环境等）、权限提升、反弹 shell、持久化后门（crontab/systemd）、SSH key 篡改等场景。
 - **系统层**：`CC-Monitor-probe`（Linux，`bpftrace`）独立于 hooks 之外，在内核层跟踪
-  `claude` 进程派生出的整棵子孙进程树的 `execve`/`connect`，`CC-Monitor verify` 交叉比对
+  `claude` 进程派生出的所有子进程的 `execve`/`connect`，`CC-Monitor verify` 交叉比对
   hooks 记录，标出"探针看到了、hook 没记录"的可疑差异（绕过检测）。
 - 网络层可视化：eBPF 直接抓 `connect()` 目标 IP:port，不解密 TLS、不用装 CA 证书。
 - 人类可读实时日志：`CC-Monitor tail`，终端自动彩色高亮，Bash 命令按语法着色。

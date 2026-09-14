@@ -1,7 +1,7 @@
 """系统层探针（Linux / eBPF）。
 
 独立于 Claude Code 的 hooks，用 bpftrace 直接在内核层跟踪从 `claude` 进程派生出来的
-子孙进程树的 execve/connect。目的：交叉验证应用层 hooks 是否被绕过或篡改——
+子进程树的 execve/connect。目的：交叉验证应用层 hooks 是否被绕过或篡改——
 hooks 是"自证清白"，这里是不依赖 Claude Code 配合的独立观察，因此必须以 root 运行。
 
 用法: sudo python3 -m cc_monitor.probe   (或 sudo bin/CC-Monitor-probe)

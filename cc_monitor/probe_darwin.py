@@ -58,7 +58,7 @@ def _is_claude_argv(args):
 
 
 def claude_process_tree():
-    """返回 {pid: (uid, comm)}，包含所有 claude 进程及其全部子孙。每次采样都重新算一遍——
+    """返回 {pid: (uid, comm)}，包含所有 claude 进程及其全部子进程。每次采样都重新算一遍——
     子进程（bash/curl...）随时在生灭，新起的 claude 会话也要能自动跟上。"""
     try:
         out = subprocess.run(
