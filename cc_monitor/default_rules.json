@@ -309,7 +309,31 @@
     "action": "confirm",
     "tools": ["Write", "Edit", "NotebookEdit"],
     "field": "content",
-    "pattern": "-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----|\\bAKIA[0-9A-Z]{16}\\b|\\bASIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}\\b|\\bgithub_pat_[A-Za-z0-9_]{20,}\\b|\\bsk-ant-[A-Za-z0-9_-]{20,}\\b|\\bsk-proj-[A-Za-z0-9_-]{20,}\\b|\\bsk-[A-Za-z0-9]{32,48}\\b|\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b|\\bAIza[0-9A-Za-z_-]{35}\\b|\\bnpm_[A-Za-z0-9]{36}\\b|\\bsk_live_[0-9a-zA-Z]{24,}\\b"
+    "pattern": "-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----|\\bAKIA[0-9A-Z]{16}\\b|\\bASIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}\\b|\\bgithub_pat_[A-Za-z0-9_]{20,}\\b|\\bsk-ant-[A-Za-z0-9_-]{20,}\\b|\\bsk-proj-[A-Za-z0-9_-]{20,}\\b|\\bsk-[A-Za-z0-9]{32,48}\\b|\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b|\\bAIza[0-9A-Za-z_-]{35}\\b|\\bnpm_[A-Za-z0-9]{36}\\b|\\bsk_live_[0-9a-zA-Z]{24,}\\b|\\bLTAI[0-9A-Za-z]{12,20}\\b|\\bAKID[0-9A-Za-z]{32,}\\b|\\bglpat-[0-9A-Za-z_-]{20,}\\b|gitee\\.com[^\\n]{0,80}\\b[0-9a-f]{40}\\b|\\bPrivateKey\\s*=\\s*[A-Za-z0-9+/]{40,}={0,2}|\\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key)\\s*[:=]\\s*['\"][^'\"\\s]{6,}['\"]"
+  },
+  {
+    "id": "pii_pattern_in_write",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "\\b[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b|\\b1[3-9]\\d{9}\\b|\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
+  },
+  {
+    "id": "cloud_vpn_config_write",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "file_path",
+    "pattern": "\\.ovpn$|wireguard|wg0\\.conf$|(^|/)\\.aliyun/|(^|/)\\.tencentcloud/|\\.kube/config$"
+  },
+  {
+    "id": "cloud_vpn_config_read",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Read"],
+    "field": "file_path",
+    "pattern": "\\.ovpn$|wireguard|wg0\\.conf$|(^|/)\\.aliyun/|(^|/)\\.tencentcloud/|\\.kube/config$"
   },
   {
     "id": "sensitive_file_read",

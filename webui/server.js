@@ -376,11 +376,14 @@ app.get("/api/overview", async (req, res) => {
     netdiagOpsTotal: sumN(audit.netdiagOpsBreakdown()),
     procbgOpsTotal: sumN(audit.procbgOpsBreakdown()),
     sensitiveOpsTotal: sumN(audit.sensitiveOpsBreakdown()),
+    sensitiveDataTotal: sumN(audit.sensitiveDataBreakdown()),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
     skillCalls: audit.skillCallStats().total,
     subagentCalls: audit.subagentCallStats().total,
+    searchCalls: audit.searchCallStats().total,
+    todoCalls: audit.todoCallStats().total,
     aiTrajectory: netSummary.distinctIps,
   });
 });
@@ -493,6 +496,7 @@ app.get("/api/drilldown/archive-ops", opsDrilldownHandler(audit.archiveOpsBreakd
 app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakdown, audit.netdiagOpsEvents));
 app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdown, audit.procbgOpsEvents));
 app.get("/api/drilldown/sensitive-ops", opsDrilldownHandler(audit.sensitiveOpsBreakdown, audit.sensitiveOpsEvents));
+app.get("/api/drilldown/sensitive-data", opsDrilldownHandler(audit.sensitiveDataBreakdown, audit.sensitiveDataEvents));
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;
@@ -561,6 +565,14 @@ app.get("/api/drilldown/skill-calls", (req, res) => {
 
 app.get("/api/drilldown/subagent-calls", (req, res) => {
   res.json({ breakdown: audit.subagentCallBreakdown(), events: audit.subagentCallEvents() });
+});
+
+app.get("/api/drilldown/search-calls", (req, res) => {
+  res.json({ breakdown: audit.searchCallBreakdown(), events: audit.searchCallEvents() });
+});
+
+app.get("/api/drilldown/todo-calls", (req, res) => {
+  res.json(audit.todoCallEvents());
 });
 
 app.get("/api/drilldown/ai-trajectory-events", (req, res) => {

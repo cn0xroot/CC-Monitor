@@ -11,6 +11,7 @@ function fmtDateTime24(date) {
 }
 
 const RISK_COLOR = { high: "var(--red)", medium: "var(--yellow)", low: "var(--green)", info: "var(--cyan)", "-": "var(--text-dim)" };
+const DECISION_COLOR = { blocked: "var(--red)", allowed: "var(--green)", completed: "var(--accent)", observed: "var(--cyan)" };
 const KNOWN_TOOLS = new Set([
   "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",
   "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite",
@@ -886,6 +887,8 @@ async function refreshOverview() {
   document.getElementById("stat-mcp-calls").textContent = s.mcpCalls;
   document.getElementById("stat-skill-calls").textContent = s.skillCalls;
   document.getElementById("stat-subagent-calls").textContent = s.subagentCalls;
+  document.getElementById("stat-search-calls").textContent = s.searchCalls;
+  document.getElementById("stat-todo-calls").textContent = s.todoCalls;
   document.getElementById("stat-ai-trajectory").textContent = s.aiTrajectory;
 
   if (s.fileOps) {
@@ -908,6 +911,7 @@ async function refreshOverview() {
   document.getElementById("stat-netdiag-total").textContent = s.netdiagOpsTotal;
   document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
   document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
+  document.getElementById("stat-sensitive-data-total").textContent = s.sensitiveDataTotal;
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -921,6 +925,11 @@ async function refreshOverview() {
     name: riskLabel(r.risk) || r.risk || "-",
     count: r.n,
     color: RISK_COLOR[r.risk] || "var(--text-dim)",
+  })));
+  renderBarList("decision-breakdown", s.byDecision.map((r) => ({
+    name: decisionLabel(r.decision) || r.decision || "-",
+    count: r.n,
+    color: DECISION_COLOR[r.decision] || "var(--text-dim)",
   })));
 }
 
@@ -1643,8 +1652,8 @@ async function openDrilldown(kind) {
     return;
   }
 
-  if (kind === "tool-calls" || kind === "mcp-calls" || kind === "skill-calls" || kind === "subagent-calls") {
-    const groupKind = kind === "mcp-calls" ? "mcp" : kind === "skill-calls" ? "skill" : kind === "subagent-calls" ? "subagent" : "tool";
+  if (kind === "tool-calls" || kind === "mcp-calls" || kind === "skill-calls" || kind === "subagent-calls" || kind === "search-calls") {
+    const groupKind = kind === "mcp-calls" ? "mcp" : kind === "skill-calls" ? "skill" : kind === "subagent-calls" ? "subagent" : kind === "search-calls" ? "search" : "tool";
     title.textContent =
       groupKind === "mcp"
         ? t("drilldown.mcpCalls.title")
@@ -1652,7 +1661,9 @@ async function openDrilldown(kind) {
           ? t("drilldown.skillCalls.title")
           : groupKind === "subagent"
             ? t("drilldown.subagentCalls.title")
-            : t("drilldown.toolCalls.title");
+            : groupKind === "search"
+              ? t("drilldown.searchCalls.title")
+              : t("drilldown.toolCalls.title");
     const result = await api(`/api/drilldown/${kind}`);
     if (!result) return;
     const { breakdown, events } = result;
@@ -1715,6 +1726,7 @@ async function openDrilldown(kind) {
     "netdiag-ops": { titleKey: "home.netdiagOps.title", labels: { nc: "home.netdiagOps.nc", nmap: "home.netdiagOps.nmap", telnet: "home.netdiagOps.telnet", other: "home.netdiagOps.other" } },
     "procbg-ops": { titleKey: "home.procbgOps.title", labels: { nohup: "home.procbgOps.nohup", disown: "home.procbgOps.disown", backgroundJob: "home.procbgOps.backgroundJob", other: "home.procbgOps.other" } },
     "sensitive-ops": { titleKey: "home.sensitiveOps.title", labels: { sshKey: "home.sensitiveOps.sshKey", credential: "home.sensitiveOps.credential", envVar: "home.sensitiveOps.envVar", other: "home.sensitiveOps.other" } },
+    "sensitive-data": { titleKey: "home.sensitiveData.title", labels: { credential: "home.sensitiveData.credential", pii: "home.sensitiveData.pii", vpnConfig: "home.sensitiveData.vpnConfig", other: "home.sensitiveData.other" } },
   };
   if (GROUPED_OPS_KINDS[kind]) {
     // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组——首页原来每组一整排
@@ -1873,6 +1885,32 @@ async function openDrilldown(kind) {
         </div>
         <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
+      </div>`
+      )
+      .join("");
+    return;
+  }
+
+  if (kind === "todo-calls") {
+    // 单张卡片，不分子类型，跟截屏审计那张一个套路——TodoWrite 没有天然的分类
+    // 维度，直接平铺列出最近的调用，每条带上任务列表的条数（不展示任务的具体
+    // 文字内容，跟其它下钻卡片"只给基本信息"是同一个尺度）。
+    title.textContent = t("home.card.todoCalls") + " — " + t("drilldown.fileOp.suffix");
+    const rows = await api("/api/drilldown/todo-calls");
+    if (!rows) return;
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
+      return;
+    }
+    body.innerHTML = rows
+      .map(
+        (r) => `
+      <div class="log-item">
+        <div class="row1">
+          <span class="ts">${r.ts}</span>
+          <span class="label">${escapeHtml(t("drilldown.todoCalls.itemCount", { n: r.todoCount }))}</span>
+        </div>
+        <div class="cwd">${r.session_id ? folderName(r.cwd) + " · " + r.session_id.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
       </div>`
       )
       .join("");

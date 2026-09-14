@@ -142,6 +142,14 @@
           <div class="card-num" id="stat-subagent-calls">-</div>
           <div class="card-label"><span data-i18n="home.card.subagentCalls">子代理派生</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
         </div>
+        <div class="card clickable" data-drilldown="search-calls">
+          <div class="card-num" id="stat-search-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.searchCalls">Glob/Grep 调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
+        <div class="card clickable" data-drilldown="todo-calls">
+          <div class="card-num" id="stat-todo-calls">-</div>
+          <div class="card-label"><span data-i18n="home.card.todoCalls">TodoWrite 使用次数</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
+        </div>
         <div class="card clickable" data-drilldown="ai-trajectory">
           <div class="card-num" id="stat-ai-trajectory">-</div>
           <div class="card-label"><span data-i18n="home.card.aiTrajectory">AI 轨迹（访问过的域名/IP）</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
@@ -175,9 +183,10 @@
         <div class="card clickable" data-drilldown="procbg-ops"><div class="card-num" id="stat-procbg-total">-</div><div class="card-label"><span data-i18n="home.procbgOps.title2">进程管理/后台驻留</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
-      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.sensitiveVisibility.title">敏感操作 / 截屏审计（SSH 密钥/凭据文件/环境变量查找/历史指令读取、Bash 截图命令/打开图片/MCP 截图动作，按命中的规则/命令与工具名近似识别，非精确，点开看分类明细）</div>
+      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.sensitiveVisibility.title">敏感操作 / 敏感数据 / 截屏审计（SSH 密钥/凭据文件/环境变量查找/历史指令读取、云厂商与代码托管平台凭据/PII/VPN 配置、Bash 截图命令/打开图片/MCP 截图动作，按命中的规则/命令与工具名近似识别，非精确，点开看分类明细）</div>
       <div class="cards">
         <div class="card accent-red-strong clickable" data-drilldown="sensitive-ops"><div class="card-num" id="stat-sensitive-total">-</div><div class="card-label"><span data-i18n="home.sensitiveOps.total">敏感操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card accent-red-strong clickable" data-drilldown="sensitive-data"><div class="card-num" id="stat-sensitive-data-total">-</div><div class="card-label"><span data-i18n="home.sensitiveData.total">敏感数据</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
         <div class="card clickable" data-drilldown="screenshot"><div class="card-num" id="stat-screenshot">-</div><div class="card-label"><span data-i18n="home.screenshotOps.total">截屏 / 查看图像内容</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
@@ -189,6 +198,10 @@
         <div class="home-box">
           <div class="box-title" data-i18n="home.riskBreakdown">风险等级分布</div>
           <div id="risk-breakdown" class="bar-list"></div>
+        </div>
+        <div class="home-box">
+          <div class="box-title" data-i18n="home.decisionBreakdown">处置结果分布</div>
+          <div id="decision-breakdown" class="bar-list"></div>
         </div>
       </div>
     </section>

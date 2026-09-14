@@ -386,6 +386,40 @@ function isNetworkTouchingSegment(seg) {
 // 命令没被探针捕捉到时，也要能在"AI 轨迹"里体现出来（很多人根本没有手动启动过
 // system 层探针，之前完全没有这块可见性）。只看 Claude 自己触发的 hook_pre 事件，
 // 用户在别的终端里手打的命令不会经过 Claude Code 的 hooks，天然不会出现在这里。
+// WebFetch 请求的目标域名——跟 Bash 命令推断同一个道理，都是"看起来会联网"而
+// 不是探针实测的真实连接，合到同一份 AI 轨迹数据里。WebFetch 的 url 字段本来
+// 就是完整 URL，不用再套 extractCommandHosts() 那套给 shell 命令文本设计的、
+// 专门避免把本地文件名误判成主机名的正则——直接用 URL() 解析主机名更准确。
+// WebSearch 的 query 字段是搜索关键词，不是 URL，没有域名可提取，天然不在这里面。
+function webFetchHostRows(db, limit) {
+  const rows = db
+    .prepare(
+      `SELECT id, ts, session_id, cwd, detail FROM events
+       WHERE source = 'hook_pre' AND tool_name = 'WebFetch'
+       ORDER BY id DESC LIMIT ?`
+    )
+    .all(limit);
+  const out = [];
+  for (const row of rows) {
+    let detail;
+    try {
+      detail = row.detail ? JSON.parse(row.detail) : {};
+    } catch (e) {
+      continue;
+    }
+    const url = detail.url || "";
+    let host;
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch (e) {
+      continue;
+    }
+    if (!host) continue;
+    out.push({ id: row.id, ts: row.ts, sessionId: row.session_id, cwd: row.cwd, command: `WebFetch: ${url}`, host });
+  }
+  return out;
+}
+
 function commandNetworkHosts(limit = 2000) {
   return withDb((db) => {
     const rows = db
@@ -414,7 +448,7 @@ function commandNetworkHosts(limit = 2000) {
         out.push({ id: row.id, ts: row.ts, sessionId: row.session_id, cwd: row.cwd, command: cmd, host });
       }
     }
-    return out;
+    return out.concat(webFetchHostRows(db, limit));
   }, []);
 }
 
@@ -503,6 +537,39 @@ function sensitiveOpType(toolName, matchedRule, detailJson) {
   }
 }
 
+// 敏感数据统计——跟上面的"敏感操作统计"同一个思路（复用 policy.py 已经算好的
+// matched_rule，不在 JS 这边另起一套重复的正则），但覆盖的是另一半场景：上面那组
+// 是"读取"敏感信息（读 SSH 密钥、dump 环境变量、翻历史指令），这一组是"敏感信息
+// 本身长什么样"——写入内容里出现云厂商/代码托管平台的凭据格式、PII（身份证号/
+// 手机号/邮箱）、VPN/云 CLI 配置文件的读写。
+// secret_pattern_in_write 和 pii_pattern_in_write 两条规则匹配的是 content 字段
+// （Write 用 content、Edit 用 new_string、NotebookEdit 用 new_source，取哪个看
+// 具体是哪个工具触发的），cloud_vpn_config_write/read 两条匹配的是 file_path，
+// 取字段前先看是哪条规则命中的，不能像 SSH 密钥那组一样固定用同一个字段。
+const SENSITIVE_DATA_RULES = new Set(["secret_pattern_in_write", "pii_pattern_in_write", "cloud_vpn_config_write", "cloud_vpn_config_read"]);
+const SENSITIVE_DATA_PATH_RULES = new Set(["cloud_vpn_config_write", "cloud_vpn_config_read"]);
+const SENSITIVE_VPN_RE = /\.ovpn|wireguard|wg0\.conf|PrivateKey\s*=/i;
+function classifySensitiveData(matchedRule, text) {
+  if (matchedRule === "pii_pattern_in_write") return "pii";
+  if (matchedRule === "cloud_vpn_config_write" || matchedRule === "cloud_vpn_config_read" || matchedRule === "secret_pattern_in_write") {
+    return SENSITIVE_VPN_RE.test(text || "") ? "vpnConfig" : "credential";
+  }
+  return "other";
+}
+
+function sensitiveDataType(toolName, matchedRule, detailJson) {
+  if (!SENSITIVE_DATA_RULES.has(matchedRule)) return null;
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    const text = SENSITIVE_DATA_PATH_RULES.has(matchedRule)
+      ? detail.file_path || detail.path || ""
+      : detail.content || detail.new_string || detail.new_source || "";
+    return classifySensitiveData(matchedRule, text);
+  } catch (e) {
+    return null;
+  }
+}
+
 function withDb(fn, fallback) {
   let db;
   try {
@@ -517,6 +584,7 @@ function withDb(fn, fallback) {
     db.function("cc_netdiag_op", netdiagOpType);
     db.function("cc_procbg_op", processBackgroundType);
     db.function("cc_sensitive_op", sensitiveOpType);
+    db.function("cc_sensitive_data", sensitiveDataType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -800,6 +868,32 @@ function sensitiveOpsEvents(limit = 300) {
   }, []);
 }
 
+// 敏感数据统计——查询形状跟上面 sensitiveOpsBreakdown/sensitiveOpsEvents 一样，
+// 只是筛的 matched_rule 集合不同（见 sensitiveDataType 上面的注释）。
+function sensitiveDataBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT cc_sensitive_data(tool_name, matched_rule, detail) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN ('secret_pattern_in_write', 'pii_pattern_in_write', 'cloud_vpn_config_write', 'cloud_vpn_config_read')
+         GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+
+function sensitiveDataEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_sensitive_data(tool_name, matched_rule, detail) AS kind FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN ('secret_pattern_in_write', 'pii_pattern_in_write', 'cloud_vpn_config_write', 'cloud_vpn_config_read')
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 // 首页"截屏审计"卡片：单一计数，不像软件安装/GitHub 操作那样拆细分类——截屏本来
 // 就不常发生，没必要再按来源（Bash/Read/MCP）拆成好几张卡片，下钻列表里每一行的
 // 工具名本身就能看出是哪种来源。
@@ -904,17 +998,61 @@ function skillCallBreakdown(limit = 100) {
   }, []);
 }
 
-// 工具调用/MCP 调用卡片下钻里点进某个具体工具名之后的事件明细，跟 fileOpDetails/
-// installDetails 是同一个套路。
-function toolCallDetails(toolName, limit = 300) {
+// Glob/Grep 调用统计——纯搜索类工具，本来就已经算在"工具调用"总数和它的按工具名
+// 分组下钻里，这里单独拉出来是因为搜索操作本身是个值得单独一瞥的行为模式（翻了
+// 多少次代码库），跟 MCP/Skill 调用同一个思路，只是分组字段用 tool_name 本身
+// （Glob vs Grep），不需要 json_extract 从 detail 里再挑一层。
+function searchCallStats() {
+  return withDb((db) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name IN ('Glob', 'Grep')`).get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+function searchCallBreakdown(limit = 100) {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
-         WHERE source = 'hook_pre' AND tool_name = ?
+        `SELECT tool_name, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND tool_name IN ('Glob', 'Grep')
+         GROUP BY tool_name ORDER BY n DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+function searchCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name FROM events
+         WHERE source = 'hook_pre' AND tool_name IN ('Glob', 'Grep')
          ORDER BY id DESC LIMIT ?`
       )
-      .all(toolName, limit);
+      .all(limit);
+  }, []);
+}
+
+// TodoWrite 使用频率——纯统计，没有安全含义，只看调用了多少次；下钻的事件明细额外
+// 带上每次调用时任务列表的条数（json_array_length 直接在 SQL 里算，不用先把每行
+// detail 都读出来在 JS 里 JSON.parse 一遍），不展示任务的具体文字内容——跟其它
+// 下钻卡片一样，只给"发生过什么规模的操作"这类基本信息。
+function todoCallStats() {
+  return withDb((db) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND tool_name = 'TodoWrite'`).get().n;
+    return { total };
+  }, { total: 0 });
+}
+
+function todoCallEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, COALESCE(json_array_length(detail, '$.todos'), 0) AS todoCount
+         FROM events WHERE source = 'hook_pre' AND tool_name = 'TodoWrite'
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
   }, []);
 }
 
@@ -1108,6 +1246,8 @@ module.exports = {
   procbgOpsEvents,
   sensitiveOpsBreakdown,
   sensitiveOpsEvents,
+  sensitiveDataBreakdown,
+  sensitiveDataEvents,
   screenshotStats,
   screenshotDetails,
   commandNetworkHosts,
@@ -1119,11 +1259,15 @@ module.exports = {
   skillCallBreakdown,
   subagentCallStats,
   subagentCallBreakdown,
-  toolCallDetails,
+  searchCallStats,
+  searchCallBreakdown,
+  todoCallStats,
   toolCallEvents,
   mcpCallEvents,
   skillCallEvents,
   subagentCallEvents,
+  searchCallEvents,
+  todoCallEvents,
   networkConnectEvents,
   eventTypeBreakdown,
   blockedDetails,
