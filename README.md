@@ -544,3 +544,28 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 ## License
 
 [MIT](./LICENSE)
+
+## Acknowledgments
+
+CC-Monitor's hooks/probe layer (`cc_monitor/`) is Python standard library only, no
+third-party packages. The Web UI (`webui/`) builds on these open-source projects:
+
+**Runtime dependencies**
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) (MIT) — the audit event/session database
+- [express](https://github.com/expressjs/express) (MIT) — the Web UI's HTTP server
+- [ws](https://github.com/websockets/ws) (MIT) — the terminal/live-update WebSocket transport
+- [node-pty](https://github.com/microsoft/node-pty) (MIT) — the real PTY behind the Web Terminal
+- [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) — the in-browser terminal, plus its `xterm-addon-fit` and `xterm-addon-webgl` addons
+- [maxmind](https://github.com/runk/node-maxmind) (MIT) — reading local GeoIP `.mmdb` files for the Network tab's location data
+- [https-proxy-agent](https://github.com/TooTallNate/proxy-agents/tree/main/packages/https-proxy-agent) (MIT) — proxying the Anthropic usage-API request when `HTTPS_PROXY` is set
+- [Electron](https://github.com/electron/electron) (MIT), [electron-builder](https://github.com/electron-userland/electron-builder) (MIT), [@electron/rebuild](https://github.com/electron/rebuild) (MIT) — the desktop build and its native-module packaging
+
+**Data & tooling**
+- [bpftrace](https://github.com/bpftrace/bpftrace) (Apache-2.0) — the eBPF tracer the Linux system-layer probe (`probe_linux.bt`) is built on
+- [sapics/ip-location-db](https://github.com/sapics/ip-location-db) — republishes [DB-IP](https://db-ip.com/) Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) as ready-to-use `.mmdb` files; `install.sh` downloads this by default for the Network tab's GeoIP lookups
+- [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) — the alternative, usually more accurate GeoIP database option, self-hosted by the user under MaxMind's own license
+- [Keep a Changelog](https://keepachangelog.com/) — the loosely-followed format for `CHANGELOG.md`/`CHANGELOG.en.md`
+
+**Inspiration / prior art**
+- [ccstatusline](https://github.com/sirmalloc/ccstatusline) — CC-Monitor's account/usage display independently re-implements the same OAuth-credential lookup and Anthropic usage-API call ccstatusline uses (no code shared, no dependency on it); `install.sh` also offers to install and wire it up as a companion terminal statusline
+- [Vibe Island](https://vibeisland.app/) — the interaction model AI Approvals is modeled after (an Allow/Deny card for pending actions), reimplemented here as a cross-platform web page instead of a macOS-only notch UI

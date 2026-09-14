@@ -474,3 +474,28 @@ sudo ./bin/CC-Monitor-probe
 ## 许可协议
 
 [MIT](./LICENSE)
+
+## 致谢
+
+CC-Monitor 的 hooks/探针这一层（`cc_monitor/`）只用 Python 标准库，没有第三方依赖。
+Web UI（`webui/`）构建在下面这些开源项目之上：
+
+**运行时依赖**
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)（MIT）—— 审计事件/会话数据的存储
+- [express](https://github.com/expressjs/express)（MIT）—— Web UI 的 HTTP 服务
+- [ws](https://github.com/websockets/ws)（MIT）—— 终端/实时更新用的 WebSocket 传输层
+- [node-pty](https://github.com/microsoft/node-pty)（MIT）—— Web 终端背后真正的伪终端（PTY）
+- [xterm.js](https://github.com/xtermjs/xterm.js)（MIT）—— 浏览器里的终端渲染，以及 `xterm-addon-fit`、`xterm-addon-webgl` 两个插件
+- [maxmind](https://github.com/runk/node-maxmind)（MIT）—— 读取本地 GeoIP `.mmdb` 文件，给网络流量页提供归属地数据
+- [https-proxy-agent](https://github.com/TooTallNate/proxy-agents/tree/main/packages/https-proxy-agent)（MIT）—— 配置了 `HTTPS_PROXY` 时，代理对 Anthropic 用量接口的请求
+- [Electron](https://github.com/electron/electron)（MIT）、[electron-builder](https://github.com/electron-userland/electron-builder)（MIT）、[@electron/rebuild](https://github.com/electron/rebuild)（MIT）—— 桌面版打包和原生模块的重新编译
+
+**数据与工具**
+- [bpftrace](https://github.com/bpftrace/bpftrace)（Apache-2.0）—— Linux 系统层探针（`probe_linux.bt`）依赖的 eBPF 追踪工具
+- [sapics/ip-location-db](https://github.com/sapics/ip-location-db) —— 把 [DB-IP](https://db-ip.com/) Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议）转成现成的 `.mmdb` 文件，`install.sh` 默认下载的就是这份，用于网络流量页的 GeoIP 归属地查询
+- [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) —— 精度通常更高的备选 GeoIP 数据库，需要用户自己按 MaxMind 的许可条款注册获取
+- [Keep a Changelog](https://keepachangelog.com/) —— `CHANGELOG.md`/`CHANGELOG.en.md` 大致参考的格式规范
+
+**灵感来源**
+- [ccstatusline](https://github.com/sirmalloc/ccstatusline) —— CC-Monitor 的账号额度显示是独立实现的同一套 OAuth 凭证读取逻辑和 Anthropic 用量接口调用（不共享代码、不依赖它）；`install.sh` 也提供自动安装并接线它作为配套终端状态栏的选项
+- [Vibe Island](https://vibeisland.app/) —— "AI 审批台"参照的交互模型（弹卡片让你 Allow/Deny 待处理操作），这里重新实现成了跨平台的网页，而不是 macOS 专属的灵动岛 UI
