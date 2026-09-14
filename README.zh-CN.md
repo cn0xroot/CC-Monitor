@@ -428,12 +428,18 @@ sudo ./bin/CC-Monitor-probe
 - [x] 外观设置弹窗：主题色块网格、界面字体、界面字号（新设置项，之前没有）
 - [x] 单次额度显示"剩余百分比"（conky 分段配色），周额度"已用百分比"用红→黄→绿连续
       渐变，Fable 等按模型限额动态识别
+- [x] **macOS 平台支持**：hooks（`PreToolUse`/`PostToolUse`/`PermissionRequest`）、AI 审批台、
+      额度显示（从登录钥匙串读凭证）、Web 终端（`node-pty` spawn-helper 权限修复）、
+      系统层网络探针（`cc_monitor/probe_darwin.py`，用系统自带 `nettop` 采样，不需要
+      root）、桌面版审批提醒（Dock 跳动 + 角标 + 系统通知兜底）都已跑通并实测验证过；
+      Linux 仍是打磨最完整、测试最充分的平台
 
 ### 未实现 / 待办
 
-- [ ] **macOS 支持**：hooks / AI 审批台 / 额度（钥匙串）/ Web 终端 / nettop 网络探针已在
-      macOS 上跑通；设计文档里规划的 Endpoint Security Framework 方案（`execve` 级别的绕过
-      检测，需要签名的系统扩展 + 用户手动授权 Full Disk Access）仍未实现
+- [ ] **macOS 系统层绕过检测（Endpoint Security Framework）**：设计文档里规划的方案——
+      在内核/系统扩展层面观测 `execve`，交叉验证 hook 有没有被绕过或篡改（`CC-Monitor
+      verify` 在 Linux 上靠 eBPF 做的这件事）——需要签名的系统扩展 + 用户手动授权 Full
+      Disk Access，目前 macOS 上的探针只覆盖网络部分（见上），这一层仍未实现
 - [ ] **强制沙箱**（Phase 3）：Landlock LSM / bubblewrap（Linux）、`sandbox-exec`/容器化（macOS），
       目前只能拦截+告警，不能把 Claude Code 关进一个真正强制隔离的沙箱里
 - [ ] **`CC-Monitor-probe` 常驻化**：目前需要手动 `sudo` 启动，没有 systemd unit / 开机自启，需要用户自己决定要不要装成常驻服务

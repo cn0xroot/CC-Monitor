@@ -491,13 +491,22 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 - [x] Home page GitHub Operations stats (push/clone/commit/pull-fetch/gh CLI/other git operations)
 - [x] Appearance settings dialog: color-theme swatch grid, interface font, interface font size (new settings)
 - [x] Session quota shows "remaining %" with a conky-style stepped palette; weekly quotas show "used %" with a continuous red→yellow→green gradient; per-model quotas like Fable are detected dynamically
+- [x] **macOS platform support**: hooks (`PreToolUse`/`PostToolUse`/`PermissionRequest`), AI
+      Approvals, usage display (reading credentials from the login Keychain), the Web Terminal
+      (fixed a `node-pty` spawn-helper permissions issue), the system-layer network probe
+      (`cc_monitor/probe_darwin.py`, sampling via the built-in `nettop`, no root needed), and
+      desktop-app approval alerts (Dock bounce + badge + best-effort system notification) all
+      work and have been verified; Linux remains the most polished and thoroughly tested
+      platform
 
 ### Not implemented / TODO
 
-- [ ] **macOS support**: hooks / AI Approvals / usage (Keychain) / web terminal / the nettop
-      network probe now work on macOS; the Endpoint Security Framework approach sketched in the
-      design doc (`execve`-level bypass detection, requires a signed system extension +
-      user-granted Full Disk Access) is still unimplemented
+- [ ] **macOS system-layer bypass detection (Endpoint Security Framework)**: the design doc's
+      planned approach — observing `execve` at the kernel/system-extension level to cross-check
+      whether hooks have been bypassed or tampered with (what `CC-Monitor verify` does on Linux
+      via eBPF) — requires a signed system extension and user-granted Full Disk Access; the
+      current macOS probe only covers the network side (see above), this layer is still
+      unimplemented
 - [ ] **Mandatory sandboxing** (Phase 3): Landlock LSM / bubblewrap (Linux), `sandbox-exec` /
       containerization (macOS) — currently the tool can only block-and-alert, not actually cage
       Claude Code inside a hard sandbox
