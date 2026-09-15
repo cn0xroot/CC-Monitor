@@ -7,7 +7,7 @@ from collections import Counter
 from . import audit_state
 from . import colors as col
 from . import format as fmt
-from . import policy, storage, transcript
+from . import policy, rematch, storage, transcript
 
 STATE_LABELS = {"running": "运行中", "paused": "已暂停（只观察不拦截）", "stopped": "已停止（完全不介入）"}
 
@@ -78,6 +78,23 @@ def cmd_tail(args):
 
 def cmd_rules(args):
     print(json.dumps(policy.load_rules(), ensure_ascii=False, indent=2))
+
+
+def cmd_rematch(args):
+    """用当前生效的规则把审计库里所有 PreToolUse 事件重新判一遍（见 rematch.py 的说明）。
+    默认只预览，--apply 才写库；--quiet 给 hook 后台自动触发用，不打印明细。"""
+    total, changes = rematch.run(apply=args.apply)
+    if args.quiet:
+        return
+    print("共检查 {} 条 PreToolUse 事件，{} 条的命中规则/风险等级会变化".format(total, len(changes)))
+    for event_id, tool_name, old_rule, new_rule, new_risk, summary in changes:
+        print("  #{} {} {} -> {} [{}]  {}".format(event_id, tool_name, old_rule or "-", new_rule or "-", new_risk, summary))
+    if not changes:
+        return
+    if args.apply:
+        print(col.c("已更新 {} 条事件的 risk/matched_rule".format(len(changes)), color="green", bold=True))
+    else:
+        print(col.c("以上只是预览，加 --apply 才会写入数据库", dim=True))
 
 
 def cmd_stats(args):
@@ -175,6 +192,11 @@ def main():
 
     p_rules = sub.add_parser("rules", help="查看当前生效的规则")
     p_rules.set_defaults(func=cmd_rules)
+
+    p_rematch = sub.add_parser("rematch", help="用当前规则重新判定历史事件的命中规则（默认只预览，--apply 才写库）")
+    p_rematch.add_argument("--apply", action="store_true", help="真的更新数据库里的 risk/matched_rule")
+    p_rematch.add_argument("--quiet", action="store_true", help="不打印明细（hook 后台自动触发时用）")
+    p_rematch.set_defaults(func=cmd_rematch)
 
     p_stats = sub.add_parser("stats", help="查看统计信息")
     p_stats.set_defaults(func=cmd_stats)

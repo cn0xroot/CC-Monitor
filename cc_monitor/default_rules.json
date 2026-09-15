@@ -165,7 +165,8 @@
     "action": "block",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bsudo\\s+(python3?\\s+-m\\s+pip|pip3?)\\s+install\\b"
+    "pattern": "\\bsudo\\s+(python3?\\s+-m\\s+pip|pip3?)\\s+install\\b",
+    "match": "segment"
   },
   {
     "id": "system_package_install",
@@ -173,7 +174,8 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-(?-i:[A-Za-z]*[SRU][A-Za-z]*)\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b|\\bbrew\\s+(cask\\s+)?(install|reinstall|uninstall|remove|rm|upgrade|tap|untap|bundle)\\b|\\bport\\s+(-[A-Za-z]+\\s+)*(install|uninstall|upgrade|activate|deactivate|selfupdate)\\b"
+    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-(?-i:[A-Za-z]*[SRU][A-Za-z]*)\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b|\\bbrew\\s+(cask\\s+)?(install|reinstall|uninstall|remove|rm|upgrade|tap|untap|bundle)\\b|\\bport\\s+(-{1,2}[A-Za-z][\\w-]*(=\\S+|\\s+/\\S+)?\\s+)*(install|uninstall|upgrade|activate|deactivate|selfupdate|sync)\\b",
+    "match": "segment"
   },
   {
     "id": "sudo_usage",
@@ -181,7 +183,8 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "(^|;|&&|\\|\\|)\\s*sudo\\b"
+    "pattern": "(^|;|&&|\\|\\|)\\s*sudo\\b",
+    "match": "segment"
   },
   {
     "id": "su_pkexec_privilege_escalation",
@@ -189,7 +192,8 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "(^|;|&&|\\|\\|)\\s*(su|pkexec)\\b"
+    "pattern": "(^|;|&&|\\|\\|)\\s*(su|pkexec)\\b",
+    "match": "segment"
   },
   {
     "id": "pip_install_venv_context",
@@ -205,7 +209,8 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b"
+    "pattern": "\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b",
+    "match": "segment"
   },
   {
     "id": "npm_global_install",
@@ -213,7 +218,8 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\s+.*(-g\\b|--global\\b)"
+    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\s+.*(-g\\b|--global\\b)",
+    "match": "segment"
   },
   {
     "id": "npm_local_install",
@@ -221,7 +227,8 @@
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\b"
+    "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\b",
+    "match": "segment"
   },
   {
     "id": "package_install_other",
@@ -229,7 +236,8 @@
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bgem\\s+install\\b|\\bcargo\\s+install\\b|\\bgo\\s+install\\b|\\bbrew\\s+install\\b|\\bcomposer\\s+(require|global\\s+require)\\b"
+    "pattern": "\\bgem\\s+install\\b|\\bcargo\\s+install\\b|\\bgo\\s+install\\b|\\bcomposer\\s+(require|global\\s+require)\\b",
+    "match": "segment"
   },
   {
     "id": "git_force_push",
@@ -261,7 +269,7 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bhistory\\s+-c\\b|>\\s*~?/?\\.bash_history\\b|\\brm\\s+-f?\\s*~?/\\.bash_history\\b"
+    "pattern": "\\bhistory\\s+-c\\b|>\\s*~?/?\\.(bash|zsh)_history\\b|\\brm\\s+(-\\S+\\s+)*~?/\\.(bash|zsh)_history\\b|\\brm\\s+(-\\S+\\s+)*[^\\n|;&]*\\.(zsh|bash)_sessions/"
   },
   {
     "id": "history_read",
@@ -269,7 +277,15 @@
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(cat|less|more|head|tail|strings)\\s+[^\\n|;&]*(\\.bash_history|\\.zsh_history|\\.python_history|\\.mysql_history|\\.psql_history|\\.node_repl_history|\\.history)\\b|(^|;|&&|\\|\\|)\\s*history\\b(?!\\s*-c\\b)"
+    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\$\\{?HISTFILE\\b|\\.claude/history\\.jsonl\\b|(^|[;&|(`])\\s*(history|fc\\s+-[a-zA-Z]*l[a-zA-Z]*)\\b(?!\\s*-c\\b)"
+  },
+  {
+    "id": "history_file_read",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Read", "Grep"],
+    "field": "file_path",
+    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\.claude/history\\.jsonl\\b"
   },
   {
     "id": "db_destructive_command",

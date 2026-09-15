@@ -1,7 +1,7 @@
 import json
 import sys
 
-from . import audit_state, notify, policy, storage
+from . import audit_state, notify, policy, rematch, storage
 
 
 def read_hook_input():
@@ -26,7 +26,11 @@ def handle_pre(data):
         # 完全不介入：不判定、不记录，等价于没装这个 hook。
         sys.exit(0)
 
-    rule, matched_value = policy.evaluate(tool_name, tool_input)
+    rules = policy.load_rules()
+    rule, matched_value = policy.evaluate(tool_name, tool_input, rules=rules)
+    # 规则表跟上次重判历史事件时不一样了（用户改了 rules.json、或者升级带来了新默认
+    # 规则）——后台起个进程用新规则把历史事件的 matched_rule 重算一遍，首页统计才准。
+    rematch.maybe_schedule(rules)
     decision = "allowed"
     risk = "low"
     # 只有真的走过我们自己的 confirm 流程（一直允许的记忆，或者这次真的问过 tty/网页）

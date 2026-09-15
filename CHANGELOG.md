@@ -5,6 +5,89 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.7.1] - 2026-09-14
+
+### 修复
+- **macOS 上读取 shell 历史指令没被"敏感操作统计"识别到**：根因有两层。
+  1. `~/.cc-monitor/rules.json` 是首次运行时拷的副本，之后新版本加进
+     `default_rules.json` 的规则（包括 `history_read` 本身，1.6.0 才加的）根本不在老用户
+     的文件里——实测一份 1.x 早期安装的 `rules.json` 只有 33 条规则，1.7.0 的默认表有 57 条。
+     这类"改了默认规则但用户侧不生效"的问题在 CHANGELOG 里已经提醒过五六次"需要手动
+     同步"，这次直接在 `policy.ensure_config()` 里做自动合并：本地缺失的默认规则按 id 补上
+     （插在它在默认表里前一条规则后面，保持首个命中即返回的顺序语义）；新增
+     `~/.cc-monitor/rules.defaults_snapshot.json` 记录上次同步时的默认表，本地某条规则跟快照
+     一模一样（用户没改过）而默认表里这条变了（比如修正正则）就直接换成新的；用户改过的
+     （跟快照不一样）一律不动；本地缺失但快照里有的 id 视为用户主动删除，不再补回。老版本
+     升上来第一次没有快照，只补缺失的、不碰已有的。合并结果直接返回给 `load_rules()`，
+     配置目录只读时也能用内存里合并好的规则跑，hook 本身不受影响。
+  2. 即使规则在，原 `history_read` 正则也只认 `cat/less/more/head/tail/strings` 开头
+     + 历史文件名这一种形态。Claude Code 在 Mac 上实际的读法几乎全在盲区：`python3 -c
+     "open('~/.zsh_history')"`、`wc -l < ~/.zsh_history`、`for f in ~/.zsh_history ...`、
+     `grep token ~/.zsh_history`、zsh 原生的 `fc -l`、`$HISTFILE`、macOS Terminal 按会话
+     存的 `~/.zsh_sessions/*.history`、Claude Code 自己的 `~/.claude/history.jsonl`，以及
+     最常见的——直接用 `Read` 工具读 `~/.zsh_history`（`sensitive_file_read` 规则根本没
+     包含历史文件）。重写 `history_read`：只要命令文本里出现历史文件路径（不再要求特定
+     读取命令前缀，`python`/`grep`/重定向都算）、`$HISTFILE`、`.zsh_sessions/`、
+     `.claude/history.jsonl`，或子命令开头是 `history`/`fc -l` 就命中；新增
+     `history_file_read`（`tools: ["Read", "Grep"]`, `field: "file_path"`, `log` 级别）覆盖
+     Read/Grep 工具直接读历史文件。`history_tampering` 顺带补上 `.zsh_history` 和
+     `rm .zsh_sessions/` 两种 Mac 上的清历史写法（原来只认 `.bash_history`）。
+  3. WebUI 的敏感操作统计（`webui/lib/audit.js`）原来把四条规则 id 硬编码在 JS 常量和
+     两处 SQL `IN (...)` 里三个地方，加规则要同步改三处；现在 SQL 从 `SENSITIVE_READ_RULES`
+     常量生成，只改一处。`history_file_read` 归到"其它（历史指令读取等）"；取文本时
+     Bash 看 `command`，其它工具看 `file_path`/`path`（原来只认 Read 一个工具名）。
+  注意：之前没被识别到的历史读取事件当时 `matched_rule` 就是空的，不会追溯补算，
+  统计只对修复之后的新事件生效。
+- **排查"MacPorts `port install` 没被识别"**：`system_package_install` 从 1d762af 起就
+  覆盖了 `port install/uninstall/upgrade/activate/deactivate/selfupdate`，规则引擎对
+  `sudo port install`、`port -N install`、`/opt/local/bin/port install`、`xargs sudo port
+  install` 等写法全部命中，而且审计库（含归档）里从来没有一条 `port` 命令经过 hook 的
+  记录——说明这次"没识别到"不是规则漏了，而是那条命令压根没走 Claude Code 的 Bash 工具
+  （在自己终端里敲的、用 `!` 前缀跑的、或者 Claude 因为 `sudo` 要密码而让用户自己去
+  执行的，hook 都看不到；这是 PreToolUse 机制的边界，不是 bug）。顺手加固了 `port`
+  这段正则：`-D /path`、`--debug` 这类带参数/长格式的全局选项夹在中间也能命中，动作
+  列表补上 `sync`。
+- **系统包管理器（apt/yum/dnf/pacman/brew/port）识别不准确：10 条"命中"全是误报**：
+  审计库里归到 `system_package_install` 的 10 条事件，没有一条是真的在装软件——全是
+  `grep "port install" default_rules.json`、python heredoc 里写着 `"apt install"` 字样的
+  命令。根因是规则引擎对整条命令文本做 `re.search`，引号里的字符串、heredoc 正文、grep
+  的搜索词一视同仁；`sudo_usage`/`sudo_pip_install` 也是同样的问题（修这个 bug 的过程中
+  两条编辑命令就因为 heredoc 里出现 `sudo apt-get install`、`sudo pip install` 字样被拦了）。
+  规则新增可选字段 `match`："search"（默认，行为不变）或 "segment"——把 Bash 命令按顶层
+  `; & | 换行` 切成子命令（引号/heredoc 内部不切），每段剥掉 `sudo`/`env`/`xargs`/`time`/
+  `nice`/`nohup` 包装、环境变量赋值前缀、可执行文件路径前缀（`/opt/local/bin/port` →
+  `port`），再用 `re.match` 从开头匹配；`bash -c "..."`/`osascript ... do shell script "..."`
+  的字符串体递归展开，藏在里面的真实安装不会漏。每段同时给"原样"和"剥包装"两个版本，
+  `sudo_usage` 要看到 sudo 本身、`apt`/`brew`/`port` 规则要看到真正的命令名。切到 segment
+  模式的规则：`system_package_install`、`package_install_other`、`npm_global_install`、
+  `npm_local_install`、`sudo_usage`、`su_pkexec_privilege_escalation`、`sudo_pip_install`、
+  `pip_install_no_venv`。`pip_install_venv_context` 依赖整条命令里的 venv 上下文
+  （`source .venv/bin/activate` 在另一个子命令里），保持 search 模式。`package_install_other`
+  里的 `brew install` 分支删掉（`system_package_install` 在前面已经接管，永远到不了）。
+  segment 模式下 `matched_value` 是命中的那个子命令而不是整条命令，审批台/拦截原因里
+  更直观。`policy.split_shell_segments`/`segment_heads` 跟 `webui/lib/audit.js` 的
+  `splitShellSegments` 是同一个思路的 Python 版。
+- **规则更新后历史事件自动按新规则重判**：首页各统计卡片都是按 `events.matched_rule`
+  聚合的，而这个字段是事件发生那一刻按"当时的规则"算出来写死的——规则修好了，历史
+  上的误报/漏报也不会自己消失。新增 `cc_monitor/rematch.py`：hook 每次调用算当前规则表
+  的内容指纹（`policy.rules_fingerprint`，跟文件 mtime 无关，自动合并重写/touch 不会
+  触发），跟 `meta` 表里记的"上次重判用的指纹"不一样就通过一条原子 upsert 认领，起一个
+  独立后台进程跑 `CC-Monitor rematch --apply --quiet`（几千条事件逐条过正则要几秒，
+  PreToolUse 不能卡这么久；多个 hook 同时发现也只有一个会起进程）。只改 `risk`/
+  `matched_rule` 两列，`decision` 永远不动，归档库不碰。也可以手动：`CC-Monitor rematch`
+  预览、`--apply` 写库。本机跑完之后"系统包管理器"从 10 变成 0，之前没识别到的 4 条
+  历史指令读取事件也补上了 `history_read`。
+- **README"已知限制"补充监测边界说明**：排查"brew/port 安装没被统计"时发现那几条
+  命令是用户在自己终端里敲的（`~/.zsh_history` 里有、审计库里没有），hook 只能看到 Claude
+  Code 发起的工具调用。这个边界之前文档里没写明，现在两种语言的"已知限制"都加了一条。
+- **`tests/test_rules.py` 补充 segment 模式和 rematch 的用例**：12 种"提到了但没执行"的
+  误报样例、23 种真实执行（含 `bash -c`、`xargs`、环境变量前缀、子 shell 括号、绝对路径）
+  的命中样例，以及 rematch 改 `matched_rule` 不改 `decision` 的断言。
+- **新增规则回归测试 `tests/test_rules.py`**：`python3 -m unittest tests/test_rules.py`，
+  用隔离的 `CC_MONITOR_HOME` 跑，不碰用户自己的 `rules.json`。目前覆盖系统包管理器
+  （含 MacPorts 各种写法）和历史指令读取两组"必须命中/不能误报"的样例，以后再报
+  "某某没检测到"先往这里加一行样例就能复现。
+
 ## [1.7.0] - 2026-09-14
 
 ### 新增

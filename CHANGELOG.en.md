@@ -5,6 +5,105 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.7.1] - 2026-09-14
+
+### Fixed
+- **Shell-history reads on macOS were not picked up by the sensitive-operations stats**: two root
+  causes stacked.
+  1. `~/.cc-monitor/rules.json` is a one-time copy made on first run, so rules added to
+     `default_rules.json` by later versions (including `history_read` itself, which only arrived in
+     1.6.0) never reached existing users — an early-1.x install measured 33 rules against 57 in the
+     1.7.0 defaults. The CHANGELOG has warned "sync manually" half a dozen times; this release
+     makes `policy.ensure_config()` merge automatically instead. Default rules missing locally are
+     inserted by id right after their predecessor in the default table (preserving the ordered,
+     first-match-wins semantics). A new `~/.cc-monitor/rules.defaults_snapshot.json` records the
+     default table as of the last sync: a local rule identical to its snapshot (never edited by the
+     user) whose default changed (e.g. a regex fix) is replaced with the new default; a rule that
+     differs from the snapshot (user-edited) is left alone; an id missing locally but present in the
+     snapshot counts as deliberately deleted and is not restored. The first sync after upgrading from
+     an older version has no snapshot, so it only adds missing rules and never touches existing ones.
+     The merged list is returned straight to `load_rules()`, so a read-only config dir still runs on
+     the in-memory merge without affecting the hook.
+  2. Even with the rule present, the old `history_read` regex only matched the single shape
+     `cat/less/more/head/tail/strings` + history filename. How Claude Code actually reads history on a
+     Mac was almost entirely outside it: `python3 -c "open('~/.zsh_history')"`,
+     `wc -l < ~/.zsh_history`, `for f in ~/.zsh_history ...`, `grep token ~/.zsh_history`, zsh's
+     native `fc -l`, `$HISTFILE`, macOS Terminal's per-session `~/.zsh_sessions/*.history`, Claude
+     Code's own `~/.claude/history.jsonl`, and — most common of all — reading `~/.zsh_history` with
+     the `Read` tool (the `sensitive_file_read` rule never included history files). `history_read` is
+     rewritten: any history-file path anywhere in the command text (no reader-command prefix
+     required, so `python`/`grep`/redirections all count), `$HISTFILE`, `.zsh_sessions/`,
+     `.claude/history.jsonl`, or a sub-command starting with `history`/`fc -l` now matches. A new
+     `history_file_read` rule (`tools: ["Read", "Grep"]`, `field: "file_path"`, `log` level) covers
+     the Read/Grep tools reading history files directly. `history_tampering` also gains
+     `.zsh_history` and `rm .zsh_sessions/`, the two Mac-side ways of wiping history (it only knew
+     `.bash_history`).
+  3. The WebUI sensitive-operations stats (`webui/lib/audit.js`) hardcoded the four rule ids in
+     three places (a JS constant plus two SQL `IN (...)` lists); the SQL is now generated from the
+     `SENSITIVE_READ_RULES` constant so there is one place to edit. `history_file_read` lands in
+     "Other (shell history reads, etc.)"; the text used for classification is `command` for Bash and
+     `file_path`/`path` for every other tool (previously only the literal tool name `Read` was
+     recognised).
+  Note: history reads that went unrecognised before the fix were stored with an empty
+  `matched_rule` and are not recomputed retroactively; the stats only cover new events.
+- **Investigated "MacPorts `port install` not detected"**: `system_package_install` has
+  covered `port install/uninstall/upgrade/activate/deactivate/selfupdate` since 1d762af, the
+  rule engine matches `sudo port install`, `port -N install`, `/opt/local/bin/port install`,
+  `xargs sudo port install` and friends, and the audit DB (archives included) holds no record of
+  any `port` command ever passing through the hook — so this was not a rule gap: the command
+  never went through Claude Code's Bash tool (typed in the user's own terminal, run with the `!`
+  prefix, or delegated back to the user because `sudo` needs a password — none of these are
+  visible to a PreToolUse hook; that is the boundary of the mechanism, not a bug). The `port`
+  regex was hardened anyway: global options carrying an argument or in long form (`-D /path`,
+  `--debug`) between `port` and the action now match, and `sync` joins the action list.
+- **System-package-manager (apt/yum/dnf/pacman/brew/port) stats were inaccurate: all 10 "hits"
+  were false positives**: none of the 10 events attributed to `system_package_install` installed
+  anything — they were `grep "port install" default_rules.json` and python heredocs containing the
+  string `"apt install"`. Root cause: the rule engine ran `re.search` over the whole command text,
+  treating quoted strings, heredoc bodies and grep search terms like real commands; `sudo_usage`
+  and `sudo_pip_install` had the same problem (two editing commands during this fix got blocked
+  because their heredocs mentioned `sudo apt-get install` / `sudo pip install`). Rules gain an
+  optional `match` field: "search" (default, unchanged) or "segment" — split the Bash command into
+  top-level sub-commands on `; & | newline` (never inside quotes/heredocs), strip `sudo`/`env`/
+  `xargs`/`time`/`nice`/`nohup` wrappers, env-assignment prefixes and executable path prefixes
+  (`/opt/local/bin/port` → `port`) from each, then `re.match` at the start; `bash -c "..."` and
+  `osascript ... do shell script "..."` bodies are recursed into so a real install hidden in them
+  still hits. Each segment is offered both raw and wrapper-stripped, because `sudo_usage` needs to
+  see `sudo` itself while `apt`/`brew`/`port` rules need the real command name. Switched to
+  segment mode: `system_package_install`, `package_install_other`, `npm_global_install`,
+  `npm_local_install`, `sudo_usage`, `su_pkexec_privilege_escalation`, `sudo_pip_install`,
+  `pip_install_no_venv`. `pip_install_venv_context` stays in search mode because its venv context
+  (`source .venv/bin/activate`) lives in another sub-command. The dead `brew install` branch in
+  `package_install_other` is removed (`system_package_install` runs first and always wins). In
+  segment mode `matched_value` is the matching sub-command rather than the whole command, which
+  reads better in the approvals UI and block reasons. `policy.split_shell_segments`/`segment_heads`
+  are the Python counterpart of `splitShellSegments` in `webui/lib/audit.js`.
+- **Historical events are re-evaluated automatically when rules change**: every home-page stat
+  card aggregates `events.matched_rule`, a value computed once at event time against the rules of
+  that moment — fixing a rule never un-did past false positives or picked up past misses. New
+  `cc_monitor/rematch.py`: on every hook invocation the content fingerprint of the effective rule
+  set (`policy.rules_fingerprint`, independent of file mtime, so auto-merge rewrites and `touch`
+  don't trigger it) is compared with the one recorded in a `meta` table; when it differs the hook
+  claims it with one atomic upsert and spawns a detached background `CC-Monitor rematch --apply
+  --quiet` (thousands of events through the regexes take seconds, which a PreToolUse hook must not
+  block on; concurrent hooks noticing the change spawn only one process). Only `risk`/
+  `matched_rule` are rewritten, `decision` is never touched, archives are left alone. Manual:
+  `CC-Monitor rematch` previews, `--apply` writes. On this machine the system-package count went
+  from 10 to 0 and the 4 previously unrecognised shell-history reads gained `history_read`.
+- **README "Known limitations" now states the monitoring boundary**: while investigating
+  "brew/port installs are not counted" the commands turned out to have been typed in the user's
+  own terminal (present in `~/.zsh_history`, absent from the audit DB); hooks only see tool calls
+  Claude Code makes. The boundary was undocumented before; both READMEs now spell it out.
+- **`tests/test_rules.py` covers segment mode and rematch**: 12 "mentioned but not executed"
+  false-positive samples, 23 real-execution hits (including `bash -c`, `xargs`, env-var prefixes,
+  subshell parentheses, absolute paths), and the assertion that rematch changes `matched_rule`
+  but never `decision`.
+- **New rules regression test `tests/test_rules.py`**: run with
+  `python3 -m unittest tests/test_rules.py`; it uses an isolated `CC_MONITOR_HOME` and never
+  touches the user's own `rules.json`. Currently covers the system-package-manager group
+  (all MacPorts spellings included) and shell-history reads as "must hit / must not hit"
+  samples, so the next "X was not detected" report starts by adding one sample line there.
+
 ## [1.7.0] - 2026-09-14
 
 ### Added

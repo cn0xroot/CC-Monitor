@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS session_always_allow (
 -- 内核探点，每 2 秒汇总一次字节数累加进来。跟 events 表里 source='os_net' 的单条
 -- CONNECT 记录是互补关系：那边是"什么时候连过这个地址"的时间线，这张表是"总共
 -- 传了多少字节"的累计值，只有装了 bpftrace、探针在跑的时候才会有数据。
+-- 键值表，目前只有一个键：rules_fingerprint——上一次用哪份规则表把历史事件重判过
+-- （见 rematch.py）。hook 每次调用拿当前规则指纹跟它比，不一样就说明规则改过、
+-- 历史事件的 matched_rule 已经过时，后台起一个 rematch 进程重判。
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS network_traffic (
     ip TEXT NOT NULL,
     port INTEGER NOT NULL,
@@ -123,6 +131,58 @@ def log_event(session_id, source, tool_name, detail, cwd, risk, matched_rule, de
                     transcript_path,
                 ),
             )
+    finally:
+        conn.close()
+
+
+def iter_hook_pre_events():
+    """按 id 升序把所有 PreToolUse 事件吐出来：(id, tool_name, risk, matched_rule, detail)。
+    给 rematch 用——规则改了以后用当前规则把历史事件重新判一遍。"""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, tool_name, risk, matched_rule, detail FROM events WHERE source = 'hook_pre' ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+    return rows
+
+
+def update_event_matches(updates):
+    """批量改 (risk, matched_rule)：updates 是 [(risk, matched_rule, event_id), ...]。
+    只动这两列——decision 是当时真实发生的放行/拦截结果，重判不改写历史。"""
+    if not updates:
+        return
+    conn = _connect()
+    try:
+        with conn:
+            conn.executemany("UPDATE events SET risk = ?, matched_rule = ? WHERE id = ?", updates)
+    finally:
+        conn.close()
+
+
+def get_meta(key):
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def claim_meta(key, value):
+    """把 meta[key] 设成 value；只有当它原来不是这个值时才算"认领成功"（返回 True）。
+    多个 hook 进程几乎同时发现规则变了，靠这条 upsert 的原子性保证只有一个去起
+    后台重判，其它的看到 rowcount=0 就当没事。"""
+    conn = _connect()
+    try:
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE meta.value IS NOT excluded.value",
+                (key, value),
+            )
+            return cur.rowcount > 0
     finally:
         conn.close()
 

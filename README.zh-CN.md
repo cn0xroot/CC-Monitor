@@ -292,7 +292,8 @@ CC-Monitor 是双层监测架构：
   第一条命中就生效（first-match-wins），所以更具体的规则要写在更通用的规则前面。每条规则声明
   `tools`（适用哪些工具）、`field`（从 `tool_input` 里取哪个字段，比如 `command`/`file_path`/`url`）、
   `pattern`（正则）、`risk`/`action`。规则文件首次使用时从 `default_rules.json` 拷贝到
-  `~/.cc-monitor/rules.json`，之后可以自己改。
+  `~/.cc-monitor/rules.json`，之后可以自己改。新版本往 `default_rules.json` 里加的规则会按 id
+  自动合并进这份文件（你改过或删掉的规则一律不动，靠 `rules.defaults_snapshot.json` 区分）。
 - **系统层 eBPF 探针**：`probe_linux.bt` 挂在内核的 `execve`/`connect` 等 tracepoint 上，先用
   `comm=="claude"` 认出 Claude Code 自己的进程，再监听 `sched_process_fork` 事件，把"正在被监控"
   这个标记沿着进程树一路传给它 fork 出来的所有子进程——不管子进程改名叫什么都跟得上。
@@ -456,7 +457,10 @@ sudo ./bin/CC-Monitor-probe
 | `NO_COLOR` | 设置后强制关闭配色（通用约定） |
 
 事件与规则存放在 `~/.cc-monitor/`：`events.db`（SQLite 审计日志）、`rules.json`（可编辑规则，改了
-立即生效不用重启）。
+立即生效不用重启；新版本新增的默认规则会自动合并进来，靠 `rules.defaults_snapshot.json` 记录）。
+生效的规则表一变，下一次 hook 调用会在后台起进程用新规则把历史 `PreToolUse` 事件全部重判一遍
+（只改 `risk`/`matched_rule`，当时真实的放行/拦截结果不动），首页统计卡片跟着变准，不会一直
+带着过时的命中；`CC-Monitor rematch` 预览会改哪些，`CC-Monitor rematch --apply` 手动执行。
 
 **规则格式**（`rules.json` 是规则数组）：
 
@@ -467,9 +471,16 @@ sudo ./bin/CC-Monitor-probe
   "action": "block | confirm | log",
   "tools": ["Bash"],
   "field": "command | file_path | url",
-  "pattern": "正则表达式"
+  "pattern": "正则表达式",
+  "match": "search | segment"
 }
 ```
+
+- `match`（可选，默认 `search`）：`search` 对整个字段值做正则搜索；`segment` 把 Bash 命令按顶层
+  分隔符切成子命令（引号里、heredoc 正文里的分隔符不算），剥掉 `sudo`/`env`/`xargs`/`time` 这类
+  包装和可执行文件路径前缀后，从每个子命令开头匹配。"这条命令是不是真的在执行 X"的规则
+  （装软件、`sudo`）用 `segment`，"文本里有没有提到 X"的规则（路径、重定向、下载管道进 shell）
+  继续用 `search`。`bash -c "..."`、`osascript ... do shell script "..."` 的字符串体会递归展开。
 
 - `block`：直接拦截，Claude Code 收到拒绝原因。
 - `confirm`：终端弹出确认提示（等待 tty 输入 `y` 才放行）+ 桌面通知，无 tty/超时默认拒绝。
@@ -482,8 +493,9 @@ sudo ./bin/CC-Monitor-probe
 `.env`/凭据文件（`Read` 工具之外的盲区）、`env`/`printenv`/`export -p` 打印全部环境变量、`su`/
 `pkexec` 提权（跟 `sudo` 同一类风险）、单文件 `chmod 777`（非递归、相对路径也覆盖到）、
 `mysql`/`psql`/`redis-cli`/`mongo`/`sqlite3` 接 `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL` 这类直连
-数据库的破坏性命令、读取 shell 历史文件或执行裸 `history` 命令（可能翻出过去输入过的明文
-凭据）、反弹 shell / 后门执行（覆盖 `nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、
+数据库的破坏性命令、以任何方式读取 shell 历史文件（`cat`/`grep`/`python -c open(...)`/`Read` 工具都算，
+覆盖 `.zsh_history`、`.bash_history`、macOS 终端的 `.zsh_sessions/`、`$HISTFILE`、Claude Code 自己的
+`~/.claude/history.jsonl`）或执行裸 `history`/`fc -l`（可能翻出过去输入过的明文凭据）、反弹 shell / 后门执行（覆盖 `nc`/`ncat`/`netcat` 的 `-e`/`-c` 两种写法、`socat exec:`、
 `mkfifo` 配合命名管道拼出来的反弹 shell 等多种变体）、篡改 Claude Code 自身配置
 （`~/.claude/settings.json`/`.claude/hooks/`/`CLAUDE.md`，防绕过的配置层版本）、
 Docker socket 挂载逃逸（`-v /var/run/docker.sock:...`）、写入内容里出现常见密钥格式
@@ -612,6 +624,11 @@ git hooks/config 持久化攻击面（`core.hooksPath`、`url....insteadOf`）�
 > 免责声明、供应链/系统稳定性风险 Q&A、隐私说明这些更完整的内容单独放在了
 > [SECURITY.md](./SECURITY.md)，这里只列代码层面的具体已知限制。
 
+- **只监测 Claude Code 发起的操作，看不到你自己在终端里敲的命令**。所有应用层事件都来自
+  Claude Code 的 hook（PreToolUse/PostToolUse 等），你在自己的终端里手动执行的
+  `brew install`/`sudo port install`、在 Claude Code 对话框里用 `!` 前缀直接跑的命令、以及
+  Claude 因为 `sudo` 要密码而让你自己去执行的命令，都不会出现在审计库和统计卡片里——这是
+  产品边界，不是漏检。验证某条规则时要在 Claude Code 对话里让它执行那条命令。
 - **Web UI 进程和你平时跑 `claude` 的终端必须是同一个操作系统用户**，否则各写各的
   `~/.cc-monitor/` 数据库，互相看不到彼此（终端里的确认框、审计事件，Web UI 的
   "AI 审批台"/审计日志页面会完全是空的）——`CONFIG_DIR` 是按当前进程的 `$HOME` 算的，

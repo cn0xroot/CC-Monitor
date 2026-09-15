@@ -344,6 +344,8 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   rule declares `tools` (which tools it applies to), `field` (which key to read out of `tool_input` —
   e.g. `command`/`file_path`/`url`), a regex `pattern`, and a `risk`/`action`. The rule file is copied
   from `default_rules.json` into `~/.cc-monitor/rules.json` on first use, and can be edited from there.
+  Rules added to `default_rules.json` by later versions are merged into that file automatically by id
+  (a rule you edited or deleted is never touched; see `rules.defaults_snapshot.json`).
 - **System-layer eBPF probe**: `probe_linux.bt` attaches to kernel tracepoints like `execve`/`connect`.
   It first recognizes Claude Code's own process via `comm=="claude"`, then listens for
   `sched_process_fork` events to propagate a "being monitored" flag down through every descendant
@@ -537,7 +539,13 @@ sudo ./bin/CC-Monitor-probe
 | `NO_COLOR` | Forces color off when set (standard convention) |
 
 Events and rules live under `~/.cc-monitor/`: `events.db` (SQLite audit log) and `rules.json`
-(editable rules — edits apply immediately, no restart needed).
+(editable rules — edits apply immediately, no restart needed; new default rules from later
+versions are merged in automatically, tracked via `rules.defaults_snapshot.json`). Whenever the
+effective rule set changes, the next hook invocation re-evaluates every historical `PreToolUse`
+event against the new rules in a background process (only `risk`/`matched_rule` are rewritten,
+never the original allow/block decision), so the home-page stat cards catch up instead of carrying
+stale hits forever; `CC-Monitor rematch` previews that pass and `CC-Monitor rematch --apply` runs
+it by hand.
 
 **Rule format** (`rules.json` is an array of rules):
 
@@ -548,9 +556,18 @@ Events and rules live under `~/.cc-monitor/`: `events.db` (SQLite audit log) and
   "action": "block | confirm | log",
   "tools": ["Bash"],
   "field": "command | file_path | url",
-  "pattern": "regular expression"
+  "pattern": "regular expression",
+  "match": "search | segment"
 }
 ```
+
+- `match` (optional, default `search`): `search` runs the regex over the whole field value;
+  `segment` splits a Bash command into top-level sub-commands (quotes and heredoc bodies are not
+  split), strips `sudo`/`env`/`xargs`/`time` wrappers and executable path prefixes, and anchors the
+  regex at the start of each sub-command. Use it for "is this command actually being run" rules
+  (package installs, `sudo`); `search` stays for "does this text mention X anywhere" rules (paths,
+  redirections, download-piped-into-shell). `bash -c "..."` and `osascript ... do shell script "..."`
+  bodies are recursed into.
 
 - `block`: deny outright; Claude Code receives the denial reason.
 - `confirm`: prompts for confirmation in the terminal (waits for `y` on the tty) + a desktop
@@ -567,8 +584,10 @@ dumping the whole environment via `env`/`printenv`/`export -p`, `su`/`pkexec` pr
 (the same risk category as `sudo`), single-file non-recursive `chmod 777` (relative paths included,
 not just filesystem-rooted ones), and destructive direct database commands (`mysql`/`psql`/
 `redis-cli`/`mongo`/`sqlite3` followed by `DROP`/`DELETE`/`TRUNCATE`/`FLUSHALL`), reading shell
-history files or running a bare `history` command (which can surface plaintext credentials typed
-in the past), and reverse-shell/backdoor execution (covering `-e`/`-c` variants of
+history files by any means (`cat`/`grep`/`python -c open(...)`/the `Read` tool, covering
+`.zsh_history`, `.bash_history`, macOS Terminal's `.zsh_sessions/`, `$HISTFILE`, and Claude Code's
+own `~/.claude/history.jsonl`) or running a bare `history`/`fc -l` (which can surface plaintext
+credentials typed in the past), and reverse-shell/backdoor execution (covering `-e`/`-c` variants of
 `nc`/`ncat`/`netcat`, `socat exec:`, and a `mkfifo`-plus-named-pipe reverse shell), tampering with
 Claude Code's own config (`~/.claude/settings.json`/`.claude/hooks/`/`CLAUDE.md` — the
 config-layer counterpart to the anti-bypass rules above), Docker-socket-mount container escapes
@@ -725,6 +744,13 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
 > separately in [SECURITY.md](./SECURITY.en.md) — this section only lists concrete, code-level
 > known limitations.
 
+- **Only operations initiated by Claude Code are monitored; commands you type in your own
+  terminal are invisible.** Every application-layer event comes from Claude Code's hooks
+  (PreToolUse/PostToolUse and friends), so a `brew install`/`sudo port install` you run by hand
+  in a terminal, a command run with the `!` prefix inside the Claude Code prompt, or a command
+  Claude hands back to you because `sudo` needs a password never reaches the audit DB or the stat
+  cards. That is the product boundary, not a missed detection; to verify a rule, ask Claude Code
+  to run the command in the conversation.
 - **The Web UI process and the terminal(s) you normally run `claude` in must be the same OS
   user**, or each writes to its own separate `~/.cc-monitor/` database and neither can see the
   other's data (confirmation prompts and audit events from your terminal simply never appear on

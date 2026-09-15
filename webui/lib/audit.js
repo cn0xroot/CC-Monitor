@@ -508,18 +508,22 @@ function isScreenCaptureEvent(toolName, detailJson) {
 // 敏感操作统计——不像 SSH/下载/Docker 这些分类器那样从头识别命令文本，而是直接
 // 复用 policy.py 已经算好的 matched_rule：sensitive_file_read（Read 工具）、
 // sensitive_file_read_bash（cat/less/head 等 Bash 命令）、env_dump（env/printenv/
-// export -p）、history_read（读历史文件或裸 history）这四条规则本来就是"读取
+// export -p）、history_read（Bash 里以任何方式碰历史文件、裸 history/fc -l）、
+// history_file_read（Read/Grep 工具直接读历史文件）这五条规则本来就是"读取
 // 敏感信息"这个语义下的全部现有覆盖，没必要在 JS 这边另起一套重复的正则——两边
 // 一旦哪天改了其中一处正则容易不同步。sensitive_file_read/sensitive_file_read_bash
 // 命中时进一步按路径细分是不是 SSH 密钥（.ssh/、id_rsa、id_ed25519、known_hosts），
 // 不是的话（.env/.aws/credentials/.pem/.p12）归到"凭据/Token"；env_dump 单独是
-// "环境变量查找"；history_read 归到"其它敏感操作"。
+// "环境变量查找"；history_read/history_file_read 归到"其它敏感操作"。
+// 这组 id 同时出现在下面 sensitiveOpsBreakdown/sensitiveOpsEvents 的 SQL 里
+// （SENSITIVE_READ_RULES_SQL），加规则时两处一起改。
 const SENSITIVE_OP_ORDER = ["sshKey", "credential", "envVar", "other"];
 const SENSITIVE_SSH_KEY_RE = /\.ssh\/|id_rsa|id_ed25519|known_hosts/i;
-const SENSITIVE_READ_RULES = new Set(["sensitive_file_read", "sensitive_file_read_bash", "env_dump", "history_read"]);
+const SENSITIVE_READ_RULES = new Set(["sensitive_file_read", "sensitive_file_read_bash", "env_dump", "history_read", "history_file_read"]);
+const SENSITIVE_READ_RULES_SQL = [...SENSITIVE_READ_RULES].map((r) => `'${r}'`).join(", ");
 function classifySensitiveOp(matchedRule, text) {
   if (matchedRule === "env_dump") return "envVar";
-  if (matchedRule === "history_read") return "other";
+  if (matchedRule === "history_read" || matchedRule === "history_file_read") return "other";
   if (matchedRule === "sensitive_file_read" || matchedRule === "sensitive_file_read_bash") {
     return SENSITIVE_SSH_KEY_RE.test(text || "") ? "sshKey" : "credential";
   }
@@ -530,7 +534,9 @@ function sensitiveOpType(toolName, matchedRule, detailJson) {
   if (!SENSITIVE_READ_RULES.has(matchedRule)) return null;
   try {
     const detail = detailJson ? JSON.parse(detailJson) : {};
-    const text = toolName === "Read" ? detail.file_path || detail.path || "" : detail.command || "";
+    // Bash 看 command；Read 看 file_path；Grep 之类的用 path（跟 policy.py 的
+    // FIELD_CANDIDATES 保持一致）。
+    const text = toolName === "Bash" ? detail.command || "" : detail.file_path || detail.path || "";
     return classifySensitiveOp(matchedRule, text);
   } catch (e) {
     return null;
@@ -841,15 +847,15 @@ function procbgOpsEvents(limit = 300) {
 
 // 敏感操作统计（SSH 密钥/凭据、Token、环境变量查找、其它敏感读取）——跟上面几组
 // 不一样，不是按 tool_name='Bash' 过滤后再看单个 detail 字段分类，而是直接按
-// 已经命中的 matched_rule 筛出 sensitive_file_read/sensitive_file_read_bash/
-// env_dump/history_read 这四条规则的事件（横跨 Read 和 Bash 两种工具），所以没法
+// 已经命中的 matched_rule 筛出 SENSITIVE_READ_RULES 那几条规则的事件（横跨
+// Read/Grep 和 Bash 几种工具），所以没法
 // 复用上面的通用 opsBreakdown()/opsEvents()，单独写。
 function sensitiveOpsBreakdown() {
   return withDb((db) => {
     return db
       .prepare(
         `SELECT cc_sensitive_op(tool_name, matched_rule, detail) AS kind, COUNT(*) AS n FROM events
-         WHERE source = 'hook_pre' AND matched_rule IN ('sensitive_file_read', 'sensitive_file_read_bash', 'env_dump', 'history_read')
+         WHERE source = 'hook_pre' AND matched_rule IN (${SENSITIVE_READ_RULES_SQL})
          GROUP BY kind ORDER BY n DESC`
       )
       .all();
@@ -861,7 +867,7 @@ function sensitiveOpsEvents(limit = 300) {
     return db
       .prepare(
         `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_sensitive_op(tool_name, matched_rule, detail) AS kind FROM events
-         WHERE source = 'hook_pre' AND matched_rule IN ('sensitive_file_read', 'sensitive_file_read_bash', 'env_dump', 'history_read')
+         WHERE source = 'hook_pre' AND matched_rule IN (${SENSITIVE_READ_RULES_SQL})
          ORDER BY id DESC LIMIT ?`
       )
       .all(limit);
