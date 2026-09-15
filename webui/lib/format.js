@@ -16,11 +16,19 @@ const TOOL_LABELS = {
   Task: "启动子代理",
   Agent: "启动子代理",
   TodoWrite: "更新任务列表",
+  UserPromptSubmit: "用户提交提示词",
+  SessionStart: "会话开始",
+  SessionEnd: "会话结束",
+  PreCompact: "上下文压缩前",
+  Stop: "主任务结束",
+  SubagentStop: "子代理结束",
 };
 
 const STAGE_LABELS = {
   hook_pre: "准备执行",
   hook_post: "执行完成",
+  hook_prompt: "用户输入",
+  hook_lifecycle: "生命周期",
   os_exec: "内核观测",
   os_net: "内核观测",
 };
@@ -175,6 +183,15 @@ function describe(toolName, source, detail) {
     summaryHtml = escapeHtml(toolInput.query || "");
   } else if (toolName === "Task" || toolName === "Agent") {
     summaryHtml = escapeHtml(collapse(toolInput.description || toolInput.prompt || ""));
+  } else if (toolName === "UserPromptSubmit") {
+    summaryHtml = escapeHtml(collapse(toolInput.prompt || ""));
+  } else if (toolName === "SessionStart" || toolName === "SessionEnd" || toolName === "PreCompact") {
+    summaryHtml = escapeHtml(toolInput.source || toolInput.reason || toolInput.trigger || "-");
+    if (toolName === "PreCompact" && toolInput.custom_instructions) {
+      extra.push({ cls: null, label: "自定义压缩指令", html: escapeHtml(collapse(toolInput.custom_instructions)) });
+    }
+  } else if (toolName === "Stop" || toolName === "SubagentStop") {
+    summaryHtml = escapeHtml(`stop_hook_active: ${!!toolInput.stop_hook_active}`);
   } else {
     for (const [k, v] of Object.entries(toolInput)) {
       if (v) {

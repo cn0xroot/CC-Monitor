@@ -429,6 +429,8 @@ const I18N = {
 
     "source.hook_pre": "应用层 · 执行前",
     "source.hook_post": "应用层 · 执行后",
+    "source.hook_prompt": "应用层 · 用户输入",
+    "source.hook_lifecycle": "应用层 · 生命周期",
     "source.os_exec": "系统层 · 进程",
     "source.os_net": "系统层 · 网络",
 
@@ -456,9 +458,16 @@ const I18N = {
     "tool.Task": "启动子代理",
     "tool.Agent": "启动子代理",
     "tool.TodoWrite": "更新任务列表",
+    "tool.UserPromptSubmit": "用户提交提示词",
+    "tool.SessionStart": "会话开始",
+    "tool.SessionEnd": "会话结束",
+    "tool.PreCompact": "上下文压缩前",
+    "tool.Stop": "主任务结束",
+    "tool.SubagentStop": "子代理结束",
 
     "extra.result": "结果",
     "extra.output": "输出",
+    "extra.compactInstructions": "自定义压缩指令",
 
     "theme.brand": "标准配色",
     "theme.dark": "深色",
@@ -897,6 +906,8 @@ const I18N = {
 
     "source.hook_pre": "App layer · pre",
     "source.hook_post": "App layer · post",
+    "source.hook_prompt": "App layer · user prompt",
+    "source.hook_lifecycle": "App layer · lifecycle",
     "source.os_exec": "Kernel layer · process",
     "source.os_net": "Kernel layer · network",
 
@@ -924,9 +935,16 @@ const I18N = {
     "tool.Task": "Spawn subagent",
     "tool.Agent": "Spawn subagent",
     "tool.TodoWrite": "Update todo list",
+    "tool.UserPromptSubmit": "User prompt submitted",
+    "tool.SessionStart": "Session start",
+    "tool.SessionEnd": "Session end",
+    "tool.PreCompact": "Before context compaction",
+    "tool.Stop": "Main task finished",
+    "tool.SubagentStop": "Subagent finished",
 
     "extra.result": "Result",
     "extra.output": "Output",
+    "extra.compactInstructions": "Custom compact instructions",
 
     "theme.brand": "Brand",
     "theme.dark": "Dark",

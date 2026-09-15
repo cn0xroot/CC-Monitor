@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""将 CC-Monitor 的 PreToolUse/PostToolUse/PermissionRequest hooks 安装到 Claude Code 的 settings.json。
+"""将 CC-Monitor 的 hooks 安装到 Claude Code 的 settings.json：PreToolUse/PostToolUse/
+PermissionRequest（工具调用的判定/审批）+ UserPromptSubmit/SessionStart/SessionEnd/
+PreCompact/Stop/SubagentStop（会话生命周期，纯审计留痕，不参与拦截）。
 
 用法:
     python3 install.py                     # 安装到全局 ~/.claude/settings.json
@@ -17,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 HOOK_BIN = REPO_ROOT / "bin" / "CC-Monitor-hook"
 
 
-def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None):
+def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None, extra_hooks=None):
     hooks = settings.setdefault("hooks", {})
 
     def add(event_name, command):
@@ -35,6 +37,12 @@ def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None)
     # "AI 审批台"（老版本装的配置里没有这一条，重跑 install 会补上，已有的两条不动）。
     if hook_cmd_permission:
         add("PermissionRequest", hook_cmd_permission)
+    # UserPromptSubmit/SessionStart/SessionEnd/PreCompact/Stop/SubagentStop：会话生命周期
+    # hook，纯审计留痕（见 cc_monitor/hook.py 里对应 handler 的注释），不参与 confirm/block。
+    # 老版本装的配置里没有这几条，重跑 install 会补上，已有的条目不动——跟上面
+    # PermissionRequest 的补丁逻辑是同一个道理。
+    for event_name, command in (extra_hooks or {}).items():
+        add(event_name, command)
     return settings
 
 
@@ -108,7 +116,15 @@ def main():
     hook_cmd_pre = '"{}" pre'.format(HOOK_BIN)
     hook_cmd_post = '"{}" post'.format(HOOK_BIN)
     hook_cmd_permission = '"{}" permission'.format(HOOK_BIN)
-    settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission)
+    extra_hooks = {
+        "UserPromptSubmit": '"{}" prompt'.format(HOOK_BIN),
+        "SessionStart": '"{}" session_start'.format(HOOK_BIN),
+        "SessionEnd": '"{}" session_end'.format(HOOK_BIN),
+        "PreCompact": '"{}" precompact'.format(HOOK_BIN),
+        "Stop": '"{}" stop'.format(HOOK_BIN),
+        "SubagentStop": '"{}" subagent_stop'.format(HOOK_BIN),
+    }
+    settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission, extra_hooks)
     statusline_configured = False if args.skip_statusline else configure_statusline(settings)
 
     target.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

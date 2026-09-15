@@ -20,11 +20,19 @@ TOOL_LABELS = {
     "Task": "启动子代理",
     "Agent": "启动子代理",
     "TodoWrite": "更新任务列表",
+    "UserPromptSubmit": "用户提交提示词",
+    "SessionStart": "会话开始",
+    "SessionEnd": "会话结束",
+    "PreCompact": "上下文压缩前",
+    "Stop": "主任务结束",
+    "SubagentStop": "子代理结束",
 }
 
 STAGE_LABELS = {
     "hook_pre": "准备执行",
     "hook_post": "执行完成",
+    "hook_prompt": "用户输入",
+    "hook_lifecycle": "生命周期",
     "os_exec": "内核观测",
     "os_net": "内核观测",
 }
@@ -209,6 +217,17 @@ def describe(tool_name, source, detail):
     elif tool_name in ("Task", "Agent"):
         summary = tool_input.get("description") or tool_input.get("prompt", "")
         summary = _collapse(summary)
+
+    elif tool_name == "UserPromptSubmit":
+        summary = _collapse(tool_input.get("prompt", ""))
+
+    elif tool_name in ("SessionStart", "SessionEnd", "PreCompact"):
+        summary = tool_input.get("source") or tool_input.get("reason") or tool_input.get("trigger") or "-"
+        if tool_name == "PreCompact" and tool_input.get("custom_instructions"):
+            extra.append("自定义压缩指令: {}".format(_collapse(tool_input["custom_instructions"])))
+
+    elif tool_name in ("Stop", "SubagentStop"):
+        summary = "stop_hook_active: {}".format("true" if tool_input.get("stop_hook_active") else "false")
 
     else:
         for key, value in tool_input.items():

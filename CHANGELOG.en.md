@@ -64,6 +64,61 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   how the existing `command`/`file_path`/`url` fields resolve. `node --test` still passes 5/5.
   As with prior rule additions, an existing user's `~/.cc-monitor/rules.json` won't auto-update
   to pick these up.
+- **Implemented the 5 rule ideas named in the [slowmist-agent-security](https://github.com/evilcos/slowmist-agent-security)
+  acknowledgment**: `credential_grep_scan` (recursive `grep -r`/`rg -r` searches for
+  password/secret/api_key/token-style keywords, `medium`/`confirm`); `npx_pipx_ephemeral_run`
+  (`npx`/`pnpm dlx`/`bunx`/`pipx run`/`uvx` — one-shot execution of a remote package without a
+  local install footprint, `medium`/`confirm`); `proc_env_read` (reading another process's
+  `/proc/<pid>/environ`/`cmdline` — a classic cross-process credential-theft technique,
+  `high`/`confirm`); `browser_credential_read` + `browser_credential_read_bash` (Chrome/
+  Chromium/Brave/Edge/Firefox `Cookies`/`Login Data`/`cookies.sqlite`/`logins.json`/`key4.db`
+  files, covering both the Read tool and Bash command-line access paths, `high`/`confirm`);
+  `dynamic_exec_in_write` (`eval(`/`exec(`/`os.system(`/`subprocess.*shell=True`/
+  `new Function(`/`child_process.exec(` appearing in written content — common in planted
+  backdoors, but also extremely common in ordinary code, so deliberately kept at
+  `medium`/`log` to avoid interrupting normal coding).
+- **Added encoded-payload execution detection**: `encoded_payload_exec` (`base64 -d`/
+  `xxd -r -p` decoding piped into `sh`/`bash`/`zsh`/`python3` — the most common bypass variant
+  of `curl_pipe_shell`, same "fetch/construct something and hand it straight to an interpreter"
+  pattern, just obfuscated past the literal `curl`/`wget` text match; `high`/`block`, treated
+  the same as `curl_pipe_shell`).
+- **Added SSH tunnel / reverse-proxy detection**: `ssh_tunnel_reverse_proxy` (`ssh -R`/`-D`/
+  `-L` tunnels, `socat`, `chisel client`/`server`; `medium`/`confirm` — plenty of legitimate
+  uses like reaching an internal database, so not a `block`). Inserted right after
+  `reverse_shell_pattern`; the more specific existing socat reverse-shell pattern still wins
+  evaluation order when both could match.
+- **Extended `claude_config_tamper` to cover MCP/Skills config too**: previously only matched
+  `.claude/settings*.json`/`.claude/hooks/`/`CLAUDE.md`; now also covers project-level
+  `.mcp.json` and the `.claude/skills/` directory — planting a malicious MCP server config or
+  a malicious skill definition is a more subtle persistence backdoor than editing hooks, and is
+  exactly the attack surface the slowmist checklist is focused on.
+  Together this is 8 new rules (`default_rules.json` grows from 49 to 57) plus one patch to an
+  existing rule, verified with 18 positive/negative test cases against the real
+  `policy.evaluate()`. As always, an existing user's `~/.cc-monitor/rules.json` won't
+  auto-update — resync manually to pick these up.
+- **Wired up 6 session-lifecycle hooks**: `UserPromptSubmit`/`SessionStart`/`SessionEnd`/
+  `PreCompact`/`Stop`/`SubagentStop` — previously only `PreToolUse`/`PostToolUse`/
+  `PermissionRequest` were wired, so a purely conversational turn that never called a tool left
+  zero audit trail. All 6 new hooks are **pure audit trail, never confirm/block** (lifecycle
+  events have no "allow/deny" semantics): `UserPromptSubmit` records the user's raw input (the
+  only hook that can show what the user actually asked Claude to do); `SessionStart`/
+  `SessionEnd` record how a session started (`startup`/`resume`/`clear`/`compact`) and why it
+  ended; `PreCompact` records a marker right before a long session gets compacted (so audit
+  detail doesn't silently vanish with the compaction); `Stop`/`SubagentStop` record when the
+  main task or a subagent finishes. `cc_monitor/hook.py` gained 6 corresponding `handle_*`
+  functions, and `bin/CC-Monitor-hook <mode>` gained `prompt`/`session_start`/`session_end`/
+  `precompact`/`stop`/`subagent_stop` modes; `install.py`'s `merge_hooks()` now takes an
+  `extra_hooks` dict to register them in bulk — existing users just need to rerun
+  `install.py`/`install.sh` to pick these up (the already-installed `PreToolUse`/
+  `PostToolUse`/`PermissionRequest` entries are left untouched). Events land under
+  `source="hook_prompt"` (`UserPromptSubmit`) and `source="hook_lifecycle"` (the other 5);
+  `cc_monitor/format.py` and `webui/lib/format.js` got matching `TOOL_LABELS`/`STAGE_LABELS`/
+  `describe()` branches, and `i18n.js` got the matching bilingual labels — the home page's
+  "event type breakdown", the Log page, and terminal `CC-Monitor tail` all show these new
+  events out of the box, no further UI wiring needed (they reuse the `events` table's existing
+  generic source/tool_name/detail shape). Verified end-to-end against an isolated
+  `CC_MONITOR_HOME` test directory (stdin → SQLite for all 6 hooks), and confirmed the Python
+  and JS `describe()` implementations produce identical output.
 
 ## [1.6.0] - 2026-09-14
 

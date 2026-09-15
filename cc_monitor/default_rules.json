@@ -32,6 +32,22 @@
     "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*e[a-zA-Z]*\\s+/bin/(ba)?sh\\b|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*c[a-zA-Z]*\\s+(/bin/)?(ba)?sh\\b|\\bsocat\\b[^\\n]*exec:['\"]?/?(bin/)?(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)|\\bmkfifo\\b[^\\n]*\\b(nc|ncat|netcat)\\b[^\\n]*\\|\\s*(/bin/)?(ba)?sh\\b"
   },
   {
+    "id": "encoded_payload_exec",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(base64\\s+(-d|--decode)|xxd\\s+-r\\s+-p?)\\b[^|;\\n]*\\|\\s*(sudo\\s+)?(sh|bash|zsh|python3?)\\b"
+  },
+  {
+    "id": "ssh_tunnel_reverse_proxy",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bssh\\b[^\\n]*\\s-[a-zA-Z]*[RDL][a-zA-Z]*\\b|\\bsocat\\b|\\bchisel\\b\\s+(client|server)\\b"
+  },
+  {
     "id": "chmod_world_writable_recursive",
     "risk": "high",
     "action": "block",
@@ -293,7 +309,7 @@
     "action": "confirm",
     "tools": ["Write", "Edit", "NotebookEdit"],
     "field": "file_path",
-    "pattern": "(^|/)\\.claude/settings(\\.local)?\\.json$|(^|/)\\.claude/hooks/|(^|/)CLAUDE\\.md$"
+    "pattern": "(^|/)\\.claude/settings(\\.local)?\\.json$|(^|/)\\.claude/hooks/|(^|/)CLAUDE\\.md$|(^|/)\\.mcp\\.json$|(^|/)\\.claude/skills/"
   },
   {
     "id": "git_hooks_file_write",
@@ -320,6 +336,14 @@
     "pattern": "\\b[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b|\\b1[3-9]\\d{9}\\b|\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
   },
   {
+    "id": "dynamic_exec_in_write",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "\\beval\\s*\\(|\\bexec\\s*\\(|\\bos\\.system\\s*\\(|\\bsubprocess\\.(Popen|call|run)\\s*\\([^)]*shell\\s*=\\s*True|\\bnew Function\\s*\\(|\\bchild_process\\.exec\\s*\\("
+  },
+  {
     "id": "cloud_vpn_config_write",
     "risk": "high",
     "action": "confirm",
@@ -344,12 +368,52 @@
     "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$)"
   },
   {
+    "id": "browser_credential_read",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Read"],
+    "field": "file_path",
+    "pattern": "(^|/)(Cookies|Login Data|Web Data)$|(^|/)(cookies\\.sqlite|logins\\.json|key4\\.db)$|(Chrome|Chromium|BraveSoftware|Microsoft.Edge|Vivaldi|Opera.Software)[/\\\\].*[/\\\\](Cookies|Login Data)$"
+  },
+  {
     "id": "sensitive_file_read_bash",
     "risk": "medium",
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
     "pattern": "\\b(cat|less|more|head|tail|strings|xxd|hexdump|od)\\s+[^\\n|;&]*(\\.ssh/|\\.aws/credentials|\\.env\\b|id_rsa|id_ed25519|\\.pem\\b|\\.p12\\b)"
+  },
+  {
+    "id": "browser_credential_read_bash",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\b(cat|cp|sqlite3|strings|xxd|hexdump|od)\\s+[^\\n|;&]*(Cookies|Login Data|Web Data|cookies\\.sqlite|logins\\.json|key4\\.db)\\b"
+  },
+  {
+    "id": "credential_grep_scan",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(?=.*\\b(grep|rg|ag|ack)\\b)(?=.*(-[a-zA-Z]*[rR][a-zA-Z]*\\b|--recursive\\b))(?=.*\\b(password|passwd|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key|credential|token)\\b)"
+  },
+  {
+    "id": "npx_pipx_ephemeral_run",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bnpx\\s|\\bpnpm\\s+dlx\\s|\\bbunx\\s|\\bpipx\\s+run\\b|\\buvx\\b"
+  },
+  {
+    "id": "proc_env_read",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "/proc/(\\d+|\\$\\w+|\\$\\{[^}]+\\})/(environ|cmdline)\\b"
   },
   {
     "id": "env_dump",

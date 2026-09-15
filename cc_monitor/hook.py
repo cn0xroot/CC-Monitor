@@ -192,6 +192,106 @@ def handle_permission(data):
     sys.exit(0)
 
 
+# 下面这几个是 Claude Code 的会话生命周期 hook：跟 PreToolUse/PostToolUse（只在"调用
+# 某个工具"时触发）不一样，这些事件不管这一轮有没有调用工具都会触发——纯审计留痕，
+# 不判定、不拦截、不弹确认框（生命周期事件不是"允许/拒绝"语义，没有 action 概念）。
+# 只在 state=="stopped"（完全停止审计）时才不介入，跟 handle_post 是同一个尺度：
+# 暂停(paused) 状态下依然照常记录，只是 handle_pre 那边的 confirm/block 不会真的拦。
+
+
+def handle_user_prompt_submit(data):
+    """用户往对话框里敲回车提交的原始输入——这是唯一能看到"用户到底让 Claude 干了
+    什么"的钩子。之前的审计日志全是工具调用层面的记录，纯聊天、没有触发任何工具调用
+    的那些轮次完全没有留痕。这里只负责记录，不做规则匹配/拦截——用户对自己终端里
+    打的字，没有"允许/拒绝"这回事。
+    """
+    if audit_state.get_state() == "stopped":
+        sys.exit(0)
+    storage.log_event(
+        session_id=data.get("session_id", ""),
+        source="hook_prompt",
+        tool_name="UserPromptSubmit",
+        detail={"prompt": data.get("prompt", "")},
+        cwd=data.get("cwd", ""),
+        risk="info",
+        matched_rule=None,
+        decision="submitted",
+        transcript_path=data.get("transcript_path"),
+    )
+    sys.exit(0)
+
+
+def handle_session_start(data):
+    if audit_state.get_state() == "stopped":
+        sys.exit(0)
+    storage.log_event(
+        session_id=data.get("session_id", ""),
+        source="hook_lifecycle",
+        tool_name="SessionStart",
+        detail={"source": data.get("source", "")},
+        cwd=data.get("cwd", ""),
+        risk="info",
+        matched_rule=None,
+        decision="observed",
+        transcript_path=data.get("transcript_path"),
+    )
+    sys.exit(0)
+
+
+def handle_session_end(data):
+    if audit_state.get_state() == "stopped":
+        sys.exit(0)
+    storage.log_event(
+        session_id=data.get("session_id", ""),
+        source="hook_lifecycle",
+        tool_name="SessionEnd",
+        detail={"reason": data.get("reason", "")},
+        cwd=data.get("cwd", ""),
+        risk="info",
+        matched_rule=None,
+        decision="observed",
+        transcript_path=data.get("transcript_path"),
+    )
+    sys.exit(0)
+
+
+def handle_pre_compact(data):
+    if audit_state.get_state() == "stopped":
+        sys.exit(0)
+    storage.log_event(
+        session_id=data.get("session_id", ""),
+        source="hook_lifecycle",
+        tool_name="PreCompact",
+        detail={
+            "trigger": data.get("trigger", ""),
+            "custom_instructions": data.get("custom_instructions", ""),
+        },
+        cwd=data.get("cwd", ""),
+        risk="info",
+        matched_rule=None,
+        decision="observed",
+        transcript_path=data.get("transcript_path"),
+    )
+    sys.exit(0)
+
+
+def handle_stop(data, subagent=False):
+    if audit_state.get_state() == "stopped":
+        sys.exit(0)
+    storage.log_event(
+        session_id=data.get("session_id", ""),
+        source="hook_lifecycle",
+        tool_name="SubagentStop" if subagent else "Stop",
+        detail={"stop_hook_active": data.get("stop_hook_active", False)},
+        cwd=data.get("cwd", ""),
+        risk="info",
+        matched_rule=None,
+        decision="observed",
+        transcript_path=data.get("transcript_path"),
+    )
+    sys.exit(0)
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "pre"
     try:
@@ -202,6 +302,18 @@ def main():
             handle_post(data)
         elif mode == "permission":
             handle_permission(data)
+        elif mode == "prompt":
+            handle_user_prompt_submit(data)
+        elif mode == "session_start":
+            handle_session_start(data)
+        elif mode == "session_end":
+            handle_session_end(data)
+        elif mode == "precompact":
+            handle_pre_compact(data)
+        elif mode == "stop":
+            handle_stop(data)
+        elif mode == "subagent_stop":
+            handle_stop(data, subagent=True)
         else:
             sys.exit(0)
     except SystemExit:

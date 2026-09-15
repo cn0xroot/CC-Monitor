@@ -58,6 +58,57 @@
   影响 `command`/`file_path`/`url` 这些既有字段的解析，`node --test` 5/5 全部
   通过。已有用户的 `~/.cc-monitor/rules.json` 不会自动更新，想要这些新规则生效
   需要手动同步。
+- **落地 [slowmist-agent-security](https://github.com/evilcos/slowmist-agent-security)
+  致谢里提到的 5 条规则思路**：`credential_grep_scan`（`grep -r`/`rg -r` 之类递归
+  搜索 password/secret/api_key/token 等凭据关键字，`medium`/`confirm`）、
+  `npx_pipx_ephemeral_run`（`npx`/`pnpm dlx`/`bunx`/`pipx run`/`uvx` 这类跳过本地
+  安装痕迹直接执行远程包的一次性执行，`medium`/`confirm`）、`proc_env_read`（读取
+  其它进程的 `/proc/<pid>/environ`/`cmdline`，跨进程偷凭据的经典手法，`high`/
+  `confirm`）、`browser_credential_read` + `browser_credential_read_bash`（Chrome/
+  Chromium/Brave/Edge/Firefox 的 `Cookies`/`Login Data`/`cookies.sqlite`/
+  `logins.json`/`key4.db` 等登录态文件，分别覆盖 Read 工具和 Bash 命令行两种访问
+  方式，`high`/`confirm`）、`dynamic_exec_in_write`（写入内容里出现 `eval(`/
+  `exec(`/`os.system(`/`subprocess.*shell=True`/`new Function(`/
+  `child_process.exec(` 这类动态执行代码，常见于植入后门，但正常代码里也很常见，
+  故意压低到 `medium`/`log` 不打扰正常写代码）。
+- **新增编码混淆执行检测**：`encoded_payload_exec`（`base64 -d`/`xxd -r -p` 解码后
+  管道给 `sh`/`bash`/`zsh`/`python3`，是 `curl_pipe_shell` 最常见的绕过变体——同样
+  是"下载/构造一段东西直接丢给解释器执行"，只是用编码绕开了对 `curl|wget` 关键字
+  的文本匹配，`high`/`block`，跟 `curl_pipe_shell` 同等对待）。
+- **新增 SSH 隧道/反向代理检测**：`ssh_tunnel_reverse_proxy`（`ssh -R`/`-D`/`-L`
+  建隧道、`socat`、`chisel client`/`server`，`medium`/`confirm`——很多合法用途
+  比如连内网数据库，所以没有做成 `block`）。插在 `reverse_shell_pattern` 之后，
+  跟已有更严格的 socat 反弹 shell 特征是同一个"隐蔽出网通道"主题，评估顺序上
+  `reverse_shell_pattern` 更精确的匹配优先命中。
+- **`claude_config_tamper` 扩大覆盖面到 MCP/Skills 配置**：原来只认
+  `.claude/settings*.json`/`.claude/hooks/`/`CLAUDE.md`，现在加上项目级
+  `.mcp.json` 和 `.claude/skills/` 目录——写入一个恶意 MCP server 配置或恶意
+  skill 定义，是比改 hooks 更隐蔽的持久化后门手法，也正是 slowmist 清单聚焦的
+  攻击面。
+  以上共新增 8 条规则（`default_rules.json` 从 49 条增至 57 条）+ 1 条既有规则的
+  patch，用真实 `policy.evaluate()` 跑了 18 个正负测试用例全部通过验证。已有
+  用户的 `~/.cc-monitor/rules.json` 不会自动更新，需要手动同步。
+- **接入 6 个会话生命周期 hook**：`UserPromptSubmit`/`SessionStart`/`SessionEnd`/
+  `PreCompact`/`Stop`/`SubagentStop`——之前只接了 `PreToolUse`/`PostToolUse`/
+  `PermissionRequest`，纯对话、没有触发任何工具调用的轮次完全没有审计留痕。
+  这 6 个新 hook 全部是**纯审计留痕**，不参与 confirm/block（生命周期事件没有
+  "允许/拒绝"语义）：`UserPromptSubmit` 记录用户原始输入（唯一能看到"用户到底
+  让 Claude 干了什么"的钩子）；`SessionStart`/`SessionEnd` 记录会话的开始来源
+  （`startup`/`resume`/`clear`/`compact`）和结束原因；`PreCompact` 在长会话被
+  压缩前记一笔（避免审计细节随上下文压缩丢失）；`Stop`/`SubagentStop` 记录主
+  任务/子代理的结束。`cc_monitor/hook.py` 新增对应 6 个 `handle_*` 函数，
+  `bin/CC-Monitor-hook <mode>` 新增 `prompt`/`session_start`/`session_end`/
+  `precompact`/`stop`/`subagent_stop` 六种 mode；`install.py` 的 `merge_hooks()`
+  改成用 `extra_hooks` 字典批量注册，新老用户重跑一遍 `install.py`/`install.sh`
+  就会补上这几条（已装的 `PreToolUse`/`PostToolUse`/`PermissionRequest` 不动）。
+  事件分别落到 `source="hook_prompt"`（`UserPromptSubmit`）和
+  `source="hook_lifecycle"`（其余 5 个），`cc_monitor/format.py` 和
+  `webui/lib/format.js` 同步加了对应的 `TOOL_LABELS`/`STAGE_LABELS`/`describe()`
+  分支，Web UI 的 `i18n.js` 也补了中英文标签——首页"日志类型分布"、Log 审计页、
+  终端 `CC-Monitor tail` 都能直接看到这些新事件，不需要额外改 UI 代码（沿用
+  `events` 表已有的通用 source/tool_name/detail 结构）。用独立 `CC_MONITOR_HOME`
+  测试目录端到端验证过 6 个 hook 的 stdin→SQLite 落库全过程，以及 Python/JS 两份
+  `describe()` 输出完全一致。
 
 ## [1.6.0] - 2026-09-14
 

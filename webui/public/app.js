@@ -15,6 +15,7 @@ const DECISION_COLOR = { blocked: "var(--red)", allowed: "var(--green)", complet
 const KNOWN_TOOLS = new Set([
   "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",
   "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite",
+  "UserPromptSubmit", "SessionStart", "SessionEnd", "PreCompact", "Stop", "SubagentStop",
 ]);
 
 function decisionLabel(decision) {
@@ -34,7 +35,7 @@ function stageLabel2(source) {
 function toolLabel(toolName, serverLabel) {
   return KNOWN_TOOLS.has(toolName) ? t("tool." + toolName) : serverLabel;
 }
-const EXTRA_LABEL_MAP = { 结果: "extra.result", 输出: "extra.output" };
+const EXTRA_LABEL_MAP = { 结果: "extra.result", 输出: "extra.output", 自定义压缩指令: "extra.compactInstructions" };
 function translateExtraLabel(label) {
   return EXTRA_LABEL_MAP[label] ? t(EXTRA_LABEL_MAP[label]) : label;
 }
