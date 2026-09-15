@@ -40,12 +40,52 @@
     "pattern": "\\b(base64\\s+(-d|--decode)|xxd\\s+-r\\s+-p?)\\b[^|;\\n]*\\|\\s*(sudo\\s+)?(sh|bash|zsh|python3?)\\b"
   },
   {
+    "id": "curl_download_then_exec",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "(?=.*\\b(curl|wget2?)\\b[^\\n]*(-o\\b|-O\\b|--output\\b|--remote-name\\b))(?=.*\\.(sh|py|pl|rb)\\b)(?=.*\\b(bash|sh|zsh|python3?|perl|ruby|chmod\\s+\\+x|\\./)\\b)"
+  },
+  {
     "id": "ssh_tunnel_reverse_proxy",
     "risk": "medium",
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
     "pattern": "\\bssh\\b[^\\n]*\\s-[a-zA-Z]*[RDL][a-zA-Z]*\\b|\\bsocat\\b|\\bchisel\\b\\s+(client|server)\\b"
+  },
+  {
+    "id": "covert_tunnel_tool_execution",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bdnscat2?\\b|\\biodine\\b|\\bdns2tcp\\b|\\bptunnel\\b|\\bicmptunnel\\b|\\bhans\\s+-[cs]\\b|\\bpingtunnel\\b"
+  },
+  {
+    "id": "crypto_miner_pool_domain_command",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bstratum\\+(tcp|ssl|tcps)://|\\b(pool\\.minergate\\.com|pool\\.minexmr\\.com|opmoner\\.com|crypto-pool\\.fr|backup-pool\\.com|monerohash\\.com|poolto\\.be|xminingpool\\.com|prohash\\.net|dwarfpool\\.com|crypto-pools\\.org|monero\\.net|hashinvest\\.net|moneropool\\.com|xmrpool\\.eu|ppxxmr\\.com|alimabi\\.cn|aeon-pool\\.com)\\b"
+  },
+  {
+    "id": "c2_framework_execution",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bmsfconsole\\b|\\bmsfvenom\\b|\\bmsfdb\\b|\\bcobaltstrike\\b|\\bteamserver\\b|\\bpowershell.?empire\\b|\\bsliver-(client|server)\\b|\\bhavoc\\b|\\bmimikatz\\b|\\bimpacket-[a-zA-Z]+\\b|\\bcrackmapexec\\b|\\bresponder\\.py\\b"
+  },
+  {
+    "id": "pentest_recon_tool_execution",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bnmap\\b|\\bmasscan\\b|\\bsqlmap\\b|\\bhydra\\b|\\bnikto\\b|\\b(gobuster|dirbuster|dirb)\\b|\\bwpscan\\b|\\bhashcat\\b|\\bjohn\\s+(--wordlist|--format|--rules)\\b"
   },
   {
     "id": "chmod_world_writable_recursive",
@@ -296,6 +336,14 @@
     "pattern": "\\b(mysql|psql|redis-cli|mongo|mongosh|sqlite3)\\b[^\\n|;&]*\\b(DROP|DELETE|TRUNCATE|FLUSHALL|FLUSHDB)\\b"
   },
   {
+    "id": "db_arbitrary_file_write",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bgeneral_log_file\\s*=\\s*['\"]?/|\\bSET\\s+(GLOBAL\\s+)?general_log\\s*=\\s*['\"]?ON\\b"
+  },
+  {
     "id": "docker_privileged_or_host_mount",
     "risk": "high",
     "action": "confirm",
@@ -352,12 +400,36 @@
     "pattern": "\\b[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b|\\b1[3-9]\\d{9}\\b|\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
   },
   {
+    "id": "webshell_pattern_in_write",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "eval\\s*\\(\\s*\\$_(POST|GET|REQUEST|COOKIE)\\s*\\[|assert\\s*\\(\\s*\\$_(POST|GET|REQUEST|COOKIE)\\s*\\[|system\\s*\\(\\s*\\$_(POST|GET|REQUEST)\\s*\\[|eval\\s+request\\s*\\(|Runtime\\.getRuntime\\(\\)\\.exec\\s*\\(\\s*request\\.getParameter"
+  },
+  {
     "id": "dynamic_exec_in_write",
     "risk": "medium",
     "action": "log",
     "tools": ["Write", "Edit", "NotebookEdit"],
     "field": "content",
     "pattern": "\\beval\\s*\\(|\\bexec\\s*\\(|\\bos\\.system\\s*\\(|\\bsubprocess\\.(Popen|call|run)\\s*\\([^)]*shell\\s*=\\s*True|\\bnew Function\\s*\\(|\\bchild_process\\.exec\\s*\\("
+  },
+  {
+    "id": "db_arbitrary_file_write_content",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bgeneral_log_file\\s*=\\s*['\"]?/|\\bSET\\s+(GLOBAL\\s+)?general_log\\s*=\\s*['\"]?ON\\b"
+  },
+  {
+    "id": "crypto_miner_pool_domain_write",
+    "risk": "medium",
+    "action": "confirm",
+    "tools": ["Write", "Edit", "NotebookEdit"],
+    "field": "content",
+    "pattern": "\\bstratum\\+(tcp|ssl|tcps)://|\\b(pool\\.minergate\\.com|pool\\.minexmr\\.com|opmoner\\.com|crypto-pool\\.fr|backup-pool\\.com|monerohash\\.com|poolto\\.be|xminingpool\\.com|prohash\\.net|dwarfpool\\.com|crypto-pools\\.org|monero\\.net|hashinvest\\.net|moneropool\\.com|xmrpool\\.eu|ppxxmr\\.com|alimabi\\.cn|aeon-pool\\.com)\\b"
   },
   {
     "id": "cloud_vpn_config_write",

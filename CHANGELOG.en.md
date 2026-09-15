@@ -5,6 +5,49 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.7.2] - 2026-09-14
+
+### Added
+- **9 new rules inspired by the category breakdown of [suricata-rules](https://github.com/al0ne/suricata-rules)**:
+  a network-layer Suricata IDS ruleset — a different detection layer from CC-Monitor entirely
+  (packet content vs. Claude Code's own tool calls), so its rule text itself isn't portable, but
+  its directory structure surfaced several attack-technique classes CC-Monitor had zero coverage
+  for:
+  - `crypto_miner_pool_domain_command`/`_write` (`medium`/`confirm`): a known cryptocurrency
+    mining-pool domain (`pool.minexmr.com`/`monerohash.com`/`xmrpool.eu`, etc. — pulled from that
+    repo's `Crypto_miner_pool` directory) or a `stratum://` URI appearing in a command or written
+    content.
+  - `db_arbitrary_file_write` (`high`/`confirm`, `tools: ["Bash"]`) +
+    `db_arbitrary_file_write_content` (`medium`/`confirm`, `tools: ["Write","Edit",
+    "NotebookEdit"]`): MySQL/MariaDB's `INTO OUTFILE`/`INTO DUMPFILE`/`general_log_file`
+    features abused as an arbitrary-file-write primitive to drop a webshell into a web root (the
+    idea behind that repo's `Mysql` directory's log-based file-write rule) — the existing
+    `db_destructive_command` only covered DROP/DELETE/TRUNCATE, never this file-write technique.
+  - `webshell_pattern_in_write` (`high`/`block`, inserted ahead of `dynamic_exec_in_write` so it
+    wins first): the classic one-liner shapes behind China Chopper/Behinder/Weevely-style
+    webshells (PHP's dynamic-exec builtins called directly on superglobal request arrays, and the
+    equivalent ASP/JSP request-driven exec shapes) — far more precise than the existing catch-all
+    `dynamic_exec_in_write` (which only recognizes a bare dynamic-exec call and is too noisy for
+    anything above `log`); the false-positive rate here is low enough to justify an outright
+    `block` — ordinary code essentially never takes this exact shape.
+  - `curl_download_then_exec` (`high`/`confirm`): `curl_pipe_shell` only catches the `curl|sh`
+    pipe form; "download with `curl -o x.sh`, then separately `chmod +x && ./x.sh`" — functionally
+    identical but with no pipe character — went completely undetected before.
+  - `c2_framework_execution` (`high`/`confirm`) / `pentest_recon_tool_execution` (`medium`/`log`):
+    direct command-line invocation of pentest/C2-framework tooling (`msfconsole`/`msfvenom`/
+    `teamserver`/`impacket-*`/`mimikatz`/`cobaltstrike`/`sliver`/`havoc`, vs. scanning tools like
+    `nmap`/`sqlmap`/`hydra`/`nikto`/`gobuster` — the former is clearly higher-risk and gets its
+    own tier).
+  - `covert_tunnel_tool_execution` (`medium`/`confirm`): invocation of DNS/ICMP covert-tunneling
+    tools (`dnscat2`/`iodine`/`dns2tcp`/`ptunnel`/`icmptunnel`/`hans`/`pingtunnel`) — a sibling
+    rule to 1.7.1's `ssh_tunnel_reverse_proxy` under the same "covert outbound channel" theme.
+  `default_rules.json` grows from 58 to 67 rules. Verified with 25 positive/negative test cases
+  against the real `policy.evaluate()` (including the edge case that the new webshell rule must
+  not catch an ordinary dynamic-exec call in regular code), plus a clean
+  `python3 -m unittest tests/test_rules.py` and webui `node --test` run with no regressions. An
+  existing user's `~/.cc-monitor/rules.json` will pick up all 9 automatically on the next hook
+  invocation via the auto-merge mechanism added in 1.7.1 — no manual sync needed.
+
 ## [1.7.1] - 2026-09-14
 
 ### Fixed

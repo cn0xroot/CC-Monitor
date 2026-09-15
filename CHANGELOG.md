@@ -5,6 +5,44 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.7.2] - 2026-09-14
+
+### 新增
+- **参考 [suricata-rules](https://github.com/al0ne/suricata-rules) 分类思路新增 9 条规则**：这是一份网络层面的
+  Suricata IDS 规则集，跟 CC-Monitor 不是同一层检测（那边看网络包内容，这边看 Claude
+  Code 自己发起的工具调用），规则文本本身不能照搬，但按它的目录分类找出了几个此前
+  完全没覆盖的攻击技术类别：
+  - `crypto_miner_pool_domain_command`/`_write`（`medium`/`confirm`）：命令行或写入内容
+    里出现已知挖矿矿池域名（`pool.minexmr.com`/`monerohash.com`/`xmrpool.eu` 等，从该仓库
+    `Crypto_miner_pool` 目录提取）或 `stratum://` 协议 URI。
+  - `db_arbitrary_file_write`（`high`/`confirm`，`tools: ["Bash"]`）+
+    `db_arbitrary_file_write_content`（`medium`/`confirm`，`tools: ["Write","Edit",
+    "NotebookEdit"]`）：MySQL/MariaDB 的 `INTO OUTFILE`/`INTO DUMPFILE`/`general_log_file`
+    这几个合法功能被滥用成任意文件写入、借此在 Web 目录落地 webshell 的经典手法（该仓库
+    `Mysql` 目录的日志写文件规则思路），之前的 `db_destructive_command`
+    只覆盖 DROP/DELETE/TRUNCATE，完全没管这种"写文件"用法。
+  - `webshell_pattern_in_write`（`high`/`block`，插在 `dynamic_exec_in_write` 之前，
+    优先命中）：菜刀/冰蝎/Weevely 这几类一句话马的经典代码形状（PHP 的
+    `eval`/`assert` 直接调用 `$_POST`/`$_REQUEST` 数组、ASP 的 `eval request(`、JSP 的
+    `Runtime.getRuntime().exec(request.getParameter`），比现有的泛化
+    `dynamic_exec_in_write`（只认字面上的 `eval(`，噪音太大只能 log）精确得多，误判率低
+    到可以直接 `block`——正常代码几乎不会写出这种形状。
+  - `curl_download_then_exec`（`high`/`confirm`）：`curl_pipe_shell` 只抓
+    `curl|sh` 管道形式，"先 `curl -o x.sh` 下载、再 `chmod +x && ./x.sh` 分两步执行"这种
+    功能等价但没有管道符的变体之前完全漏检。
+  - `c2_framework_execution`（`high`/`confirm`）/`pentest_recon_tool_execution`
+    （`medium`/`log`）：渗透测试/C2 框架工具的命令行调用本身（`msfconsole`/`msfvenom`/
+    `teamserver`/`impacket-*`/`mimikatz`/`cobaltstrike`/`sliver`/`havoc` 等 vs.
+    `nmap`/`sqlmap`/`hydra`/`nikto`/`gobuster` 等扫描类工具，前者风险明显更高单独分级）。
+  - `covert_tunnel_tool_execution`（`medium`/`confirm`）：`dnscat2`/`iodine`/`dns2tcp`/
+    `ptunnel`/`icmptunnel`/`hans`/`pingtunnel` 这类 DNS/ICMP 隐蔽隧道工具的调用，跟
+    1.7.1 加的 `ssh_tunnel_reverse_proxy` 是同一个"隐蔽出网通道"主题下的姊妹规则。
+  `default_rules.json` 从 58 条增至 67 条。用真实 `policy.evaluate()` 跑了 25 个正负测试
+  用例全部通过（含"webshell 规则不应该误伤普通代码里出现的动态执行调用"这类边界情况），
+  `python3 -m unittest tests/test_rules.py` 和 webui 的 `node --test` 均无回归。已有
+  用户的 `~/.cc-monitor/rules.json` 会在下次 hook 调用时经 1.7.1 加入的自动合并机制
+  自动补上这 9 条，不需要手动同步。
+
 ## [1.7.1] - 2026-09-14
 
 ### 修复
