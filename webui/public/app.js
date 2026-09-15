@@ -50,11 +50,18 @@ function formatUptime(ms) {
 }
 
 // "最近活跃"用的措辞跟 formatUptime()（"运行了 N 分钟"）不是一回事——这里要的是
-// "上次有动静是 N 分钟前"，末尾得带"前"/"ago"，不能共用同一个 i18n key。
+// "上次有动静是 N 分钟/小时/天前"，末尾得带"前"/"ago"，不能共用同一个 i18n key。
+// 会话经常一放就是几百分钟甚至好几天没再动过，只用分钟计数的话数字会大到没意义
+// （"3887 分钟前"），超过 60 分钟换算成小时、超过 24 小时换算成天。
 function formatAgo(ms) {
   if (ms === null || ms === undefined) return "-";
   const mins = Math.floor(ms / 60000);
-  return mins < 1 ? t("terminal.justNow") : t("drilldown.minutesAgo", { n: mins });
+  if (mins < 1) return t("terminal.justNow");
+  if (mins < 60) return t("drilldown.minutesAgo", { n: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t("drilldown.hoursAgo", { n: hours });
+  const days = Math.floor(hours / 24);
+  return t("drilldown.daysAgo", { n: days });
 }
 
 // "生命体征"指示器：working/idle/dead 三态复用同一套心电监护仪视觉——见 style.css
@@ -63,21 +70,31 @@ const VITAL_HEART_PATH =
   "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 const VITAL_ECG_PATH = "M0,7 L11,7 L14,1 L18,13 L21,7 L26,7 L29,3 L32,11 L35,7 L40,7";
 const VITAL_ECG_FLAT_PATH = "M0,7 L40,7";
-const VITAL_FADE_MS = 60 * 60 * 1000; // 1 小时后彻底拉平
+const VITAL_FADE_MS = 60 * 60 * 1000; // 1 小时内颜色/波形连续衰减
 const VITAL_WORKING_MS = 5 * 60 * 1000; // 只有这个窗口内才有跳动/滚动动画，跟后端 WORKING_THRESHOLD_MS 对齐
+// idle（进程还活着，只是最近没动静）哪怕过了 1 小时的衰减窗口也留一点底色——
+// 不然长时间挂着没操作的会话跟"进程已经退出"的 dead 在视觉上就完全混成一回事了，
+// 等于白做这个区分"还活着但闲置"和"已经不在了"的功能（真实会话经常一放就是
+// 几百分钟甚至几天，绝大多数行都会落进这个区间）。dead 没有这个底色，就是纯灰。
+const VITAL_IDLE_FLOOR = 0.14;
 
-// heat：0~1，agoMs 越小越接近 1（最深红/摆动最大），到 1 小时线性降到 0；
-// dead 或者压根没有时间戳的（不知道多久没动过了）直接按 0 处理，跟"满 1 小时"视觉上是一回事。
+// heat：0~1，agoMs 越小越接近 1（最深红/摆动最大），working/idle 状态下随时间
+// 在 1 小时内线性衰减；idle 衰减到底之后停在 VITAL_IDLE_FLOOR，不会跟 dead 一样
+// 归零。dead 或者压根没有时间戳的（不知道多久没动过了）直接按 0 处理。
 function vitalHeat(status, agoMs) {
   if (status === "dead" || agoMs === null || agoMs === undefined) return 0;
-  return Math.max(0, 1 - agoMs / VITAL_FADE_MS);
+  const raw = Math.max(0, 1 - agoMs / VITAL_FADE_MS);
+  return status === "idle" ? Math.max(raw, VITAL_IDLE_FLOOR) : raw;
 }
 
 function renderVital(status, agoMs) {
   const s = status || "idle";
   const label = t("terminal.status." + s);
   const heat = vitalHeat(s, agoMs);
-  const flat = heat <= 0.02;
+  // 心电图是否拉直线看的是真实经过的时间（满 1 小时就拉直），跟上面带了个底色
+  // 的 heat 是两码事——不能用 heat<=0.02 判断了，idle 有底色之后 heat 永远不会
+  // 真的到 0，得直接看 agoMs。
+  const flat = s === "dead" || agoMs === null || agoMs === undefined || agoMs >= VITAL_FADE_MS;
   const animated = s === "working" && agoMs !== null && agoMs !== undefined && agoMs < VITAL_WORKING_MS;
   const cls = ["vital", `vital-${s}`, animated ? "vital-animated" : "", flat ? "vital-flat" : ""].filter(Boolean).join(" ");
   return `
