@@ -210,7 +210,23 @@ app.get("/api/approvals/history", (req, res) => {
 
 app.get("/api/claude-processes", async (req, res) => {
   const procs = await processScan.scanClaudeProcesses();
-  res.json(processScan.summarize(procs, os.userInfo().username));
+  // 一个"正在跑"的 claude 进程本身不带时间戳（ps 只有进程启动时间，不是"最后一次
+  // 真的干了点什么"）——按 cwd 比对审计日志里最近一条事件的时间，当作"最近活跃"的
+  // 近似值：进程在跑但迟迟没有新事件，大概率是空闲在等用户输入，不是 bug。
+  const cwdCache = new Map();
+  const auditRows = audit.listSessions();
+  const lastEventByCwd = new Map();
+  for (const r of auditRows) {
+    if (!r.cwd) continue;
+    const key = normCwd(r.cwd, cwdCache);
+    const prev = lastEventByCwd.get(key);
+    if (!prev || r.last_ts > prev) lastEventByCwd.set(key, r.last_ts);
+  }
+  const enriched = procs.map((p) => ({
+    ...p,
+    lastEventTs: p.cwd ? lastEventByCwd.get(normCwd(p.cwd, cwdCache)) || null : null,
+  }));
+  res.json(processScan.summarize(enriched, os.userInfo().username));
 });
 
 // ---- REST API: Claude Code 网络流量（数据来自系统层探针，Linux + eBPF 才有；
@@ -403,7 +419,15 @@ app.get("/api/overview", async (req, res) => {
 
 // ---- REST API: 首页统计卡片的下钻详情 ----
 
-app.get("/api/drilldown/sessions", (req, res) => {
+app.get("/api/drilldown/sessions", async (req, res) => {
+  // "活跃/停止"跟 Web UI 终端会话那边的"working/idle"不是一回事——这里的会话大多是
+  // 在外部终端里跑的、被 hooks 被动监测到的，工具调用之间隔几分钟很正常，不能用
+  // "最近几十秒有没有动静"判断。真正靠谱的信号是"这个 cwd 底下还有没有一个真的在跑的
+  // claude 进程"，用跟"检测到的 claude 进程"卡片同一份实时 ps 扫描结果按 cwd 比对
+  // （复用 normCwd 的 realpath 归一化，避免符号链接导致误判成"没匹配上"）。
+  const cwdCache = new Map();
+  const liveProcs = await processScan.scanClaudeProcesses();
+  const liveCwds = new Set(liveProcs.map((p) => normCwd(p.cwd, cwdCache)).filter(Boolean));
   const rows = audit.listSessions().map((r) => ({
     sessionId: r.session_id,
     cwd: r.cwd,
@@ -413,6 +437,7 @@ app.get("/api/drilldown/sessions", (req, res) => {
     blockedCount: r.blocked_count,
     bypassCount: r.bypass_count,
     model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
+    active: r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false,
   }));
   res.json(rows);
 });

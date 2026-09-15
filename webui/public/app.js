@@ -49,6 +49,14 @@ function formatUptime(ms) {
   return mins < 1 ? t("terminal.justNow") : t("terminal.minutesAgo", { n: mins });
 }
 
+// "最近活跃"用的措辞跟 formatUptime()（"运行了 N 分钟"）不是一回事——这里要的是
+// "上次有动静是 N 分钟前"，末尾得带"前"/"ago"，不能共用同一个 i18n key。
+function formatAgo(ms) {
+  if (ms === null || ms === undefined) return "-";
+  const mins = Math.floor(ms / 60000);
+  return mins < 1 ? t("terminal.justNow") : t("drilldown.minutesAgo", { n: mins });
+}
+
 // ---------- 错误提示条：网络/接口失败时给出可见反馈，而不是静默不动 ----------
 const errorBanner = document.getElementById("error-banner");
 let errorHideTimer = null;
@@ -1528,7 +1536,8 @@ async function openDrilldown(kind) {
         <thead><tr>
           <th>${t("drilldown.liveSessions.cwd")}</th><th>${t("drilldown.sessions.sessionId")}</th>
           <th>${t("drilldown.liveSessions.status")}</th>
-          <th>${t("drilldown.liveSessions.uptime")}</th><th>${t("drilldown.liveSessions.clients")}</th>
+          <th>${t("drilldown.liveSessions.uptime")}</th><th>${t("drilldown.lastActive")}</th>
+          <th>${t("drilldown.liveSessions.clients")}</th>
           <th>${t("drilldown.liveSessions.model")}</th><th>${t("drilldown.liveSessions.events")}</th>
           <th>${t("drilldown.sessions.flags")}</th><th>${t("drilldown.sessions.range")}</th><th></th>
         </tr></thead>
@@ -1541,6 +1550,7 @@ async function openDrilldown(kind) {
               <td class="dd-mono">${s.auditSessionId ? escapeHtml(s.auditSessionId) : "-"}</td>
               <td>${s.alive ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
               <td class="dd-mono">${formatUptime(Date.now() - s.createdAt)}</td>
+              <td class="dd-mono">${s.lastOutputAt ? formatAgo(Date.now() - s.lastOutputAt) : "-"}</td>
               <td>${s.clientCount}</td>
               <td>${escapeHtml(modelShort(s.model) || "-")}</td>
               <td>${s.eventCount === null || s.eventCount === undefined ? "-" : s.eventCount}</td>
@@ -1576,6 +1586,7 @@ async function openDrilldown(kind) {
       <table class="dd-table">
         <thead><tr>
           <th>${t("drilldown.sessions.cwd")}</th><th>${t("drilldown.sessions.sessionId")}</th>
+          <th>${t("drilldown.sessions.status")}</th><th>${t("drilldown.lastActive")}</th>
           <th>${t("drilldown.sessions.model")}</th><th>${t("drilldown.sessions.events")}</th>
           <th>${t("drilldown.sessions.flags")}</th><th>${t("drilldown.sessions.range")}</th>
         </tr></thead>
@@ -1586,6 +1597,8 @@ async function openDrilldown(kind) {
             <tr>
               <td>${escapeHtml(r.cwd || "-")}</td>
               <td class="dd-mono">${escapeHtml(r.sessionId)}</td>
+              <td>${r.active ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
+              <td class="dd-mono">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
               <td>${escapeHtml(modelShort(r.model) || "-")}</td>
               <td>${r.eventCount}</td>
               <td>${r.blockedCount > 0 ? `🛑${r.blockedCount} ` : ""}${r.bypassCount > 0 ? `⚠${r.bypassCount}` : ""}${
@@ -1612,6 +1625,7 @@ async function openDrilldown(kind) {
       <table class="dd-table">
         <thead><tr>
           <th>${t("drilldown.identity.pid")}</th><th>${t("drilldown.identity.user")}</th>
+          <th>${t("drilldown.sessions.status")}</th><th>${t("drilldown.lastActive")}</th>
           <th>${t("drilldown.identity.cwd")}</th>
         </tr></thead>
         <tbody>
@@ -1621,6 +1635,8 @@ async function openDrilldown(kind) {
             <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
               <td class="dd-mono">${p.pid}</td>
               <td>${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
+              <td>${escapeHtml(t("terminal.running"))}</td>
+              <td class="dd-mono">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
               <td>${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
             </tr>`
             )
