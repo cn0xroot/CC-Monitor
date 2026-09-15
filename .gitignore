@@ -37,3 +37,6 @@ Thumbs.db
 # 日志
 *.log
 
+# 本地笔记，不进仓库
+Note.MD
+

@@ -801,6 +801,13 @@ on it:
   false-negative, an anomaly from the probe's permissions, or issues from your own modifications
   to the rules/code). Use at your own risk — it's worth running it in a non-production environment
   first and understanding what the default rules actually block.
+- **Some features (such as reading account usage/quota info) may invalidate your existing Claude
+  Code login session, requiring you to log back in.** These features read Claude Code's own local
+  credentials (`~/.claude/.credentials.json` on Linux, the login keychain on macOS) and don't
+  modify the credential file themselves, but edge cases around how/when they're read (concurrent
+  access, etc.) can't be fully ruled out as a trigger for an unexpected login-state issue. If
+  staying logged in matters to you right now (e.g. a long-running task in progress), make sure
+  you're OK with the possibility of a re-login before turning these features on.
 
 For the fuller Q&A on third-party dependencies, supply-chain risk, system-stability risk, and
 where your data actually goes, see the dedicated
