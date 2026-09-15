@@ -11,6 +11,30 @@ Everything is audit-logged. The technical design doc is available in
 carries, what third-party modules it depends on, and where your data actually goes, see
 [SECURITY.md](./SECURITY.en.md) ([Chinese](./SECURITY.md)).
 
+## Core capabilities at a glance
+
+- **Two independent layers of monitoring**: Claude Code hooks capture semantic detail; a
+  Linux eBPF / macOS nettop probe cross-verifies at the kernel/system level, independent of
+  the hooks — so a bypassed or tampered hook config doesn't mean monitoring silently stops.
+- **70+ built-in detection rules, auto-triaged by risk**: high-risk operations get blocked
+  outright (`rm -rf`, reverse shells, writing SSH keys…), medium-risk ones pop a confirmation
+  prompt, low-risk ones are logged silently — you're not babysitting every single action.
+- **Full audit trail**: every tool call's command, path, arguments, and decision are logged to
+  SQLite in full. `CC-Monitor tail` gives you a live, syntax-highlighted view (command name,
+  arguments, strings, pipes each get their own color) with one command.
+- **Bypass detection**: cross-checks commands the system-layer probe actually observed against
+  what the application-layer hooks recorded, specifically to catch the harder-to-notice case of
+  monitoring being silently disabled.
+- **Network visibility**: eBPF captures the destination IP:port of every `connect()` call
+  directly — no TLS termination, no CA certificate to install — with a connection detail table,
+  GeoIP lookups, and a WebGL2 world map in the Web UI.
+- **A full Web UI dashboard**: home-page stat cards, an AI approval desk (confirm from the web
+  page, the terminal, or a desktop notification — whichever answers first wins), Claude Tap
+  (reconstructs full conversations without packet capture), and live account quota display, all
+  in one page.
+- **Cross-platform**: works on both Linux and macOS (including real Apple Silicon M4 hardware
+  verification), with the core feature set consistent across both.
+
 ## Screenshots
 
 | Home overview |
