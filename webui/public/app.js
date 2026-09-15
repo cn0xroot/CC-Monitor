@@ -57,6 +57,21 @@ function formatAgo(ms) {
   return mins < 1 ? t("terminal.justNow") : t("drilldown.minutesAgo", { n: mins });
 }
 
+// "生命体征"指示器：working/idle/dead 三态复用同一套心电监护仪视觉——见 style.css
+// 顶部那段注释。心形和锯齿波形都是通用图形符号，不是照抄哪个具体图标库的资源。
+const VITAL_HEART_PATH =
+  "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
+const VITAL_ECG_PATH = "M0,7 L11,7 L14,1 L18,13 L21,7 L26,7 L29,3 L32,11 L35,7 L40,7";
+function renderVital(vitalStatus) {
+  const s = vitalStatus || "idle";
+  const label = t("terminal.status." + s);
+  return `
+    <span class="vital vital-${s}" title="${escapeHtml(label)}">
+      <svg class="vital-heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${VITAL_HEART_PATH}"/></svg>
+      <svg class="vital-ecg" viewBox="0 0 40 14" aria-hidden="true"><path d="${VITAL_ECG_PATH}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    </span>`;
+}
+
 // ---------- 错误提示条：网络/接口失败时给出可见反馈，而不是静默不动 ----------
 const errorBanner = document.getElementById("error-banner");
 let errorHideTimer = null;
@@ -1548,7 +1563,7 @@ async function openDrilldown(kind) {
             <tr class="dd-row-clickable" data-id="${escapeHtml(s.id)}">
               <td>${escapeHtml(s.cwd || "-")}</td>
               <td class="dd-mono">${s.auditSessionId ? escapeHtml(s.auditSessionId) : "-"}</td>
-              <td>${s.alive ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
+              <td>${renderVital(s.status)}</td>
               <td class="dd-mono">${formatUptime(Date.now() - s.createdAt)}</td>
               <td class="dd-mono">${s.lastOutputAt ? formatAgo(Date.now() - s.lastOutputAt) : "-"}</td>
               <td>${s.clientCount}</td>
@@ -1597,7 +1612,7 @@ async function openDrilldown(kind) {
             <tr>
               <td>${escapeHtml(r.cwd || "-")}</td>
               <td class="dd-mono">${escapeHtml(r.sessionId)}</td>
-              <td>${r.active ? escapeHtml(t("terminal.running")) : escapeHtml(t("terminal.stopped"))}</td>
+              <td>${renderVital(r.status)}</td>
               <td class="dd-mono">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
               <td>${escapeHtml(modelShort(r.model) || "-")}</td>
               <td>${r.eventCount}</td>
@@ -1635,7 +1650,7 @@ async function openDrilldown(kind) {
             <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
               <td class="dd-mono">${p.pid}</td>
               <td>${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
-              <td>${escapeHtml(t("terminal.running"))}</td>
+              <td>${renderVital(p.status)}</td>
               <td class="dd-mono">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
               <td>${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
             </tr>`
@@ -2098,7 +2113,7 @@ async function refreshStatusBoard() {
     rows.push(`
       <div class="status-row">
         <span class="seg kind webui">🖥 Web UI</span>
-        <span class="seg ${s.alive ? "alive" : "dead"}">${s.alive ? t("terminal.running") : t("terminal.stopped")}</span>
+        <span class="seg">${renderVital(s.status)}</span>
         <span class="seg cwd">📁 ${escapeHtml(s.cwd)}</span>
         ${s.gitBranch ? `<span class="seg branch${s.gitDirty ? " dirty" : ""}">⎇ ${escapeHtml(s.gitBranch)}</span>` : ""}
         <span class="seg">⏱ ${mins < 1 ? t("terminal.justNow") : t("terminal.minutesAgo", { n: mins })}</span>
@@ -2135,6 +2150,7 @@ async function refreshStatusBoard() {
     rows.push(`
       <div class="status-row">
         <span class="seg kind">🤖 ${folderName(s.cwd)} · ${s.sessionId.slice(0, 8)}…</span>
+        <span class="seg">${renderVital(s.status)}</span>
         ${s.model ? `<span class="seg model">🧠 ${escapeHtml(modelShort(s.model))}</span>` : ""}
         <span class="seg cwd">📁 ${escapeHtml(s.cwd || "-")}</span>
         ${s.gitBranch ? `<span class="seg branch${s.gitDirty ? " dirty" : ""}">⎇ ${escapeHtml(s.gitBranch)}</span>` : ""}
@@ -2474,6 +2490,16 @@ async function refreshIdentityCard() {
   if (!result) return;
   identityLastResult = result;
   document.getElementById("stat-identity-total").textContent = String(result.total);
+
+  // "监测到的 Claude Code 会话总数"卡片上的迷你心跳徽章：只要有一个进程正处于
+  // working 状态就露出来，给首页一个"现在有事情正在发生"的一眼信号；全都 idle/没有
+  // 进程的时候完全不占地方（隐藏），不是每次都摆一个"死气沉沉"的图标出来。
+  const vitalBadge = document.getElementById("stat-sessions-vital");
+  if (vitalBadge) {
+    const anyWorking = result.processes.some((p) => p.status === "working");
+    vitalBadge.hidden = !anyWorking;
+    vitalBadge.innerHTML = anyWorking ? renderVital("working") : "";
+  }
 
   const banner = document.getElementById("identity-mismatch-banner");
   if (result.mismatchedUsers.length > 0) {

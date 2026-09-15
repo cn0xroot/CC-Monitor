@@ -379,6 +379,7 @@ html, body {
 /* ---------- 首页 ---------- */
 .cards { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
 .card {
+  position: relative;
   flex: 1 1 160px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -514,6 +515,51 @@ html, body {
 @keyframes status-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
+}
+
+/* "生命体征"状态指示——working/idle/dead 三态用同一套"心电监护仪"视觉语言：working 是
+   跳动的红心 + 滚动的心电图波形，idle 是静止的琥珀色平缓波形（"还活着，只是没在动"），
+   dead 是灰色拉平的直线（经典的"心跳停了"）。三态共用同一个 renderVital() 组件，出现在
+   会话列表/claude 进程明细/Web UI 终端会话三个下钻详情、状态信息标签页的会话状态列表，
+   以及首页"监测到的 Claude Code 会话总数"卡片（只要有一个会话在 working 就露出来）。 */
+.vital {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+.vital-heart {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+.vital-ecg {
+  width: 40px;
+  height: 14px;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.vital.vital-working .vital-heart { color: var(--red); animation: vital-beat 1.15s ease-in-out infinite; }
+.vital.vital-working .vital-ecg path { stroke: var(--red); stroke-dasharray: 6 4; animation: vital-scroll 0.85s linear infinite; }
+.vital.vital-idle .vital-heart { color: var(--yellow); opacity: 0.85; }
+.vital.vital-idle .vital-ecg path { stroke: var(--yellow); opacity: 0.6; }
+.vital.vital-dead .vital-heart { color: var(--text-dim); opacity: 0.4; }
+.vital.vital-dead .vital-ecg path { stroke: var(--text-dim); opacity: 0.5; }
+@keyframes vital-beat {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(1.3); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.15); }
+  60% { transform: scale(1); }
+}
+@keyframes vital-scroll {
+  to { stroke-dashoffset: -20; }
+}
+/* 首页卡片上的迷你徽章：只在有会话正处于 working 状态时才出现，静默的时候不占地方 */
+.card-vital-badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
 }
 .session-item .meta { color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
 .session-item .kill-btn { color: var(--red); cursor: pointer; }
