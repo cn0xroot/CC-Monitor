@@ -187,11 +187,12 @@
         <div class="card clickable" data-drilldown="procbg-ops"><div class="card-num" id="stat-procbg-total">-</div><div class="card-label"><span data-i18n="home.procbgOps.title2">进程管理/后台驻留</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
-      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.sensitiveVisibility.title">敏感操作 / 敏感数据 / 截屏审计（SSH 密钥/凭据文件/环境变量查找/历史指令读取、云厂商与代码托管平台凭据/PII/VPN 配置、Bash 截图命令/打开图片/MCP 截图动作，按命中的规则/命令与工具名近似识别，非精确，点开看分类明细）</div>
+      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.sensitiveVisibility.title">敏感操作 / 敏感数据 / 截屏审计 / 逆向分析工具调用（SSH 密钥/凭据文件/环境变量查找/历史指令读取、云厂商与代码托管平台凭据/PII/VPN 配置、Bash 截图命令/打开图片/MCP 截图动作、IDA/Ghidra/radare2/GDB 等逆向工具，按命中的规则/命令与工具名近似识别，非精确，点开看分类明细）</div>
       <div class="cards">
         <div class="card accent-red-strong clickable" data-drilldown="sensitive-ops"><div class="card-num" id="stat-sensitive-total">-</div><div class="card-label"><span data-i18n="home.sensitiveOps.total">敏感操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
         <div class="card accent-red-strong clickable" data-drilldown="sensitive-data"><div class="card-num" id="stat-sensitive-data-total">-</div><div class="card-label"><span data-i18n="home.sensitiveData.total">敏感数据</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
-        <div class="card clickable" data-drilldown="screenshot"><div class="card-num" id="stat-screenshot">-</div><div class="card-label"><span data-i18n="home.screenshotOps.total">截屏 / 查看图像内容</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card accent-red-strong clickable" data-drilldown="screenshot"><div class="card-num" id="stat-screenshot">-</div><div class="card-label"><span data-i18n="home.screenshotOps.total">截屏 / 查看图像内容</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+        <div class="card accent-red-strong clickable" data-drilldown="reverseeng-ops"><div class="card-num" id="stat-reverseeng-total">-</div><div class="card-label"><span data-i18n="home.reverseEngOps.title2">逆向分析工具调用</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.advancedThreat.sectionTitle">高级威胁检测（挖矿矿池域名/stratum 协议、数据库任意文件写入落地 webshell、webshell 代码特征、下载脚本分步执行、渗透测试/C2 框架工具调用、DNS/ICMP 隐蔽隧道工具，按命中的规则近似识别，非精确，点开看分类明细）</div>

@@ -10,6 +10,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { countryNameZh } = require("./countryNamesZh");
 
 const CANDIDATE_PATHS = [
   process.env.CC_MONITOR_GEOIP_DB,
@@ -68,14 +69,28 @@ async function getStatus() {
   };
 }
 
-const lookupCache = new Map(); // ip -> 结果（或 null），进程生命周期内有效，IP 地理位置不会变
+// MaxMind GeoLite2 的 city.names/country.names 是个多语言对象（en/zh-CN/ja/de/fr/es/
+// pt-BR/ru），之前一直写死取 .en，导致中文界面下城市/国家名也是英文
+// （比如 "Tseung Kwan O, HK"）。DB-IP Lite 那种平铺格式（sapics/ip-location-db 转出来
+// 的）本身就没有多语言字段，取不到 zh-CN 的话自然回退回英文，这是数据源的限制，不是
+// bug。UI 语言（"zh"/"en"）跟 mmdb 里的 locale key 不是一一对应，"zh" 要映射成
+// "zh-CN"，其它语言暂时都还是回退到 en。
+const UI_LANG_TO_MMDB_LOCALE = { zh: "zh-CN", en: "en" };
+function localizedName(names, lang) {
+  if (!names) return null;
+  const locale = UI_LANG_TO_MMDB_LOCALE[lang] || "en";
+  return names[locale] || names.en || null;
+}
 
-async function lookup(ip) {
+const lookupCache = new Map(); // (ip, lang) -> 结果（或 null），进程生命周期内有效，IP 地理位置不会变
+
+async function lookup(ip, lang = "en") {
   if (!ip) return null;
-  if (lookupCache.has(ip)) return lookupCache.get(ip);
+  const cacheKey = ip + "|" + lang;
+  if (lookupCache.has(cacheKey)) return lookupCache.get(cacheKey);
   await ensureLoaded();
   if (!reader) {
-    lookupCache.set(ip, null);
+    lookupCache.set(cacheKey, null);
     return null;
   }
   let result = null;
@@ -89,10 +104,23 @@ async function lookup(ip) {
       // 平铺格式的数据库会查出一堆 null，明明数据库里其实有数据。
       const lat = rec.location?.latitude ?? rec.latitude;
       const lon = rec.location?.longitude ?? rec.longitude;
+      const countryCode = rec.country?.iso_code || rec.country_code || null;
       result = {
-        country: rec.country?.names?.en || rec.registered_country?.names?.en || rec.country_name || null,
-        countryCode: rec.country?.iso_code || rec.country_code || null,
-        city: rec.city?.names?.en || (typeof rec.city === "string" ? rec.city : null) || null,
+        // dbip-city.mmdb（DB-IP Lite）这种扁平格式数据源没有 names 多语言字段、
+        // 甚至没有英文国家全名，只有 country_code 这个 ISO 代码——localizedName()
+        // 在这种数据源上永远拿不到东西，最后兜底查静态的 ISO 代码->中文名表
+        // （只覆盖国家/地区这一级，城市名没有对应的中文数据源，翻不出来）。
+        country:
+          localizedName(rec.country?.names, lang) ||
+          localizedName(rec.registered_country?.names, lang) ||
+          rec.country_name ||
+          (lang === "zh" ? countryNameZh(countryCode) : null) ||
+          null,
+        countryCode,
+        city:
+          localizedName(rec.city?.names, lang) ||
+          (typeof rec.city === "string" ? rec.city : null) ||
+          null,
         lat: typeof lat === "number" ? lat : null,
         lon: typeof lon === "number" ? lon : null,
         accuracyRadiusKm: rec.location?.accuracy_radius ?? null,
@@ -101,7 +129,7 @@ async function lookup(ip) {
   } catch (e) {
     result = null;
   }
-  lookupCache.set(ip, result);
+  lookupCache.set(cacheKey, result);
   return result;
 }
 

@@ -92,11 +92,11 @@ async function mergedRows(limit) {
   return real.concat(inferred);
 }
 
-async function listTraffic(limit = 200) {
+async function listTraffic(limit = 200, lang = "en") {
   const rows = (await mergedRows(limit)).slice(0, limit);
   const enriched = [];
   for (const r of rows) {
-    const geo = await geoip.lookup(r.ip);
+    const geo = await geoip.lookup(r.ip, lang);
     enriched.push({
       ip: r.ip,
       port: r.port,
@@ -131,11 +131,11 @@ async function summary() {
 // 世界地图用的数据形状——只要有经纬度的行才有意义画到地图上，拿不到地理位置的
 // （没配置 GeoIP 数据库，或者这个 IP 查不到）不会出现在这个列表里，但仍然会出现在
 // listTraffic() 的表格里（如实标"未知位置"，不是被吞掉了）。
-async function geoPairs(limit = 500) {
+async function geoPairs(limit = 500, lang = "en") {
   const rows = await mergedRows(limit);
   const pairs = [];
   for (const r of rows) {
-    const geo = await geoip.lookup(r.ip);
+    const geo = await geoip.lookup(r.ip, lang);
     if (!geo || geo.lat === null || geo.lon === null) continue;
     pairs.push({
       ip: r.ip,

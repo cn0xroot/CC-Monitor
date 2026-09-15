@@ -302,6 +302,74 @@ function netdiagOpType(detailJson) {
   }
 }
 
+// 逆向分析工具调用——跟网络诊断工具同一个思路：纯可见性统计，不代表风险判断。
+// IDA/Ghidra/radare2/GDB 这些是专业逆向工程师的日常工具，CTF/漏洞研究/合规安全
+// 测试里到处都是，没有理由拦截或要求确认；但"Claude 有没有用过这些工具分析过
+// 什么二进制"本身是个值得沉淀的可见性信号，尤其结合会话的 cwd/命令明细能帮着
+// 复盘一次逆向分析任务到底摸了哪些文件。按工具家族分类，不细到具体子命令参数。
+const REVERSE_ENG_OP_ORDER = ["ida", "ghidra", "radare2", "gdb", "other"];
+// 真实数据里 IDA/GDB 这些经常是绝对路径调用的（比如 /opt/idapro-9.0/idat64），装了
+// 之后极少会特地加进 PATH——只按 "^ida..." 从头匹配会把这类调用全部漏掉。跟
+// policy.py 的 _normalize_head 一个思路：先剥掉子命令开头可能有的环境变量赋值前缀
+// （LD_LIBRARY_PATH=xxx PYTHONHOME=xxx gdb ...这种，实测线上真的有——手动给 gdb 挂
+// 定制运行时库路径来跑跨架构调试），再剥可执行文件的路径前缀，最后拿裸文件名匹配。
+// 顺序不能反：如果先剥路径前缀，会把 "LD_LIBRARY_PATH=/a/b/c" 这个环境变量赋值本身
+// 误当成"路径/文件名"来剥（截出来的"文件名"是这个赋值的最后一段，不是真正在跑的
+// 命令），必须先把环境变量赋值这一层完全去掉。
+const ENV_ASSIGN_RE = /^(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S*)\s+)+/;
+function stripEnvAssignments(seg) {
+  return seg.replace(ENV_ASSIGN_RE, "");
+}
+function stripPathPrefix(seg) {
+  const m = seg.match(/^(\S*\/)(\S+)/);
+  return m ? seg.slice(m[1].length) : seg;
+}
+// macOS 上 IDA/Ghidra/Hopper/Binary Ninja 这类 GUI 逆向工具常打包成 .app，用
+// `open -a "IDA Pro"` 这种方式启动，不是直接跑一个裸的可执行文件名——单独识别这个
+// 调用形态，跟上面按可执行文件名匹配的逻辑并列判断。
+const MACOS_OPEN_APP_RE = /^open\s+(-\S+\s+)*-a\s+["']?([^"'\n]+?)["']?(\s|$)/;
+function classifyReverseEngOp(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd)
+    .map((raw) => raw.trim().replace(/^sudo\s+/, ""))
+    .map(stripEnvAssignments)
+    .map(stripPathPrefix);
+  const found = new Set();
+  for (const seg of segments) {
+    if (/^ida(t|q)?(64)?(\.exe)?(\s|$)/.test(seg)) found.add("ida");
+    else if (/^(ghidraRun|analyzeHeadless|ghidraSvr)(\s|$)/.test(seg)) found.add("ghidra");
+    else if (/^(radare2|r2|rizin|rz-\w+|cutter)(\s|$)/.test(seg)) found.add("radare2");
+    else if (/^(gdb|gdb-multiarch|cgdb|gdbserver|pwndbg)(\s|$)/.test(seg)) found.add("gdb");
+    else if (
+      /^(binaryninja|binja|hopperv?4?|x(64|32)dbg|windbg|cdb|ollydbg|immunitydebugger|dnspy|jadx(-gui)?|apktool|dex2jar|jd-gui|frida(-[\w-]+)?|objection|retdec-decompiler|binwalk|checksec|diaphora|bindiff|uncompyle6|decompyle3|pycdc)(\s|$)/.test(
+        seg
+      )
+    )
+      found.add("other");
+    else {
+      const appMatch = MACOS_OPEN_APP_RE.exec(seg);
+      if (appMatch && /\b(ida|ghidra|hopper|binary\s*ninja)\b/i.test(appMatch[2])) {
+        if (/\bida\b/i.test(appMatch[2])) found.add("ida");
+        else if (/\bghidra\b/i.test(appMatch[2])) found.add("ghidra");
+        else found.add("other");
+      }
+    }
+  }
+  for (const kind of REVERSE_ENG_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+function reverseEngOpType(detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    return classifyReverseEngOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
 // 进程管理/后台驻留分类——nohup/disown/setsid 按子命令开头识别，是同一套思路；
 // "后台任务"（裸 `&`）不一样，它不是某个命令的名字，而是整条命令末尾的一个 shell
 // 语法标记，没法按 splitShellSegments() 切出来的子命令开头去匹配（splitShellSegments
@@ -615,6 +683,7 @@ function withDb(fn, fallback) {
     db.function("cc_docker_op", dockerOpType);
     db.function("cc_archive_op", archiveOpType);
     db.function("cc_netdiag_op", netdiagOpType);
+    db.function("cc_reverseeng_op", reverseEngOpType);
     db.function("cc_procbg_op", processBackgroundType);
     db.function("cc_sensitive_op", sensitiveOpType);
     db.function("cc_sensitive_data", sensitiveDataType);
@@ -865,6 +934,12 @@ function netdiagOpsBreakdown() {
 }
 function netdiagOpsEvents(limit = 300) {
   return opsEvents("cc_netdiag_op", limit);
+}
+function reverseEngOpsBreakdown() {
+  return opsBreakdown("cc_reverseeng_op");
+}
+function reverseEngOpsEvents(limit = 300) {
+  return opsEvents("cc_reverseeng_op", limit);
 }
 function procbgOpsBreakdown() {
   return opsBreakdown("cc_procbg_op");
@@ -1303,6 +1378,8 @@ module.exports = {
   archiveOpsEvents,
   netdiagOpsBreakdown,
   netdiagOpsEvents,
+  reverseEngOpsBreakdown,
+  reverseEngOpsEvents,
   procbgOpsBreakdown,
   procbgOpsEvents,
   sensitiveOpsBreakdown,

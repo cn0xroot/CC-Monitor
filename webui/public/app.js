@@ -910,6 +910,7 @@ async function refreshOverview() {
   document.getElementById("stat-docker-total").textContent = s.dockerOpsTotal;
   document.getElementById("stat-archive-total").textContent = s.archiveOpsTotal;
   document.getElementById("stat-netdiag-total").textContent = s.netdiagOpsTotal;
+  document.getElementById("stat-reverseeng-total").textContent = s.reverseEngOpsTotal;
   document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
   document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
   document.getElementById("stat-sensitive-data-total").textContent = s.sensitiveDataTotal;
@@ -1741,11 +1742,17 @@ async function openDrilldown(kind) {
     "docker-ops": { titleKey: "home.dockerOps.title", labels: { run: "home.dockerOps.run", build: "home.dockerOps.build", exec: "home.dockerOps.exec", compose: "home.dockerOps.compose", other: "home.dockerOps.other" } },
     "archive-ops": { titleKey: "home.archiveOps.title", labels: { tar: "home.archiveOps.tar", zip: "home.archiveOps.zip", sevenZip: "home.archiveOps.sevenZip", gzip: "home.archiveOps.gzip", other: "home.archiveOps.other" } },
     "netdiag-ops": { titleKey: "home.netdiagOps.title", labels: { nc: "home.netdiagOps.nc", nmap: "home.netdiagOps.nmap", telnet: "home.netdiagOps.telnet", other: "home.netdiagOps.other" } },
+    "reverseeng-ops": { titleKey: "home.reverseEngOps.title", labels: { ida: "home.reverseEngOps.ida", ghidra: "home.reverseEngOps.ghidra", radare2: "home.reverseEngOps.radare2", gdb: "home.reverseEngOps.gdb", other: "home.reverseEngOps.other" } },
     "procbg-ops": { titleKey: "home.procbgOps.title", labels: { nohup: "home.procbgOps.nohup", disown: "home.procbgOps.disown", backgroundJob: "home.procbgOps.backgroundJob", other: "home.procbgOps.other" } },
     "sensitive-ops": { titleKey: "home.sensitiveOps.title", labels: { sshKey: "home.sensitiveOps.sshKey", credential: "home.sensitiveOps.credential", envVar: "home.sensitiveOps.envVar", other: "home.sensitiveOps.other" } },
     "sensitive-data": { titleKey: "home.sensitiveData.title", labels: { credential: "home.sensitiveData.credential", pii: "home.sensitiveData.pii", vpnConfig: "home.sensitiveData.vpnConfig", other: "home.sensitiveData.other" } },
     "advanced-threat": { titleKey: "home.advancedThreat.title", labels: { cryptoMining: "home.advancedThreat.cryptoMining", dbFileWrite: "home.advancedThreat.dbFileWrite", webshell: "home.advancedThreat.webshell", downloadExec: "home.advancedThreat.downloadExec", c2Framework: "home.advancedThreat.c2Framework", postExploitation: "home.advancedThreat.postExploitation", suspiciousMcp: "home.advancedThreat.suspiciousMcp", pentestRecon: "home.advancedThreat.pentestRecon", covertTunnel: "home.advancedThreat.covertTunnel" } },
   };
+  // 首页卡片用 accent-red-strong 标红的那几组，下钻详情里的分类徽章也跟着标红加粗。
+  // 一开始只标红"敏感操作/敏感数据/高级威胁检测/逆向分析工具调用"这几组，后来陆续被
+  // 要求把 GitHub/SSH/下载/Docker/压缩归档/网络诊断/进程管理这些"命令类操作统计"
+  // 分组下钻详情里的分类标签也统一标红加粗——干脆对所有走 GROUPED_OPS_KINDS 这条
+  // 下钻路径的分组都生效，不用每加一组就来改一次这个集合。
   if (GROUPED_OPS_KINDS[kind]) {
     // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组——首页原来每组一整排
     // 细分类卡片（合计 30+ 张，刷屏），现在每组只放一张汇总卡片，点开先看分类
@@ -1761,11 +1768,15 @@ async function openDrilldown(kind) {
       return;
     }
     const kindLabel = (k) => (cfg.labels[k] ? t(cfg.labels[k]) : k);
+    // 首页卡片标红的那几组（敏感操作/敏感数据/高级威胁检测/逆向分析工具调用），下钻
+    // 详情里的分类徽章也跟着标红加粗，跟卡片本身的视觉分量对上，不是所有分组都要。
+    const badgeCls = "dd-badge-category dd-badge-danger";
+    const tdCls = " class=\"dd-badge-danger\"";
     body.innerHTML = `
       <table class="dd-table">
         <thead><tr><th>${t("drilldown.opsBreakdown.category")}</th><th>${t("drilldown.toolCalls.count")}</th></tr></thead>
         <tbody>
-          ${breakdown.map((r) => `<tr><td>${escapeHtml(kindLabel(r.kind))}</td><td>${r.n}</td></tr>`).join("")}
+          ${breakdown.map((r) => `<tr><td${tdCls}>${escapeHtml(kindLabel(r.kind))}</td><td>${r.n}</td></tr>`).join("")}
         </tbody>
       </table>
       <div class="box-title" style="margin:18px 0 8px;">${t("drilldown.eventDetail")}</div>
@@ -1776,8 +1787,8 @@ async function openDrilldown(kind) {
       <div class="log-item">
         <div class="row1">
           <span class="ts">${r.ts}</span>
-          <span class="dd-badge-category">${escapeHtml(kindLabel(r.kind))}</span>
-          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+          <span class="${badgeCls}">${escapeHtml(kindLabel(r.kind))}</span>
+          <span class="label dd-badge-danger">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
         </div>
         <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
@@ -1790,7 +1801,7 @@ async function openDrilldown(kind) {
 
   if (kind === "ai-trajectory") {
     title.textContent = t("drilldown.aiTrajectory.title");
-    const [result, connectEvents] = await Promise.all([api("/api/network-traffic?limit=500"), api("/api/drilldown/ai-trajectory-events")]);
+    const [result, connectEvents] = await Promise.all([api(`/api/network-traffic?limit=500&lang=${currentLang}`), api("/api/drilldown/ai-trajectory-events")]);
     if (!result) return;
     const rows = result.rows;
     if (rows.length === 0) {
@@ -2502,8 +2513,8 @@ function ensureNetworkMap() {
 
 async function refreshNetworkTraffic() {
   const [trafficResult, geoResult] = await Promise.all([
-    api("/api/network-traffic?limit=200"),
-    api("/api/network-traffic/geopairs?limit=500"),
+    api(`/api/network-traffic?limit=200&lang=${currentLang}`),
+    api(`/api/network-traffic/geopairs?limit=500&lang=${currentLang}`),
   ]);
   if (!trafficResult) return;
 

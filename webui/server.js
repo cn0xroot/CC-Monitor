@@ -216,15 +216,25 @@ app.get("/api/claude-processes", async (req, res) => {
 // ---- REST API: Claude Code 网络流量（数据来自系统层探针，Linux + eBPF 才有；
 // 没装/没在跑探针的话这几个接口如实返回空数据，不是 bug） ----
 
+// 归属地城市/国家名要跟着页面语言走（MaxMind GeoLite2 的 names 字段本身就是多语言
+// 对象），前端把当前 UI 语言（"zh"/"en"）通过 ?lang= 传过来，不认的值一律按 en 处理。
+function geoLang(req) {
+  return req.query.lang === "zh" ? "zh" : "en";
+}
+
 app.get("/api/network-traffic", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "200", 10), 2000);
-  const [rows, sum, geoStatus] = await Promise.all([network.listTraffic(limit), network.summary(), geoip.getStatus()]);
+  const [rows, sum, geoStatus] = await Promise.all([
+    network.listTraffic(limit, geoLang(req)),
+    network.summary(),
+    geoip.getStatus(),
+  ]);
   res.json({ rows, summary: sum, geo: geoStatus });
 });
 
 app.get("/api/network-traffic/geopairs", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "500", 10), 2000);
-  const pairs = await network.geoPairs(limit);
+  const pairs = await network.geoPairs(limit, geoLang(req));
   res.json({ pairs });
 });
 
@@ -375,6 +385,7 @@ app.get("/api/overview", async (req, res) => {
     dockerOpsTotal: sumN(audit.dockerOpsBreakdown()),
     archiveOpsTotal: sumN(audit.archiveOpsBreakdown()),
     netdiagOpsTotal: sumN(audit.netdiagOpsBreakdown()),
+    reverseEngOpsTotal: sumN(audit.reverseEngOpsBreakdown()),
     procbgOpsTotal: sumN(audit.procbgOpsBreakdown()),
     sensitiveOpsTotal: sumN(audit.sensitiveOpsBreakdown()),
     sensitiveDataTotal: sumN(audit.sensitiveDataBreakdown()),
@@ -496,6 +507,7 @@ app.get("/api/drilldown/download-ops", opsDrilldownHandler(audit.downloadOpsBrea
 app.get("/api/drilldown/docker-ops", opsDrilldownHandler(audit.dockerOpsBreakdown, audit.dockerOpsEvents));
 app.get("/api/drilldown/archive-ops", opsDrilldownHandler(audit.archiveOpsBreakdown, audit.archiveOpsEvents));
 app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakdown, audit.netdiagOpsEvents));
+app.get("/api/drilldown/reverseeng-ops", opsDrilldownHandler(audit.reverseEngOpsBreakdown, audit.reverseEngOpsEvents));
 app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdown, audit.procbgOpsEvents));
 app.get("/api/drilldown/sensitive-ops", opsDrilldownHandler(audit.sensitiveOpsBreakdown, audit.sensitiveOpsEvents));
 app.get("/api/drilldown/sensitive-data", opsDrilldownHandler(audit.sensitiveDataBreakdown, audit.sensitiveDataEvents));

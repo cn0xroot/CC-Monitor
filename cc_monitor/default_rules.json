@@ -525,7 +525,7 @@
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\b(env|printenv)\\b(\\s|$)|\\bexport\\s+-p\\b"
+    "pattern": "\\b(env|printenv)\\b(?!\\s+[A-Za-z_][A-Za-z0-9_]*=)(\\s|$)|\\bexport\\s+-p\\b"
   },
   {
     "id": "system_config_write",

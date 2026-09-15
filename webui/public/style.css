@@ -772,6 +772,11 @@ html, body {
   border: 1px solid var(--border);
   vertical-align: middle;
 }
+.dd-badge-category.dd-badge-danger {
+  color: var(--red);
+  font-weight: 700;
+  border-color: var(--red);
+}
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;
