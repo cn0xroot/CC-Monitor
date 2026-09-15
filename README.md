@@ -713,7 +713,12 @@ For exactly what shipped in each version, see [CHANGELOG.en.md](./CHANGELOG.en.m
       (`cc_monitor/probe_darwin.py`, sampling via the built-in `nettop`, no root needed), and
       desktop-app approval alerts (Dock bounce + badge + best-effort system notification) all
       work and have been verified; Linux remains the most polished and thoroughly tested
-      platform
+      platform. **Verified on real Apple Silicon (M4) hardware**: the batch of fixes in
+      v1.7.1 (the `match: "segment"` matching mode, the `history_read` rewrite, automatic
+      default-rule merging / automatic rematch of historical events) was extracted and
+      merged after being found and fixed against a real M4-chip macOS machine running an
+      actual firmware reverse-engineering workflow (IDA/Ghidra/GDB debugging sessions, heavy
+      shell scripting) — not a scenario only ever exercised on Linux
 
 ### Not implemented / TODO
 

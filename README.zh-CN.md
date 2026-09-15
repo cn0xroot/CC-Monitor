@@ -603,7 +603,11 @@ git hooks/config 持久化攻击面（`core.hooksPath`、`url....insteadOf`）�
       额度显示（从登录钥匙串读凭证）、Web 终端（`node-pty` spawn-helper 权限修复）、
       系统层网络探针（`cc_monitor/probe_darwin.py`，用系统自带 `nettop` 采样，不需要
       root）、桌面版审批提醒（Dock 跳动 + 角标 + 系统通知兜底）都已跑通并实测验证过；
-      Linux 仍是打磨最完整、测试最充分的平台
+      Linux 仍是打磨最完整、测试最充分的平台。**Apple Silicon（M4）实机验证**：v1.7.1
+      那批修复（`match: "segment"` 匹配模式、`history_read` 重写、规则自动合并/历史事件
+      自动重判）就是在 M4 芯片的 macOS 上跑真实固件逆向工作流（IDA/Ghidra/GDB 调试、
+      大量 shell 脚本）时发现问题、验证修复效果之后提取合并进来的，不是只在 Linux 上
+      测过的臆造场景
 
 ### 未实现 / 待办
 
