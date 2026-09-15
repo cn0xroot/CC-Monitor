@@ -72,6 +72,10 @@
         <button id="clear-data-btn" class="btn-danger" data-i18n="home.dataMgmt.clear">🗑 清空当前数据</button>
       </div>
       <div class="data-mgmt-bar">
+        <span class="hint" data-i18n="home.syncUpdate.hint">在项目源码目录里跑 git pull，把 GitHub 上的新代码/新规则同步下来；本地有冲突改动的话 git 会如实报错，不会自动丢弃/覆盖任何东西；拉完之后可能需要重启 Web UI 才会用上新代码</span>
+        <button id="sync-update-btn" class="btn-secondary" data-i18n="home.syncUpdate.button">🔄 同步更新</button>
+      </div>
+      <div class="data-mgmt-bar">
         <span class="hint" data-i18n="home.remoteAccess.hint">这个工具能直接开终端 spawn shell、没有身份验证——默认只允许本机（127.0.0.1）访问，开启前请确认你清楚风险</span>
         <label class="autoscroll-toggle" id="remote-access-row">
           <input type="checkbox" id="remote-access-toggle" class="switch-input">
@@ -188,6 +192,11 @@
         <div class="card accent-red-strong clickable" data-drilldown="sensitive-ops"><div class="card-num" id="stat-sensitive-total">-</div><div class="card-label"><span data-i18n="home.sensitiveOps.total">敏感操作</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
         <div class="card accent-red-strong clickable" data-drilldown="sensitive-data"><div class="card-num" id="stat-sensitive-data-total">-</div><div class="card-label"><span data-i18n="home.sensitiveData.total">敏感数据</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
         <div class="card clickable" data-drilldown="screenshot"><div class="card-num" id="stat-screenshot">-</div><div class="card-label"><span data-i18n="home.screenshotOps.total">截屏 / 查看图像内容</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
+      </div>
+
+      <div class="box-title" style="margin:4px 0 8px;" data-i18n="home.advancedThreat.sectionTitle">高级威胁检测（挖矿矿池域名/stratum 协议、数据库任意文件写入落地 webshell、webshell 代码特征、下载脚本分步执行、渗透测试/C2 框架工具调用、DNS/ICMP 隐蔽隧道工具，按命中的规则近似识别，非精确，点开看分类明细）</div>
+      <div class="cards">
+        <div class="card accent-red-strong clickable" data-drilldown="advanced-threat"><div class="card-num" id="stat-advanced-threat-total">-</div><div class="card-label"><span data-i18n="home.advancedThreat.total">高级威胁检测</span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div></div>
       </div>
 
       <div class="home-columns">

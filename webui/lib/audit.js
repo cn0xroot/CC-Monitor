@@ -576,6 +576,31 @@ function sensitiveDataType(toolName, matchedRule, detailJson) {
   }
 }
 
+// 高级威胁检测——跟上面两组同一个思路（复用 policy.py 已经算好的 matched_rule），
+// 覆盖的是参考 al0ne/suricata-rules 目录分类新增的那批规则：挖矿矿池域名、MySQL
+// 任意文件写入落地 webshell、webshell 一句话马代码特征、下载脚本再分步执行、
+// 渗透测试/C2 框架工具调用、DNS/ICMP 隐蔽隧道工具调用。每个 matched_rule 固定归到
+// 一个分类，不需要像敏感数据那组一样再检查字段内容消歧——加新规则时把 id 加进
+// ADVANCED_THREAT_RULE_MAP 就行，同一个分类可以有多条规则（比如矿池域名的
+// command/write 两条变体）。
+const ADVANCED_THREAT_ORDER = ["cryptoMining", "dbFileWrite", "webshell", "downloadExec", "c2Framework", "pentestRecon", "covertTunnel"];
+const ADVANCED_THREAT_RULE_MAP = {
+  crypto_miner_pool_domain_command: "cryptoMining",
+  crypto_miner_pool_domain_write: "cryptoMining",
+  db_arbitrary_file_write: "dbFileWrite",
+  db_arbitrary_file_write_content: "dbFileWrite",
+  webshell_pattern_in_write: "webshell",
+  curl_download_then_exec: "downloadExec",
+  c2_framework_execution: "c2Framework",
+  pentest_recon_tool_execution: "pentestRecon",
+  covert_tunnel_tool_execution: "covertTunnel",
+};
+const ADVANCED_THREAT_RULES = new Set(Object.keys(ADVANCED_THREAT_RULE_MAP));
+const ADVANCED_THREAT_RULES_SQL = [...ADVANCED_THREAT_RULES].map((r) => `'${r}'`).join(", ");
+function advancedThreatType(matchedRule) {
+  return ADVANCED_THREAT_RULE_MAP[matchedRule] || null;
+}
+
 function withDb(fn, fallback) {
   let db;
   try {
@@ -591,6 +616,7 @@ function withDb(fn, fallback) {
     db.function("cc_procbg_op", processBackgroundType);
     db.function("cc_sensitive_op", sensitiveOpType);
     db.function("cc_sensitive_data", sensitiveDataType);
+    db.function("cc_advanced_threat", advancedThreatType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -894,6 +920,33 @@ function sensitiveDataEvents(limit = 300) {
       .prepare(
         `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_sensitive_data(tool_name, matched_rule, detail) AS kind FROM events
          WHERE source = 'hook_pre' AND matched_rule IN ('secret_pattern_in_write', 'pii_pattern_in_write', 'cloud_vpn_config_write', 'cloud_vpn_config_read')
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+// 高级威胁检测——查询形状跟上面 sensitiveOpsBreakdown/sensitiveDataBreakdown 一样，
+// 只是分类函数只需要 matched_rule 一个参数（见 advancedThreatType 上面的注释，
+// 不需要再检查字段内容消歧）。
+function advancedThreatBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT cc_advanced_threat(matched_rule) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN (${ADVANCED_THREAT_RULES_SQL})
+         GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+
+function advancedThreatEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_advanced_threat(matched_rule) AS kind FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN (${ADVANCED_THREAT_RULES_SQL})
          ORDER BY id DESC LIMIT ?`
       )
       .all(limit);
@@ -1254,6 +1307,8 @@ module.exports = {
   sensitiveOpsEvents,
   sensitiveDataBreakdown,
   sensitiveDataEvents,
+  advancedThreatBreakdown,
+  advancedThreatEvents,
   screenshotStats,
   screenshotDetails,
   commandNetworkHosts,

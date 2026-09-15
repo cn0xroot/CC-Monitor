@@ -5,6 +5,7 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 const url = require("url");
+const { execFile } = require("child_process");
 const { WebSocketServer } = require("ws");
 
 const { SessionManager } = require("./lib/sessions");
@@ -377,6 +378,7 @@ app.get("/api/overview", async (req, res) => {
     procbgOpsTotal: sumN(audit.procbgOpsBreakdown()),
     sensitiveOpsTotal: sumN(audit.sensitiveOpsBreakdown()),
     sensitiveDataTotal: sumN(audit.sensitiveDataBreakdown()),
+    advancedThreatTotal: sumN(audit.advancedThreatBreakdown()),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
@@ -497,6 +499,7 @@ app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakd
 app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdown, audit.procbgOpsEvents));
 app.get("/api/drilldown/sensitive-ops", opsDrilldownHandler(audit.sensitiveOpsBreakdown, audit.sensitiveOpsEvents));
 app.get("/api/drilldown/sensitive-data", opsDrilldownHandler(audit.sensitiveDataBreakdown, audit.sensitiveDataEvents));
+app.get("/api/drilldown/advanced-threat", opsDrilldownHandler(audit.advancedThreatBreakdown, audit.advancedThreatEvents));
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;
@@ -635,6 +638,25 @@ app.get("/api/archives/:id/events", (req, res) => {
 app.post("/api/events/clear", (req, res) => {
   const result = archives.clearCurrentEvents();
   res.json(result);
+});
+
+// ---- REST API: 首页"同步更新"按钮——在项目源码目录里跑 git pull，把 GitHub 上的新
+// 代码/新规则同步下来。固定跑 `git pull`，不接受任何请求参数拼进命令行（execFile 不
+// 经过 shell，参数是固定数组，没有注入空间）。只是把 git 自己的输出原样返回给前端，
+// 不做任何"自动解决冲突"之类的动作——本地有冲突的话 git pull 自己就会失败并说明原因，
+// 工作区不会被这个按钮静默改动/丢弃任何东西。拉下来的是源码文件，不会自动重启
+// Node 进程/重新执行 Python hook 里已经 import 过的模块，所以前端要提示"可能需要
+// 重启 Web UI 才会用上新代码"。
+const REPO_ROOT = path.join(__dirname, "..");
+app.post("/api/sync-update", (req, res) => {
+  execFile("git", ["pull"], { cwd: REPO_ROOT, timeout: 60_000 }, (err, stdout, stderr) => {
+    res.json({
+      ok: !err,
+      code: err ? (typeof err.code === "number" ? err.code : 1) : 0,
+      stdout: stdout || "",
+      stderr: stderr || (err && !stdout ? String(err.message || err) : ""),
+    });
+  });
 });
 
 // ---- REST API: 审计开关（开始/暂停/停止）----

@@ -913,6 +913,7 @@ async function refreshOverview() {
   document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
   document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
   document.getElementById("stat-sensitive-data-total").textContent = s.sensitiveDataTotal;
+  document.getElementById("stat-advanced-threat-total").textContent = s.advancedThreatTotal;
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -1082,6 +1083,21 @@ document.getElementById("clear-data-btn").addEventListener("click", async () => 
   tapNextLine = 0;
   document.getElementById("tap-list").innerHTML = "";
   refreshEverythingNow();
+});
+
+document.getElementById("sync-update-btn").addEventListener("click", async () => {
+  const ok = await confirmDialog(t("modal.syncUpdate.title"), t("modal.syncUpdate.body"));
+  if (!ok) return;
+  const btn = document.getElementById("sync-update-btn");
+  btn.disabled = true;
+  const prevText = btn.textContent;
+  btn.textContent = t("home.syncUpdate.running");
+  const result = await api("/api/sync-update", { method: "POST" });
+  btn.disabled = false;
+  btn.textContent = prevText;
+  if (!result) return;
+  const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  alert((result.ok ? t("home.syncUpdate.ok") : t("home.syncUpdate.fail")) + (output ? "\n\n" + output : ""));
 });
 
 function archiveRangeText(a) {
@@ -1728,6 +1744,7 @@ async function openDrilldown(kind) {
     "procbg-ops": { titleKey: "home.procbgOps.title", labels: { nohup: "home.procbgOps.nohup", disown: "home.procbgOps.disown", backgroundJob: "home.procbgOps.backgroundJob", other: "home.procbgOps.other" } },
     "sensitive-ops": { titleKey: "home.sensitiveOps.title", labels: { sshKey: "home.sensitiveOps.sshKey", credential: "home.sensitiveOps.credential", envVar: "home.sensitiveOps.envVar", other: "home.sensitiveOps.other" } },
     "sensitive-data": { titleKey: "home.sensitiveData.title", labels: { credential: "home.sensitiveData.credential", pii: "home.sensitiveData.pii", vpnConfig: "home.sensitiveData.vpnConfig", other: "home.sensitiveData.other" } },
+    "advanced-threat": { titleKey: "home.advancedThreat.title", labels: { cryptoMining: "home.advancedThreat.cryptoMining", dbFileWrite: "home.advancedThreat.dbFileWrite", webshell: "home.advancedThreat.webshell", downloadExec: "home.advancedThreat.downloadExec", c2Framework: "home.advancedThreat.c2Framework", pentestRecon: "home.advancedThreat.pentestRecon", covertTunnel: "home.advancedThreat.covertTunnel" } },
   };
   if (GROUPED_OPS_KINDS[kind]) {
     // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组——首页原来每组一整排
