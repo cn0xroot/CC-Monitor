@@ -87,6 +87,27 @@ function vitalHeat(status, agoMs) {
   return status === "idle" ? Math.max(raw, VITAL_IDLE_FLOOR) : raw;
 }
 
+function hexToRgb(hex) {
+  const m = String(hex || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+// 之前按 heat 在红色/灰色之间插值是交给 CSS 的 color-mix() 做的——在不支持
+// color-mix() 的浏览器上这个属性整体计算失败，working/idle/dead 三态会退化成
+// 同一种继承色（看起来"全灰"，包括刚活跃的 working 也不例外，这正是这个 bug
+// 反馈的现象）。干脆不依赖 color-mix()，直接在 JS 里读主题色手算插值后的
+// rgb()，兼容性只取决于 getComputedStyle，不受这个较新 CSS 函数支不支持影响。
+function vitalColor(heat) {
+  const cs = getComputedStyle(document.documentElement);
+  const red = hexToRgb(cs.getPropertyValue("--red")) || [239, 68, 68];
+  const dim = hexToRgb(cs.getPropertyValue("--text-dim")) || [122, 128, 148];
+  const r = Math.round(dim[0] + (red[0] - dim[0]) * heat);
+  const g = Math.round(dim[1] + (red[1] - dim[1]) * heat);
+  const b = Math.round(dim[2] + (red[2] - dim[2]) * heat);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function renderVital(status, agoMs) {
   const s = status || "idle";
   const label = t("terminal.status." + s);
@@ -97,8 +118,9 @@ function renderVital(status, agoMs) {
   const flat = s === "dead" || agoMs === null || agoMs === undefined || agoMs >= VITAL_FADE_MS;
   const animated = s === "working" && agoMs !== null && agoMs !== undefined && agoMs < VITAL_WORKING_MS;
   const cls = ["vital", `vital-${s}`, animated ? "vital-animated" : "", flat ? "vital-flat" : ""].filter(Boolean).join(" ");
+  const style = `--vital-heat:${heat.toFixed(2)};--vital-color:${vitalColor(heat)}`;
   return `
-    <span class="${cls}" style="--vital-heat:${heat.toFixed(2)}" title="${escapeHtml(label)}">
+    <span class="${cls}" style="${style}" title="${escapeHtml(label)}">
       <svg class="vital-heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${VITAL_HEART_PATH}"/></svg>
       <svg class="vital-ecg" viewBox="0 0 40 14" aria-hidden="true"><path d="${flat ? VITAL_ECG_FLAT_PATH : VITAL_ECG_PATH}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
     </span>`;

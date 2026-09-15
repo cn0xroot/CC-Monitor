@@ -525,13 +525,17 @@ html, body {
    跳动的心跳动画和滚动的波形动画，再往后即使颜色/幅度还没完全褪光也是静止的——
    "静止" 本身就在传达"最近没有新动静"这个信号。三态共用同一个 renderVital() 组件，
    出现在会话列表/claude 进程明细/Web UI 终端会话三个下钻详情、状态信息标签页的
-   会话状态列表，以及首页"监测到的 Claude Code 会话总数"卡片。 */
+   会话状态列表，以及首页"监测到的 Claude Code 会话总数"卡片。--vital-color 也是
+   renderVital() 算好传进来的（按主题色手动插值出的 rgb()）——不用 CSS 的
+   color-mix() 做，是因为它在不支持这个函数的浏览器上会让整个属性计算失败，
+   working/idle/dead 三态一起退化成同一种继承色，看起来"全灰"，这里的默认值
+   只是没传内联样式时的兜底。 */
 .vital {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   vertical-align: middle;
-  --vital-color: color-mix(in srgb, var(--red) calc(var(--vital-heat, 0) * 100%), var(--text-dim));
+  --vital-color: var(--text-dim);
 }
 .vital-heart {
   width: 14px;
