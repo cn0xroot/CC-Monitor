@@ -32,6 +32,14 @@
     "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*e[a-zA-Z]*\\s+/bin/(ba)?sh\\b|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*c[a-zA-Z]*\\s+(/bin/)?(ba)?sh\\b|\\bsocat\\b[^\\n]*exec:['\"]?/?(bin/)?(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)|\\bmkfifo\\b[^\\n]*\\b(nc|ncat|netcat)\\b[^\\n]*\\|\\s*(/bin/)?(ba)?sh\\b"
   },
   {
+    "id": "shell_escape_via_utility",
+    "risk": "high",
+    "action": "block",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\bfind\\b[^\\n]*-exec\\s+(/bin/)?(ba|z)?sh\\b|\\bawk\\b[^\\n]*system\\s*\\(\\s*[\"']?(/bin/)?(ba|z)?sh\\b|\\bperl\\b[^\\n]*\\bexec\\s+[\"']?(/bin/)?(ba|z)?sh\\b|\\bpython3?\\b[^\\n]*(pty\\.spawn|os\\.system)\\s*\\(\\s*[\"']?(/bin/)?(ba|z)?sh\\b|\\btar\\b[^\\n]*--checkpoint-action=exec=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\b(vim?|nvim)\\b[^\\n]*-c\\s+[\"']?:?(shell|!\\s*(/bin/)?(ba|z)?sh)\\b|\\bzip\\b[^\\n]*--unzip-command=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\bscript\\s+(-[a-zA-Z]*c\\b|(-\\S+\\s+)*-c\\b)[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\bssh\\b[^\\n]*ProxyCommand=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b"
+  },
+  {
     "id": "encoded_payload_exec",
     "risk": "high",
     "action": "block",
