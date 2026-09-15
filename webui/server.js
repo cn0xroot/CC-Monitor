@@ -111,13 +111,17 @@ function computeSessionStatus(s, matchedAuditSessionId, matchedLastTs, pendingSe
 // 跟上面那个 RECENT_ACTIVITY_MS（30 秒）是同一个"working/idle"思路，但用在一个不同的
 // 数据源上：Web UI 终端的 PTY 每敲一个字符都会有输出，30 秒足够灵敏；被动监测到的
 // 外部终端会话（这里说的"会话列表"/"claude 进程明细"）只在真的调用工具的那一刻才有
-// 事件，模型"思考"、用户读输出的间隙完全正常能有几十秒到几分钟的空档，卡 30 秒的话
-// 大部分正常在工作的会话都会被误判成"空闲"，放宽到 2 分钟。
-const WORKING_THRESHOLD_MS = 2 * 60 * 1000;
+// 事件，模型"思考"、用户读输出的间隙完全正常能有几十秒到几分钟的空档，卡太紧的话
+// 大部分正常在工作的会话都会被误判成"空闲"，放宽到 5 分钟。
+const WORKING_THRESHOLD_MS = 5 * 60 * 1000;
+// 返回的不只是三态本身，还有 agoMs（距上次活跃过了多少毫秒）——working 状态下前端要
+// 拿这个算"心跳有多深"：5 分钟内越新鲜颜色越深、心电图波形摆动越大，快到 5 分钟
+// 边界时逐渐收敛成最浅的红，而不是一到 5 分钟就从"最深红"直接跳成"灰"。
 function vitalStatus(hasLiveProcess, lastTs) {
-  if (!hasLiveProcess) return "dead";
-  if (lastTs && Date.now() - new Date(lastTs).getTime() < WORKING_THRESHOLD_MS) return "working";
-  return "idle";
+  if (!hasLiveProcess) return { status: "dead", agoMs: null };
+  const agoMs = lastTs ? Date.now() - new Date(lastTs).getTime() : null;
+  if (agoMs !== null && agoMs < WORKING_THRESHOLD_MS) return { status: "working", agoMs };
+  return { status: "idle", agoMs };
 }
 
 // PTY 那边记的 cwd 是我们建终端时传给 pty.spawn() 的原始字符串；hook.py 那边记的
@@ -238,7 +242,8 @@ app.get("/api/claude-processes", async (req, res) => {
     const lastEventTs = p.cwd ? lastEventByCwd.get(normCwd(p.cwd, cwdCache)) || null : null;
     // 这里永远不会是 "dead"——能进这个列表就说明进程这一刻真的在跑，vitalStatus() 的
     // 第一个参数写死 true，只用它来区分 working（最近有审计事件）还是 idle（挂着但没动静）。
-    return { ...p, lastEventTs, status: vitalStatus(true, lastEventTs) };
+    const v = vitalStatus(true, lastEventTs);
+    return { ...p, lastEventTs, status: v.status, statusAgoMs: v.agoMs };
   });
   res.json(processScan.summarize(enriched, os.userInfo().username));
 });
@@ -452,7 +457,10 @@ app.get("/api/drilldown/sessions", async (req, res) => {
     bypassCount: r.bypass_count,
     model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
     active: r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false,
-    status: vitalStatus(r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false, r.last_ts),
+    ...(() => {
+      const v = vitalStatus(r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false, r.last_ts);
+      return { status: v.status, statusAgoMs: v.agoMs };
+    })(),
   }));
   res.json(rows);
 });
@@ -741,7 +749,10 @@ app.get("/api/status", async (req, res) => {
       uptimeMs: Date.now() - s.createdAt,
       gitBranch: g.branch,
       gitDirty: g.dirty,
-      status: vitalStatus(s.alive, s.lastOutputAt),
+      ...(() => {
+        const v = vitalStatus(s.alive, s.lastOutputAt);
+        return { status: v.status, statusAgoMs: v.agoMs };
+      })(),
     };
   });
   const auditSessions = audit.listSessions(50).map((r) => {
@@ -762,7 +773,10 @@ app.get("/api/status", async (req, res) => {
       model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
       tokenStats,
       compactionStats: r.transcript_path ? transcript.getCompactionStats(r.transcript_path) : null,
-      status: vitalStatus(hasLiveProcess, r.last_ts),
+      ...(() => {
+        const v = vitalStatus(hasLiveProcess, r.last_ts);
+        return { status: v.status, statusAgoMs: v.agoMs };
+      })(),
     };
   });
   res.json({ liveSessions, auditSessions });

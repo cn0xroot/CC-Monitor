@@ -517,21 +517,27 @@ html, body {
   50% { opacity: 0.25; }
 }
 
-/* "生命体征"状态指示——working/idle/dead 三态用同一套"心电监护仪"视觉语言：working 是
-   跳动的红心 + 滚动的心电图波形，idle 是静止的琥珀色平缓波形（"还活着，只是没在动"），
-   dead 是灰色拉平的直线（经典的"心跳停了"）。三态共用同一个 renderVital() 组件，出现在
-   会话列表/claude 进程明细/Web UI 终端会话三个下钻详情、状态信息标签页的会话状态列表，
-   以及首页"监测到的 Claude Code 会话总数"卡片（只要有一个会话在 working 就露出来）。 */
+/* "生命体征"状态指示——用一套连续渐变的"心电监护仪"视觉语言，而不是三个离散的固定
+   颜色：距上次活跃的时间越久，心形颜色从深红逐渐褪成灰色、心电图波形的摆动幅度也
+   跟着收窄，1 小时以外直接拉平成一条直线（跟 dead 状态视觉上收敛成同一种样子——
+   "很久没动静"跟"进程已经不在了"看起来该是一回事）。--vital-heat 是 0~1 的连续值，
+   由 renderVital() 按 agoMs 算好通过内联样式传进来；只有 working（5 分钟内）才有
+   跳动的心跳动画和滚动的波形动画，再往后即使颜色/幅度还没完全褪光也是静止的——
+   "静止" 本身就在传达"最近没有新动静"这个信号。三态共用同一个 renderVital() 组件，
+   出现在会话列表/claude 进程明细/Web UI 终端会话三个下钻详情、状态信息标签页的
+   会话状态列表，以及首页"监测到的 Claude Code 会话总数"卡片。 */
 .vital {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   vertical-align: middle;
+  --vital-color: color-mix(in srgb, var(--red) calc(var(--vital-heat, 0) * 100%), var(--text-dim));
 }
 .vital-heart {
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
+  color: var(--vital-color);
 }
 .vital-ecg {
   width: 40px;
@@ -539,12 +545,16 @@ html, body {
   flex: 0 0 auto;
   overflow: visible;
 }
-.vital.vital-working .vital-heart { color: var(--red); animation: vital-beat 1.15s ease-in-out infinite; }
-.vital.vital-working .vital-ecg path { stroke: var(--red); stroke-dasharray: 6 4; animation: vital-scroll 0.85s linear infinite; }
-.vital.vital-idle .vital-heart { color: var(--yellow); opacity: 0.85; }
-.vital.vital-idle .vital-ecg path { stroke: var(--yellow); opacity: 0.6; }
-.vital.vital-dead .vital-heart { color: var(--text-dim); opacity: 0.4; }
-.vital.vital-dead .vital-ecg path { stroke: var(--text-dim); opacity: 0.5; }
+.vital-ecg path {
+  stroke: var(--vital-color);
+  /* 幅度跟着 heat 走，但留个 25% 的底，避免摆动小到肉眼看不出跟直线的区别 */
+  transform: scaleY(calc(0.25 + var(--vital-heat, 0) * 0.75));
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.vital.vital-flat .vital-ecg path { transform: none; }
+.vital.vital-animated .vital-heart { animation: vital-beat 1.15s ease-in-out infinite; }
+.vital.vital-animated .vital-ecg path { stroke-dasharray: 6 4; animation: vital-scroll 0.85s linear infinite; }
 @keyframes vital-beat {
   0%, 100% { transform: scale(1); }
   15% { transform: scale(1.3); }

@@ -62,13 +62,28 @@ function formatAgo(ms) {
 const VITAL_HEART_PATH =
   "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 const VITAL_ECG_PATH = "M0,7 L11,7 L14,1 L18,13 L21,7 L26,7 L29,3 L32,11 L35,7 L40,7";
-function renderVital(vitalStatus) {
-  const s = vitalStatus || "idle";
+const VITAL_ECG_FLAT_PATH = "M0,7 L40,7";
+const VITAL_FADE_MS = 60 * 60 * 1000; // 1 小时后彻底拉平
+const VITAL_WORKING_MS = 5 * 60 * 1000; // 只有这个窗口内才有跳动/滚动动画，跟后端 WORKING_THRESHOLD_MS 对齐
+
+// heat：0~1，agoMs 越小越接近 1（最深红/摆动最大），到 1 小时线性降到 0；
+// dead 或者压根没有时间戳的（不知道多久没动过了）直接按 0 处理，跟"满 1 小时"视觉上是一回事。
+function vitalHeat(status, agoMs) {
+  if (status === "dead" || agoMs === null || agoMs === undefined) return 0;
+  return Math.max(0, 1 - agoMs / VITAL_FADE_MS);
+}
+
+function renderVital(status, agoMs) {
+  const s = status || "idle";
   const label = t("terminal.status." + s);
+  const heat = vitalHeat(s, agoMs);
+  const flat = heat <= 0.02;
+  const animated = s === "working" && agoMs !== null && agoMs !== undefined && agoMs < VITAL_WORKING_MS;
+  const cls = ["vital", `vital-${s}`, animated ? "vital-animated" : "", flat ? "vital-flat" : ""].filter(Boolean).join(" ");
   return `
-    <span class="vital vital-${s}" title="${escapeHtml(label)}">
+    <span class="${cls}" style="--vital-heat:${heat.toFixed(2)}" title="${escapeHtml(label)}">
       <svg class="vital-heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${VITAL_HEART_PATH}"/></svg>
-      <svg class="vital-ecg" viewBox="0 0 40 14" aria-hidden="true"><path d="${VITAL_ECG_PATH}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <svg class="vital-ecg" viewBox="0 0 40 14" aria-hidden="true"><path d="${flat ? VITAL_ECG_FLAT_PATH : VITAL_ECG_PATH}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
     </span>`;
 }
 
@@ -1563,7 +1578,7 @@ async function openDrilldown(kind) {
             <tr class="dd-row-clickable" data-id="${escapeHtml(s.id)}">
               <td>${escapeHtml(s.cwd || "-")}</td>
               <td class="dd-mono">${s.auditSessionId ? escapeHtml(s.auditSessionId) : "-"}</td>
-              <td>${renderVital(s.status)}</td>
+              <td>${renderVital(s.status, s.statusAgoMs)}</td>
               <td class="dd-mono">${formatUptime(Date.now() - s.createdAt)}</td>
               <td class="dd-mono">${s.lastOutputAt ? formatAgo(Date.now() - s.lastOutputAt) : "-"}</td>
               <td>${s.clientCount}</td>
@@ -1612,7 +1627,7 @@ async function openDrilldown(kind) {
             <tr>
               <td>${escapeHtml(r.cwd || "-")}</td>
               <td class="dd-mono">${escapeHtml(r.sessionId)}</td>
-              <td>${renderVital(r.status)}</td>
+              <td>${renderVital(r.status, r.statusAgoMs)}</td>
               <td class="dd-mono">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
               <td>${escapeHtml(modelShort(r.model) || "-")}</td>
               <td>${r.eventCount}</td>
@@ -1650,7 +1665,7 @@ async function openDrilldown(kind) {
             <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
               <td class="dd-mono">${p.pid}</td>
               <td>${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
-              <td>${renderVital(p.status)}</td>
+              <td>${renderVital(p.status, p.statusAgoMs)}</td>
               <td class="dd-mono">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
               <td>${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
             </tr>`
@@ -2113,7 +2128,7 @@ async function refreshStatusBoard() {
     rows.push(`
       <div class="status-row">
         <span class="seg kind webui">🖥 Web UI</span>
-        <span class="seg">${renderVital(s.status)}</span>
+        <span class="seg">${renderVital(s.status, s.statusAgoMs)}</span>
         <span class="seg cwd">📁 ${escapeHtml(s.cwd)}</span>
         ${s.gitBranch ? `<span class="seg branch${s.gitDirty ? " dirty" : ""}">⎇ ${escapeHtml(s.gitBranch)}</span>` : ""}
         <span class="seg">⏱ ${mins < 1 ? t("terminal.justNow") : t("terminal.minutesAgo", { n: mins })}</span>
@@ -2150,7 +2165,7 @@ async function refreshStatusBoard() {
     rows.push(`
       <div class="status-row">
         <span class="seg kind">🤖 ${folderName(s.cwd)} · ${s.sessionId.slice(0, 8)}…</span>
-        <span class="seg">${renderVital(s.status)}</span>
+        <span class="seg">${renderVital(s.status, s.statusAgoMs)}</span>
         ${s.model ? `<span class="seg model">🧠 ${escapeHtml(modelShort(s.model))}</span>` : ""}
         <span class="seg cwd">📁 ${escapeHtml(s.cwd || "-")}</span>
         ${s.gitBranch ? `<span class="seg branch${s.gitDirty ? " dirty" : ""}">⎇ ${escapeHtml(s.gitBranch)}</span>` : ""}
@@ -2498,7 +2513,7 @@ async function refreshIdentityCard() {
   if (vitalBadge) {
     const anyWorking = result.processes.some((p) => p.status === "working");
     vitalBadge.hidden = !anyWorking;
-    vitalBadge.innerHTML = anyWorking ? renderVital("working") : "";
+    vitalBadge.innerHTML = anyWorking ? renderVital("working", 0) : "";
   }
 
   const banner = document.getElementById("identity-mismatch-banner");
