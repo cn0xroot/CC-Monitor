@@ -443,6 +443,7 @@ const I18N = {
     "decision.blocked": "拦截",
     "decision.completed": "已完成",
     "decision.observed": "系统观测",
+    "decision.submitted": "已提交",
 
     "source.hook_pre": "应用层 · 执行前",
     "source.hook_post": "应用层 · 执行后",
@@ -937,6 +938,7 @@ const I18N = {
     "decision.blocked": "Blocked",
     "decision.completed": "Completed",
     "decision.observed": "Observed",
+    "decision.submitted": "Submitted",
 
     "source.hook_pre": "App layer · pre",
     "source.hook_post": "App layer · post",
