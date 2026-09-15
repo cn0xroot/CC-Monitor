@@ -298,7 +298,11 @@ def evaluate(tool_name, tool_input, rules=None):
         tools = rule.get("tools", ["*"])
         if "*" not in tools and tool_name not in tools:
             continue
-        value = _extract(tool_input, rule["field"])
+        # field="tool_name" 是个特例：匹配的是 evaluate() 的 tool_name 参数本身，不是
+        # tool_input 里的字段——MCP 工具调用的 tool_name 是运行时才知道的动态字符串
+        # （形如 "mcp__<server>__<tool>"），没法像 Bash/Write 那样枚举进 "tools" 列表，
+        # 只能靠这条规则的 pattern 去认里面的 server/tool 名字。
+        value = tool_name if rule["field"] == "tool_name" else _extract(tool_input, rule["field"])
         if value is None:
             continue
         try:

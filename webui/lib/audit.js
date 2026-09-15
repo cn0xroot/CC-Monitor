@@ -583,7 +583,7 @@ function sensitiveDataType(toolName, matchedRule, detailJson) {
 // 一个分类，不需要像敏感数据那组一样再检查字段内容消歧——加新规则时把 id 加进
 // ADVANCED_THREAT_RULE_MAP 就行，同一个分类可以有多条规则（比如矿池域名的
 // command/write 两条变体）。
-const ADVANCED_THREAT_ORDER = ["cryptoMining", "dbFileWrite", "webshell", "downloadExec", "c2Framework", "pentestRecon", "covertTunnel"];
+const ADVANCED_THREAT_ORDER = ["cryptoMining", "dbFileWrite", "webshell", "downloadExec", "c2Framework", "postExploitation", "suspiciousMcp", "pentestRecon", "covertTunnel"];
 const ADVANCED_THREAT_RULE_MAP = {
   crypto_miner_pool_domain_command: "cryptoMining",
   crypto_miner_pool_domain_write: "cryptoMining",
@@ -592,6 +592,8 @@ const ADVANCED_THREAT_RULE_MAP = {
   webshell_pattern_in_write: "webshell",
   curl_download_then_exec: "downloadExec",
   c2_framework_execution: "c2Framework",
+  post_exploitation_tool_execution: "postExploitation",
+  mcp_suspicious_tool_name: "suspiciousMcp",
   pentest_recon_tool_execution: "pentestRecon",
   covert_tunnel_tool_execution: "covertTunnel",
 };

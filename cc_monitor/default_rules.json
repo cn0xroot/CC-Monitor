@@ -77,7 +77,23 @@
     "action": "confirm",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bmsfconsole\\b|\\bmsfvenom\\b|\\bmsfdb\\b|\\bcobaltstrike\\b|\\bteamserver\\b|\\bpowershell.?empire\\b|\\bsliver-(client|server)\\b|\\bhavoc\\b|\\bmimikatz\\b|\\bimpacket-[a-zA-Z]+\\b|\\bcrackmapexec\\b|\\bresponder\\.py\\b"
+    "pattern": "\\bmsfconsole\\b|\\bmsfvenom\\b|\\bmsfdb\\b|\\bcobaltstrike\\b|\\bteamserver\\b|\\bpowershell.?empire\\b|\\bsliver-(client|server)\\b|\\bhavoc\\b|\\bmimikatz\\b|\\bimpacket-[a-zA-Z]+\\b|\\bcrackmapexec\\b|\\bresponder\\.py\\b|\\bpacu\\b"
+  },
+  {
+    "id": "post_exploitation_tool_execution",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash"],
+    "field": "command",
+    "pattern": "\\blinpeas(\\.sh)?\\b|\\bnetexec\\b|\\bbloodhound\\b|\\bsharphound\\b|\\bsmbmap\\b|\\brpcclient\\b|\\benum4linux(-ng)?\\b"
+  },
+  {
+    "id": "mcp_suspicious_tool_name",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["*"],
+    "field": "tool_name",
+    "pattern": "^mcp__[a-zA-Z0-9_-]*(reverse[_-]?shell|c2server|[_-]c2[_-]|beacon|backdoor)"
   },
   {
     "id": "pentest_recon_tool_execution",
@@ -85,7 +101,7 @@
     "action": "log",
     "tools": ["Bash"],
     "field": "command",
-    "pattern": "\\bnmap\\b|\\bmasscan\\b|\\bsqlmap\\b|\\bhydra\\b|\\bnikto\\b|\\b(gobuster|dirbuster|dirb)\\b|\\bwpscan\\b|\\bhashcat\\b|\\bjohn\\s+(--wordlist|--format|--rules)\\b"
+    "pattern": "\\bnmap\\b|\\bmasscan\\b|\\bsqlmap\\b|\\bhydra\\b|\\bnikto\\b|\\b(gobuster|dirbuster|dirb)\\b|\\bwpscan\\b|\\bhashcat\\b|\\bjohn\\s+(--wordlist|--format|--rules)\\b|\\brustscan\\b|\\barp-scan\\b|\\bnbtscan\\b|\\bamass\\b|\\bsubfinder\\b|\\bkatana\\b|\\bgau\\b|\\bparamspider\\b|\\bwaybackurls\\b|\\bfierce\\b|\\bdnsenum\\b|\\bffuf\\b|\\bferoxbuster\\b|\\bdirsearch\\b|\\bjaeles\\b|\\bdalfox\\b|\\bx8\\b|\\barjun\\b|\\bwafw00f\\b"
   },
   {
     "id": "chmod_world_writable_recursive",
