@@ -5,6 +5,88 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.8.0] - 2026-09-14
+
+### Added
+- **"Advanced Threat Detection" home-page card**: reuses the `matched_rule` architecture
+  (no duplicate regex) to group several recent batches of high-risk rules into ten
+  categories — `cryptoMining`, `dbFileWrite` (database arbitrary file write),
+  `webshell` (webshell code signatures), `reverseEscapeShell` (reverse/escape shells),
+  `downloadExec` (download-then-run), `c2Framework`, `postExploitation`
+  (post-exploitation/lateral-movement tools), `suspiciousMcp` (suspicious MCP tool
+  names), `pentestRecon` (scanning/brute-force tools), and `covertTunnel` (covert
+  tunneling tools). Adds `/api/drilldown/advanced-threat`.
+- **`policy.py`'s `evaluate()` gained `field: "tool_name"` support**: a rule can now
+  match the `tool_name` parameter itself instead of only fields inside `tool_input` —
+  an MCP tool call's `tool_name` is a runtime-only dynamic string
+  (`mcp__<server>__<tool>`) that can't be enumerated into the `tools` list the way
+  Bash/Write can.
+- **New `mcp_suspicious_tool_name` rule** (`high`/`confirm`): flags an MCP tool name
+  containing `reverse-shell`/`c2`/`beacon`/`backdoor` — a direct response to
+  discovering, while analyzing AIPentest/CyberStrikeAI, a reverse-shell MCP server
+  whose own docs explicitly show how to wire it into Claude Code's `.mcp.json`.
+- **New `post_exploitation_tool_execution` rule** (`high`/`confirm`): the standard
+  post-exploitation/lateral-movement toolset —
+  `linpeas`/`netexec`/`bloodhound`/`sharphound`/`smbmap`/`rpcclient`/`enum4linux-ng`.
+  `c2_framework_execution` gained `pacu` (an AWS attack framework); `pentest_recon_tool_execution`
+  gained 18 subdomain-enumeration/web-fuzzing tools (`rustscan`/`amass`/`subfinder`/
+  `ffuf`/`feroxbuster`/`dirsearch`, etc.).
+- **New "Reverse-Engineering Tool Invocations" home-page card**: identifies
+  IDA/Ghidra/radare2/rizin/GDB plus Binary Ninja/Hopper/x64dbg/WinDbg/dnSpy/JADX/
+  apktool/Frida/binwalk/checksec and similar reverse-engineering tool invocations —
+  pure visibility stats (these are everyday tools for professional reverse
+  engineers/CTF players/compliance testing, don't imply risk, and never
+  confirm/block).
+- **New `shell_escape_via_utility` rule** (`high`/`block`, inspired by
+  [GTFOBins](https://github.com/GTFOBins/GTFOBins.github.io)): `find -exec`,
+  `awk system()`, `perl exec`, Python's `pty.spawn`/`os.system`,
+  `tar --checkpoint-action=exec`, `vim -c ':!sh'`, `zip --unzip-command`, `script -c`,
+  and `ssh`'s `ProxyCommand` — the classic shapes for escaping into a shell through
+  an everyday, harmless-looking utility. Advanced Threat Detection gained a matching
+  `reverseEscapeShell` category (grouped with the existing `reverse_shell_pattern`).
+  `default_rules.json` grows from 58 to 70 rules.
+- **New "Sync Update" button on the home page**: `POST /api/sync-update` runs
+  `git pull` in the project's source directory via `execFile` with a fixed argument
+  array (no shell, no request parameters ever reach the command line) to pull down
+  the latest code/rules from GitHub; a confirmation dialog gates it, and git's own
+  output/errors are shown verbatim with no automatic conflict handling.
+- **Unified visual emphasis in drill-down detail views**: the ten groups that share
+  the same drill-down template (GitHub/SSH/download/Docker/archive/netdiag/
+  reverse-engineering/process-management/sensitive-ops/sensitive-data/advanced-threat)
+  now render both the category badge and the "action" label in bold red in the event
+  list.
+
+### Fixed
+- **`decision.submitted` was missing its translation**: the `UserPromptSubmit`
+  lifecycle event's `decision` is always `"submitted"`, but the matching i18n key
+  had been left out, so the Chinese UI showed a bare English word.
+- **Several precision issues in the reverse-engineering-tool classifier** (found
+  against real historical data): IDA is almost always invoked via an absolute path
+  in practice (e.g. `/opt/idapro-9.0/idat64`), and matching only a bare leading
+  filename missed all of those — added path-prefix stripping. An env-var-assignment
+  prefix (`LD_LIBRARY_PATH=... gdb ...`) threw off that same stripping logic — added
+  env-assignment stripping first. The rizin family only recognized `rz-bin`/`rz-asm`;
+  widened to `rz-\w+`. Multi-hyphen frida subcommands like `frida-ls-devices` were
+  missed. Added recognition of macOS `open -a "IDA Pro"`-style GUI launches.
+- **`env_dump` rule over-matched**: the common `env VAR=val VAR2=val2 command`
+  idiom for setting environment variables before launching a subprocess (routine in
+  debug/build scripts) was being flagged as "dumping the environment" — added a
+  negative lookahead to exclude the assignment form. Verified against real data: on
+  one machine, historical false positives dropped from 134 to 14, with v1.7.1's
+  auto-rematch mechanism kicking in automatically, no manual intervention needed.
+- **Geolocation info showed up in English under the Chinese UI** (e.g.
+  `Tseung Kwan O, HK`): `geoip.js` previously hardcoded MaxMind's English names;
+  now it follows the page language (preferring `.names["zh-CN"]` under the Chinese
+  UI). Also added a static table mapping 250 country/region codes to Chinese names
+  as a fallback for flat-format data sources like DB-IP Lite that have no
+  multi-language fields at all (country/region level can be translated; city names
+  stay in English — a genuine data-source limitation, not left unfinished).
+- **Two regex precision bugs found while designing `shell_escape_via_utility`**:
+  the combined short-flag form `script -qc /bin/sh` wasn't matched at first; and
+  `ssh -o ProxyCommand='ssh -W %h:%p jump' target` (a legitimate jump-host setup)
+  was flagged as a shell escape — a lazy wildcard was matching into the tail "sh" of
+  the word "ssh" itself; fixed with a word boundary.
+
 ## [1.7.2] - 2026-09-14
 
 ### Added

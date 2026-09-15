@@ -5,6 +5,73 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [1.8.0] - 2026-09-14
+
+### 新增
+- **"高级威胁检测"首页卡片**：复用 `matched_rule` 架构（不重复写正则），把此前几批新加的
+  高危规则统一归类展示——`cryptoMining`（挖矿）、`dbFileWrite`（数据库任意文件写入）、
+  `webshell`（webshell 代码特征）、`reverseEscapeShell`（反弹/逃逸 shell）、
+  `downloadExec`（下载后执行）、`c2Framework`（C2 框架工具）、`postExploitation`
+  （后渗透/内网横向工具）、`suspiciousMcp`（可疑 MCP 工具名）、`pentestRecon`
+  （扫描/爆破工具）、`covertTunnel`（隐蔽隧道工具）十个分类，新增
+  `/api/drilldown/advanced-threat`。
+- **`policy.py` 的 `evaluate()` 新增 `field: "tool_name"` 支持**：规则可以直接匹配
+  `tool_name` 本身，不再局限于 `tool_input` 里的字段——MCP 工具调用的 `tool_name`
+  是运行时才知道的动态字符串（`mcp__<server>__<tool>`），没法像 Bash/Write 那样枚举进
+  `tools` 列表。
+- **新增 `mcp_suspicious_tool_name` 规则**（`high`/`confirm`）：MCP 工具名里出现
+  `reverse-shell`/`c2`/`beacon`/`backdoor` 字样就标出来——直接对应分析
+  AIPentest/CyberStrikeAI 时发现的反向 Shell MCP Server（官方文档明确支持接入 Claude
+  Code 的 `.mcp.json`）。
+- **新增 `post_exploitation_tool_execution` 规则**（`high`/`confirm`）：
+  `linpeas`/`netexec`/`bloodhound`/`sharphound`/`smbmap`/`rpcclient`/`enum4linux-ng`
+  这几个后渗透/内网横向阶段的标准工具，`c2_framework_execution` 加了 `pacu`（AWS 云
+  攻击框架），`pentest_recon_tool_execution` 加了 18 个子域名枚举/Web 模糊测试工具
+  （`rustscan`/`amass`/`subfinder`/`ffuf`/`feroxbuster`/`dirsearch` 等）。
+- **新增"逆向分析工具调用"首页卡片**：识别 IDA/Ghidra/radare2/rizin/GDB 以及
+  Binary Ninja/Hopper/x64dbg/WinDbg/dnSpy/JADX/apktool/Frida/binwalk/checksec 等
+  一批逆向分析工具的调用，纯可见性统计（这些是专业逆向工程师/CTF/合规安全测试里的日常
+  工具，不代表风险，不参与 confirm/block）。
+- **新增 `shell_escape_via_utility` 规则**（`high`/`block`，参考
+  [GTFOBins](https://github.com/GTFOBins/GTFOBins.github.io)）：`find -exec`、
+  `awk system()`、`perl exec`、Python 的 `pty.spawn`/`os.system`、
+  `tar --checkpoint-action=exec`、`vim -c ':!sh'`、`zip --unzip-command`、
+  `script -c`、`ssh` 的 `ProxyCommand` 这几种"用一个看起来无害的日常工具逃逸出
+  shell"的经典手法，"高级威胁检测"同步加了 `reverseEscapeShell` 分类（把这条和已有的
+  `reverse_shell_pattern` 归到一起）。规则数从 58 增至 70。
+- **首页新增"同步更新"按钮**：`POST /api/sync-update` 用 `execFile` 固定参数数组在
+  项目源码目录跑 `git pull`（不经过 shell，不接受任何请求参数拼进命令行），把
+  GitHub 上的新代码/新规则同步下来；二次确认弹窗，把 git 自己的输出/报错原样展示，
+  不做任何自动冲突处理。
+- **下钻详情统一视觉强化**：GitHub/SSH/下载/Docker/压缩归档/网络诊断/逆向分析/
+  进程管理/敏感操作/敏感数据/高级威胁检测这十个共用同一套下钻模板的分组，事件明细
+  里的分类徽章和"行为操作"标签统一标红加粗。
+
+### 修复
+- **`decision.submitted` 缺中英文翻译**：`UserPromptSubmit` 生命周期事件的
+  `decision` 固定是 `"submitted"`，之前漏加了对应的 i18n key，中文界面下显示成了
+  英文单词。
+- **逆向分析工具调用分类器的几个精度问题**（用真实历史数据发现的）：真实场景里 IDA
+  几乎都是绝对路径调用（比如 `/opt/idapro-9.0/idat64`），原来只认裸文件名开头会
+  全部漏检，补了路径前缀剥离；`LD_LIBRARY_PATH=... gdb ...` 这种环境变量赋值前缀
+  也会把剥离逻辑带偏，补了环境变量赋值剥离；rizin 家族只认了 `rz-bin`/`rz-asm`
+  两个子工具，扩到 `rz-\w+`；`frida-ls-devices` 这类多段连字符的 frida 子命令
+  漏匹配；新增 macOS `open -a "IDA Pro"` 等 GUI 启动方式识别。
+- **`env_dump` 规则过度匹配**：`env VAR=val VAR2=val2 command` 这种设置环境变量
+  启动子进程的常见写法（调试/构建脚本里很常见）被误判成"在 dump 环境变量"，加了
+  负向前瞻排除掉赋值形式。用真实数据验证：某台机器上的历史误判从 134 条降到
+  14 条，v1.7.1 加的自动重判机制自动生效，未手动干预。
+- **归属地信息中文界面下显示英文**（比如 `Tseung Kwan O, HK`）：`geoip.js` 之前
+  写死取 MaxMind 数据的英文名，改成跟着页面语言选（中文界面优先取
+  `.names["zh-CN"]`）；另外新增一张 250 个国家/地区代码到中文名的静态映射表，
+  给 DB-IP Lite 这类没有多语言字段的扁平格式数据源兜底（国家/地区一级能翻，城市名
+  因为数据源限制没有中文版本，如实保留英文）。
+- **`shell_escape_via_utility` 规则设计过程中修了两个正则精度 bug**：
+  `script -qc /bin/sh` 这种合并短选项写法一开始没匹配上；
+  `ssh -o ProxyCommand='ssh -W %h:%p jump' target`（合法跳板机用法）被误判成
+  shell 逃逸——懒惰匹配的通配符吃到了 "ssh" 这个词自己的尾巴 "sh"，加了词边界
+  卡死。
+
 ## [1.7.2] - 2026-09-14
 
 ### 新增
