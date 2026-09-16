@@ -5,6 +5,20 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [Unreleased]
+
+### Added
+- **Bilingual install/start scripts**: `install.sh` and `start.sh` now detect the system
+  language and print Chinese in a Chinese locale, English everywhere else (~30 messages).
+  Resolution order: an explicit `CC_MONITOR_LANG` > `LC_ALL` / `LC_MESSAGES` / `LANG` >
+  macOS `defaults read -g AppleLocale` — terminals opened from the macOS GUI frequently don't
+  set `LANG` at all, and without that last fallback Chinese users on a Mac would only ever
+  see English.
+- **Token usage in the session-list drilldown**: four new columns (In / Out / Cached / Total
+  tokens) sourced from each session's transcript, reusing the same `getTokenStats` as the
+  Status page. Sessions without a transcript (started before the hooks were installed) show
+  `-` rather than a made-up number.
+
 ## [2.0.0] - 2026-09-16
 
 ### Added

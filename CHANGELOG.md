@@ -5,6 +5,17 @@
 本文件记录 CC-Monitor 每个版本实现了什么功能。格式大致参考
 [Keep a Changelog](https://keepachangelog.com/)，但不强制严格照搬其分类。
 
+## [未发布]
+
+### 新增
+- **安装/启动脚本双语化**：`install.sh` 和 `start.sh` 新增系统语言检测，中文环境输出中文、
+  其它一律英文（约 30 条提示）。判定顺序：`CC_MONITOR_LANG` 显式指定 > `LC_ALL` /
+  `LC_MESSAGES` / `LANG` > macOS 的 `defaults read -g AppleLocale`——macOS 从图形界面打开
+  的终端经常压根不设 `LANG`，少了最后这层兜底，mac 上的中文用户只会看到英文。
+- **会话列表详情增加模型 token 用量**：新增"输入 / 输出 / 缓存 / Token 合计"四列，数据来自
+  各会话的 transcript（复用"状态信息"页那套 `getTokenStats`）。没有 transcript 的会话
+  （装 hooks 之前开的）如实显示 `-`。
+
 ## [2.0.0] - 2026-09-16
 
 ### 新增
