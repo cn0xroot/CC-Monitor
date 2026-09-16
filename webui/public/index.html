@@ -78,7 +78,7 @@
           <div class="card-vital-badge" id="stat-sessions-vital" hidden></div>
           <div class="strip-num" id="stat-total-sessions">-</div>
           <div class="strip-body">
-            <div class="strip-title" data-i18n="home.strip.sessions">已监测会话</div>
+            <div class="strip-title"><span data-i18n="home.strip.sessions">已监测会话</span><svg class="claude-mark" viewBox="0 0 24 24" role="img" aria-label="Claude Code"><title>Claude Code</title><defs><linearGradient id="claude-mark-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff9d43"/><stop offset="1" stop-color="#ec5615"/></linearGradient></defs><path d="M12.00 9.60Q13.55 5.30 12.00 1.00Q10.45 5.30 12.00 9.60ZM13.30 9.98Q16.93 7.20 17.95 2.75Q14.32 5.53 13.30 9.98ZM14.18 11.00Q18.74 10.63 22.01 7.43Q17.45 7.81 14.18 11.00ZM14.38 12.34Q18.41 14.49 22.89 13.57Q18.85 11.42 14.38 12.34ZM13.81 13.57Q16.05 17.56 20.31 19.20Q18.08 15.22 13.81 13.57ZM12.68 14.30Q12.40 18.87 15.10 22.55Q15.37 17.99 12.68 14.30ZM11.32 14.30Q8.63 17.99 8.90 22.55Q11.60 18.87 11.32 14.30ZM10.19 13.57Q5.92 15.22 3.69 19.20Q7.95 17.56 10.19 13.57ZM9.62 12.34Q5.15 11.42 1.11 13.57Q5.59 14.49 9.62 12.34ZM9.82 11.00Q6.55 7.81 1.99 7.43Q5.26 10.63 9.82 11.00ZM10.70 9.98Q9.68 5.53 6.05 2.75Q7.07 7.20 10.70 9.98Z" fill="url(#claude-mark-grad)"/></svg></div>
             <div class="strip-cap"><span class="clickable" data-drilldown="live-sessions"><span id="stat-live-sessions">-</span> <span data-i18n="home.strip.liveSessions">个 Web UI 终端会话进行中</span></span> <span class="click-hint" data-i18n="home.card.clickHint">点击查看 ›</span></div>
           </div>
         </div>
@@ -131,6 +131,8 @@
       <div class="sec">
         <span class="sec-title" data-i18n="home.sec.account">Anthropic 账号 &amp; 额度</span>
         <span class="info-tip" data-i18n-tip="home.anthropicAccount.hint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
+        <button type="button" class="btn-secondary sec-btn account-mask-btn" data-i18n-title="home.account.maskTitle"></button>
+        <select class="pill-select usage-scheme-select" data-i18n-title="home.account.barSchemeTitle"><option value="default" data-i18n="home.account.scheme.default">配色：默认</option><option value="steps" data-i18n="home.account.scheme.steps">配色：分段色阶</option><option value="traffic" data-i18n="home.account.scheme.traffic">配色：红黄绿三档</option><option value="ocean" data-i18n="home.account.scheme.ocean">配色：蓝青</option><option value="neon" data-i18n="home.account.scheme.neon">配色：紫粉霓虹</option><option value="sunset" data-i18n="home.account.scheme.sunset">配色：日落暖</option><option value="forest" data-i18n="home.account.scheme.forest">配色：森林绿</option><option value="spectrum" data-i18n="home.account.scheme.spectrum">配色：光谱</option><option value="mono" data-i18n="home.account.scheme.mono">配色：灰度</option><option value="accent" data-i18n="home.account.scheme.accent">配色：主题强调色</option></select>
         <span class="sec-rule"></span>
       </div>
       <div class="home-account">
@@ -334,6 +336,8 @@
       <div class="sec" style="margin-top:4px;">
         <span class="sec-title" data-i18n="home.sec.account">Anthropic 账号 &amp; 额度</span>
         <span class="info-tip" data-i18n-tip="status.usageHint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
+        <button type="button" class="btn-secondary sec-btn account-mask-btn" data-i18n-title="home.account.maskTitle"></button>
+        <select class="pill-select usage-scheme-select" data-i18n-title="home.account.barSchemeTitle"><option value="default" data-i18n="home.account.scheme.default">配色：默认</option><option value="steps" data-i18n="home.account.scheme.steps">配色：分段色阶</option><option value="traffic" data-i18n="home.account.scheme.traffic">配色：红黄绿三档</option><option value="ocean" data-i18n="home.account.scheme.ocean">配色：蓝青</option><option value="neon" data-i18n="home.account.scheme.neon">配色：紫粉霓虹</option><option value="sunset" data-i18n="home.account.scheme.sunset">配色：日落暖</option><option value="forest" data-i18n="home.account.scheme.forest">配色：森林绿</option><option value="spectrum" data-i18n="home.account.scheme.spectrum">配色：光谱</option><option value="mono" data-i18n="home.account.scheme.mono">配色：灰度</option><option value="accent" data-i18n="home.account.scheme.accent">配色：主题强调色</option></select>
         <span class="sec-rule"></span>
       </div>
       <div class="home-account">

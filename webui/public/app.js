@@ -64,6 +64,18 @@ function formatAgo(ms) {
   return t("drilldown.daysAgo", { n: days });
 }
 
+// 时长（秒）→ "7 天 12 小时" / "3 小时 42 分钟"。跟 formatAgo 的区别是它描述的是一段
+// 持续时间，不是"多久以前"，所以不带"前"字。
+function formatDuration(sec) {
+  if (sec === null || sec === undefined) return "-";
+  if (sec < 60) return t("drilldown.duration.seconds", { s: Math.floor(sec) });
+  const mins = Math.floor(sec / 60);
+  if (mins < 60) return t("drilldown.duration.minutes", { m: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t("drilldown.duration.hours", { h: hours, m: mins % 60 });
+  return t("drilldown.duration.days", { d: Math.floor(hours / 24), h: hours % 24 });
+}
+
 // "生命体征"指示器：working/idle/dead 三态复用同一套心电监护仪视觉——见 style.css
 // 顶部那段注释。心形和锯齿波形都是通用图形符号，不是照抄哪个具体图标库的资源。
 const VITAL_HEART_PATH =
@@ -1671,6 +1683,9 @@ async function showTargetConnections(ip, port, host) {
 async function openDrilldown(kind) {
   const body = document.getElementById("drilldown-body");
   try {
+    // 好几个下钻要把规则 id 显示成人话（拦截统计、审批历史）。规则文案平时是跟着
+    // 审批台一起刷的，首屏可能还没拉到——这里按需补一次（服务端有 5s 缓存，很便宜）。
+    if (Object.keys(ruleMetaCache).length === 0) await refreshRuleMeta();
     await openDrilldownInner(kind);
   } finally {
     const placeholder = body.querySelector(".empty-state");
@@ -1759,15 +1774,15 @@ async function openDrilldownInner(kind) {
               (r) => `
             <tr>
               <td>${escapeHtml(r.cwd || "-")}</td>
-              <td class="dd-mono">${escapeHtml(r.sessionId)}</td>
-              <td>${renderVital(r.status, r.statusAgoMs)}</td>
-              <td class="dd-mono">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
-              <td>${escapeHtml(modelShort(r.model) || "-")}</td>
-              <td>${r.eventCount}</td>
-              <td>${r.blockedCount > 0 ? `🛑${r.blockedCount} ` : ""}${r.bypassCount > 0 ? `⚠${r.bypassCount}` : ""}${
+              <td class="dd-mono dd-nowrap">${escapeHtml(r.sessionId)}</td>
+              <td class="dd-nowrap">${renderVital(r.status, r.statusAgoMs)}</td>
+              <td class="dd-mono dd-nowrap">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
+              <td class="dd-nowrap">${escapeHtml(modelShort(r.model) || "-")}</td>
+              <td class="dd-nowrap">${r.eventCount}</td>
+              <td class="dd-nowrap">${r.blockedCount > 0 ? `🛑${r.blockedCount} ` : ""}${r.bypassCount > 0 ? `⚠${r.bypassCount}` : ""}${
                 r.blockedCount === 0 && r.bypassCount === 0 ? "-" : ""
               }</td>
-              <td class="dd-mono">${(r.firstTs || "").slice(0, 19)} ~ ${(r.lastTs || "").slice(11, 19)}</td>
+              <td class="dd-mono dd-nowrap">${(r.firstTs || "").slice(0, 19)} ~ ${(r.lastTs || "").slice(11, 19)}</td>
             </tr>`
             )
             .join("")}
@@ -1789,6 +1804,8 @@ async function openDrilldownInner(kind) {
         <thead><tr>
           <th>${t("drilldown.identity.pid")}</th><th>${t("drilldown.identity.user")}</th>
           <th>${t("drilldown.sessions.status")}</th><th>${t("drilldown.lastActive")}</th>
+          <th>${t("drilldown.identity.uptime")}</th><th>${t("drilldown.identity.model")}</th>
+          <th>${t("drilldown.identity.events")}</th><th>${t("drilldown.identity.rss")}</th>
           <th>${t("drilldown.identity.cwd")}</th>
         </tr></thead>
         <tbody>
@@ -1796,11 +1813,19 @@ async function openDrilldownInner(kind) {
             .map(
               (p) => `
             <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
-              <td class="dd-mono">${p.pid}</td>
-              <td>${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
-              <td>${renderVital(p.status, p.statusAgoMs)}</td>
-              <td class="dd-mono">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
-              <td>${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
+              <td class="dd-mono dd-nowrap">${p.pid}</td>
+              <td class="dd-nowrap">${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
+              <td class="dd-nowrap">${renderVital(p.status, p.statusAgoMs)}</td>
+              <td class="dd-mono dd-nowrap">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
+              <td class="dd-mono dd-nowrap"${p.startedAt ? ` title="${t("drilldown.identity.startedAt", { t: fmtDateTime24(new Date(p.startedAt)) })}"` : ""}>${formatDuration(p.uptimeSec)}</td>
+              <td class="dd-mono dd-nowrap">${
+                p.model
+                  ? escapeHtml(p.model)
+                  : `<span class="hint">${t("drilldown.identity.modelUnknown")}</span>`
+              }</td>
+              <td class="dd-mono dd-nowrap">${p.eventCount === null || p.eventCount === undefined ? "-" : p.eventCount}</td>
+              <td class="dd-mono dd-nowrap">${p.rssKb ? formatBytes(p.rssKb * 1024) : "-"}</td>
+              <td title="${escapeHtml(p.args || "")}">${p.cwd ? escapeHtml(p.cwd) : `<span class="hint">${t("drilldown.identity.cwdUnknown")}</span>`}</td>
             </tr>`
             )
             .join("")}
@@ -1970,7 +1995,7 @@ async function openDrilldownInner(kind) {
           <span class="${badgeCls}">${escapeHtml(kindLabel(r.kind))}</span>
           <span class="label dd-badge-danger">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
         </div>
-        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
+        <div class="cwd">${sessionCwdLine(r)}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
           )
@@ -2054,23 +2079,62 @@ async function openDrilldownInner(kind) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.blocked.empty")}</div>`;
       return;
     }
-    body.innerHTML = rows
-      .map(
-        (r) => `
+    // 明细列表之前先给一组统计：光是一长串事件很难看出"到底主要在拦什么"。
+    // 三个维度都从已经拿到的 rows 里现算，不用再打接口。
+    const countBy = (keyFn) => {
+      const m = new Map();
+      for (const r of rows) {
+        const k = keyFn(r);
+        m.set(k, (m.get(k) || 0) + 1);
+      }
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    };
+    const byRule = countBy((r) => r.matchedRule || "-");
+    const byTool = countBy((r) => r.toolName || "-");
+    const byDir = countBy((r) => r.cwd || "-");
+    const now = Date.now();
+    const since = (ms) => rows.filter((r) => now - new Date(r.ts).getTime() <= ms).length;
+    const statTable = (titleKey, entries, labelFn) => `
+      <div class="home-box">
+        <div class="box-title">${t(titleKey)}</div>
+        <table class="dd-table">
+          <thead><tr><th>${t("drilldown.blocked.category")}</th><th>${t("drilldown.blocked.count")}</th></tr></thead>
+          <tbody>
+            ${entries
+              .map(([k, n]) => `<tr><td class="dd-badge-danger">${escapeHtml(labelFn(k))}</td><td class="dd-nowrap">${n}</td></tr>`)
+              .join("")}
+          </tbody>
+        </table>
+      </div>`;
+    body.innerHTML = `
+      <div class="home-grid cols-3" style="margin-bottom:14px;">
+        <div class="card dense"><div class="card-num accent-red-text">${rows.length}</div><div class="card-label">${t("drilldown.blocked.total")}</div></div>
+        <div class="card dense"><div class="card-num">${since(24 * 3600 * 1000)}</div><div class="card-label">${t("drilldown.blocked.last24h")}</div></div>
+        <div class="card dense"><div class="card-num">${since(7 * 24 * 3600 * 1000)}</div><div class="card-label">${t("drilldown.blocked.last7d")}</div></div>
+      </div>
+      <div class="home-grid cols-3" style="margin-bottom:18px;">
+        ${statTable("drilldown.blocked.byRule", byRule, (k) => ruleTitle(k) || k)}
+        ${statTable("drilldown.blocked.byTool", byTool, (k) => toolLabel(k, k))}
+        ${statTable("drilldown.blocked.byDir", byDir, (k) => folderName(k) || k)}
+      </div>
+      <div class="box-title" style="margin:0 0 8px;">${t("drilldown.eventDetail")}</div>
+      ${rows
+        .map(
+          (r) => `
       <div class="log-item">
         <div class="row1">
           <span class="ts">${r.ts}</span>
           <span class="risk high">${escapeHtml(riskLabel("high"))}</span>
-          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+          <span class="label op-${operationCategory(r)}">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
           <span class="decision blocked">${escapeHtml(decisionLabel("blocked"))}</span>
         </div>
-        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")} · ${escapeHtml(
-          r.matchedRule || "-"
-        )}</div>
+        <div class="cwd">${sessionCwdLine(r)}<span class="sep"> · </span><span class="rule">${escapeHtml(
+            ruleTitle(r.matchedRule) || r.matchedRule || "-"
+          )}</span></div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
-      )
-      .join("");
+        )
+        .join("")}`;
     return;
   }
 
@@ -2078,25 +2142,45 @@ async function openDrilldownInner(kind) {
     // 只有一张卡片、不分子类型，跟上面那组"file-op-/install-op-/github-op-"的
     // 共用逻辑不一样——单独处理，直接调 /api/drilldown/screenshot，不用拼 opType。
     title.textContent = t("home.screenshotOps.total") + " — " + t("drilldown.fileOp.suffix");
-    const rows = await api("/api/drilldown/screenshot");
-    if (!rows) return;
+    const result = await api("/api/drilldown/screenshot");
+    if (!result) return;
+    const rows = result.events || [];
     if (rows.length === 0) {
       body.innerHTML = `<div class="empty-state">${t("drilldown.empty")}</div>`;
       return;
     }
-    body.innerHTML = rows
-      .map(
-        (r) => `
+    // "真的截了屏"和"只是打开了一张图片"必须分开看：这张卡里绝大多数其实是后者，
+    // 混成一个数字的时候，截图命令有没有被检测到完全看不出来。
+    const shotKindLabel = (k) => t("drilldown.screenshot.kind." + k) || k;
+    const bd = result.breakdown || [];
+    const realShots = bd.filter((r) => r.kind !== "imageRead").reduce((a, r) => a + r.n, 0);
+    body.innerHTML = `
+      <div class="home-grid cols-3" style="margin-bottom:14px;">
+        <div class="card dense"><div class="card-num accent-red-text">${realShots}</div><div class="card-label">${t("drilldown.screenshot.realTotal")}</div></div>
+        ${bd
+          .map(
+            (r) =>
+              `<div class="card dense"><div class="card-num shot-kind-${escapeHtml(r.kind || "")}">${r.n}</div><div class="card-label">${escapeHtml(
+                shotKindLabel(r.kind)
+              )}</div></div>`
+          )
+          .join("")}
+      </div>
+      <div class="box-title" style="margin:0 0 8px;">${t("drilldown.eventDetail")}</div>
+      ${rows
+        .map(
+          (r) => `
       <div class="log-item">
         <div class="row1">
           <span class="ts">${r.ts}</span>
-          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+          <span class="dd-badge-category shot-kind-${escapeHtml(r.kind || "")}">${escapeHtml(shotKindLabel(r.kind))}</span>
+          <span class="label op-${operationCategory(r)}">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
         </div>
-        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
+        <div class="cwd">${sessionCwdLine(r)}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
-      )
-      .join("");
+        )
+        .join("")}`;
     return;
   }
 
@@ -2119,7 +2203,7 @@ async function openDrilldownInner(kind) {
           <span class="ts">${r.ts}</span>
           <span class="label">${escapeHtml(t("drilldown.todoCalls.itemCount", { n: r.todoCount }))}</span>
         </div>
-        <div class="cwd">${r.session_id ? folderName(r.cwd) + " · " + r.session_id.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
+        <div class="cwd">${sessionCwdLine(r)}</div>
       </div>`
       )
       .join("");
@@ -2157,9 +2241,9 @@ async function openDrilldownInner(kind) {
       <div class="log-item">
         <div class="row1">
           <span class="ts">${r.ts}</span>
-          <span class="label">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
+          <span class="label op-${operationCategory(r)}">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
         </div>
-        <div class="cwd">${r.sessionId ? folderName(r.cwd) + " · " + r.sessionId.slice(0, 8) + "… · " : ""}${escapeHtml(r.cwd || "")}</div>
+        <div class="cwd">${sessionCwdLine(r)}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
       </div>`
         )
@@ -2416,6 +2500,112 @@ function conkyStepColor(pct) {
   return CONKY_STEPS[CONKY_STEPS.length - 1][1];
 }
 
+// 额度进度条的配色方案：原本是写死的两套——"剩余"用 conky 分段色阶、"已用"用连续
+// 渐变。有人更喜欢一眼分档的红黄绿，也有人不想让进度条抢视线（单色）。做成一个可选
+// 项存在本浏览器里，纯展示，不影响任何数据。
+const USAGE_SCHEME_KEY = "cc_monitor_usage_scheme";
+
+// 配色方案 = 一组锚点颜色，按"健康度"（0=最危险 100=最健康）在锚点之间插值。
+// 原来那几个方案全是红黄绿一个色系，看着差不多；这里补上蓝青/紫粉/日落/森林/灰度/
+// 光谱这些真正不同色系的，换一个能明显看出来。锚点从左到右 = 从最危险到最健康。
+const USAGE_PALETTES = {
+  health: ["#d90000", "#e6b450", "#10c378"], // 红 → 黄 → 绿（经典）
+  ocean: ["#1e3a8a", "#0ea5e9", "#67e8f9"], // 深蓝 → 天蓝 → 青
+  neon: ["#6d28d9", "#d946ef", "#f9a8d4"], // 紫 → 品红 → 粉
+  sunset: ["#7f1d1d", "#f97316", "#fbbf24"], // 暗红 → 橙 → 琥珀
+  forest: ["#14532d", "#16a34a", "#bef264"], // 深绿 → 绿 → 黄绿
+  mono: ["#3f3f46", "#a1a1aa", "#e4e4e7"], // 灰度：完全不抢视线
+};
+
+function lerpPalette(anchors, pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  const pos = (p / 100) * (anchors.length - 1);
+  const i = Math.min(anchors.length - 2, Math.floor(pos));
+  const a = hexToRgb(anchors[i]);
+  const b = hexToRgb(anchors[i + 1]);
+  if (!a || !b) return anchors[anchors.length - 1];
+  return rgbToHex(lerpRgb(a, b, pos - i));
+}
+
+// 光谱：直接按健康度转色相（0=红 → 120=绿 → 200=青），饱和度拉满，跟上面几套
+// "在两三个锚点之间插值"的做法完全不同，色彩跨度最大。
+function spectrumColor(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  const hue = (p / 100) * 200; // 0(红) → 200(青蓝)
+  const s = 0.72;
+  const l = 0.48;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = l - c / 2;
+  const seg = Math.floor(hue / 60);
+  const rgb = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+  ][Math.min(3, seg)];
+  return rgbToHex(rgb.map((v) => (v + m) * 255));
+}
+
+const USAGE_SCHEMES = ["default", "steps", "traffic", "ocean", "neon", "sunset", "forest", "spectrum", "mono", "accent"];
+let usageScheme = "default";
+try {
+  const saved = localStorage.getItem(USAGE_SCHEME_KEY);
+  if (saved && USAGE_SCHEMES.includes(saved)) usageScheme = saved;
+} catch (e) {
+  // 隐私模式/禁用站点数据：用默认方案
+}
+
+// healthPct 是"健康度"（0=最危险 100=最健康），不是已用百分比——两种卡片的数字含义
+// 不同（剩余 vs 已用），但颜色一律按健康度算，见 usageCard 里的换算。
+function usageBarColor(healthPct, isSession) {
+  const p = Math.max(0, Math.min(100, healthPct));
+  switch (usageScheme) {
+    case "steps":
+      return conkyStepColor(p);
+    case "traffic":
+      return themeVarHex(p <= 10 ? "--red" : p <= 30 ? "--yellow" : "--green", "#4fd18b");
+    case "spectrum":
+      return spectrumColor(p);
+    case "accent":
+      return themeVarHex("--accent", "#4f8cff");
+    case "ocean":
+    case "neon":
+    case "sunset":
+    case "forest":
+    case "mono":
+      return lerpPalette(USAGE_PALETTES[usageScheme], p);
+    default:
+      // 保持原来的行为：单次额度（剩余）分段色阶，其它（已用）连续渐变
+      return isSession ? conkyStepColor(p) : healthColor(p);
+  }
+}
+
+function syncUsageSchemeSelects() {
+  document.querySelectorAll(".usage-scheme-select").forEach((sel) => {
+    sel.value = usageScheme;
+  });
+}
+
+function setUsageScheme(value) {
+  if (!USAGE_SCHEMES.includes(value)) return;
+  usageScheme = value;
+  try {
+    localStorage.setItem(USAGE_SCHEME_KEY, value);
+  } catch (e) {
+    // 存不下就只在本次会话生效
+  }
+  syncUsageSchemeSelects();
+  // 两块额度面板重画一遍（接口服务端有 180s 缓存，这里再请求一次很便宜）
+  refreshUsageBoard();
+  refreshHomeAnthropicInfo();
+}
+
+document.addEventListener("change", (ev) => {
+  const sel = ev.target.closest(".usage-scheme-select");
+  if (sel) setUsageScheme(sel.value);
+});
+
 // optional=true 的额度（按模型的 Sonnet/Opus 周额度）：接口没返回这个桶就整张卡不画——
 // 不是每个账号都有这两项（比如只有 Fable 限额的账号），画一张"-"只会让人以为出了错。
 // 单次额度和全模型周额度不是可选的：没数据也要占位，提示"这里本该有东西"。
@@ -2436,7 +2626,7 @@ function usageCard(label, bucket, windowMs, optional = false) {
   // 百分比"，但颜色统一换算成"健康度"（剩余越多越绿）——数字含义不同，颜色逻辑一致。
   const displayPct = isSession ? 100 - usedPct : usedPct;
   const healthPct = isSession ? displayPct : 100 - usedPct;
-  const barColor = isSession ? conkyStepColor(healthPct) : healthColor(healthPct);
+  const barColor = usageBarColor(healthPct, isSession);
   const barColorLight = rgbToHex(lerpRgb(hexToRgb(barColor), [255, 255, 255], 0.6));
   let hourglass = "";
   if (bucket.resetsAt && windowMs) {
@@ -2491,15 +2681,33 @@ function limitKindLabel(kind) {
 }
 
 const SEVERITY_BAR_CLASS = { normal: "sev-normal", warning: "sev-warning", critical: "sev-critical", purple: "sev-purple" };
-function neonPercentBar(percent, severity, big) {
+// 选了非默认配色方案时，"已使用百分比"和"重置时间"这两种进度条也跟着走同一套颜色，
+// 否则页面上一半条是方案色、一半还是老的 severity 色，看着是两套东西。默认方案下
+// 保持原样（按 severity 上色），"级别"那一列本来就在说正常/警告/严重，不重复。
+function usageBarOverride(healthPct) {
+  return usageScheme === "default" ? null : usageBarColor(healthPct, false);
+}
+
+function neonPercentBar(percent, severity, big, colorOverride) {
   if (percent === null || percent === undefined) return "-";
   const pct = Math.max(0, Math.min(100, percent));
-  const sevClass = SEVERITY_BAR_CLASS[severity] || "sev-normal";
-  return `
+  if (!colorOverride) {
+    const sevClass = SEVERITY_BAR_CLASS[severity] || "sev-normal";
+    return `
     <div class="neon-bar ${sevClass}${big ? " neon-bar-lg" : ""}">
       <div class="neon-bar-fill" style="width:${pct}%"></div>
     </div>
     <span class="neon-bar-pct">${percent}%</span>`;
+  }
+  const light = rgbToHex(lerpRgb(hexToRgb(colorOverride) || [128, 128, 128], [255, 255, 255], 0.6));
+  return `
+    <div class="neon-bar${big ? " neon-bar-lg" : ""}" style="border:1px solid ${colorOverride}; box-shadow:0 0 6px ${withAlpha(
+    colorOverride,
+    0.45
+  )};">
+      <div class="neon-bar-fill" style="width:${pct}%; background:linear-gradient(90deg, ${light}, ${colorOverride});"></div>
+    </div>
+    <span class="neon-bar-pct" style="color:${colorOverride};">${percent}%</span>`;
 }
 
 // 重置时间那一栏配的"这个窗口已经过去多少"紫色进度条——跟额度百分比不是一回事，
@@ -2510,7 +2718,7 @@ function limitElapsedBar(resetsAt, kind) {
   const msLeft = new Date(resetsAt).getTime() - Date.now();
   if (Number.isNaN(msLeft)) return "";
   const elapsed = Math.round((1 - Math.max(0, Math.min(1, msLeft / windowMs))) * 100);
-  return `<div class="neon-bar-cell" style="margin-top:4px;">${neonPercentBar(elapsed, "purple")}</div>`;
+  return `<div class="neon-bar-cell" style="margin-top:4px;">${neonPercentBar(elapsed, "purple", false, usageBarOverride(100 - elapsed))}</div>`;
 }
 
 function fmtAccountDate(iso) {
@@ -2528,6 +2736,56 @@ async function fetchAccountInfo() {
   return accountInfoCache;
 }
 
+// 账号信息打码开关：截图/录屏/结对编程的时候，姓名、邮箱、组织、套餐、计费方式这些
+// 一眼就能认出人的字段不该跟着一起曝出去（这个项目自己就在提交历史里踩过这个坑）。
+// 只影响本浏览器的显示，不改接口返回、不动任何数据；额度百分比不打码，那不是隐私。
+const ACCOUNT_MASK_KEY = "cc_monitor_mask_account";
+const ACCOUNT_MASK_TEXT = "***";
+let accountMasked = false;
+try {
+  accountMasked = localStorage.getItem(ACCOUNT_MASK_KEY) === "1";
+} catch (e) {
+  // 隐私模式/禁用了站点数据：当成没开，不影响页面工作
+}
+
+function syncAccountMaskBtns() {
+  document.querySelectorAll(".account-mask-btn").forEach((btn) => {
+    btn.textContent = t(accountMasked ? "home.account.unmask" : "home.account.mask");
+    btn.classList.toggle("active", accountMasked);
+  });
+}
+
+function toggleAccountMask() {
+  accountMasked = !accountMasked;
+  try {
+    localStorage.setItem(ACCOUNT_MASK_KEY, accountMasked ? "1" : "0");
+  } catch (e) {
+    // 存不下就只在本次会话生效
+  }
+  syncAccountMaskBtns();
+  // 用缓存里的账号信息就地重画，不用再打一次接口
+  renderAccountProfileInto("anthropic-profile-box", "anthropic-profile-info", accountInfoCache);
+  renderAccountProfileInto("status-profile-box", "status-profile-info", accountInfoCache);
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest(".account-mask-btn")) toggleAccountMask();
+});
+
+// 下钻列表里的"文件夹 · session · 完整路径"这一行：三段各自上色，长列表里扫起来
+// 比一整行灰字快得多。sessionId 字段名在不同接口里有 sessionId / session_id 两种写法，
+// 这里一并兼容。
+function sessionCwdLine(r) {
+  const sid = r.sessionId || r.session_id || "";
+  const cwd = r.cwd || "";
+  const head = sid
+    ? `<span class="folder">${escapeHtml(folderName(cwd))}</span><span class="sep"> · </span><span class="sid">${escapeHtml(
+        sid.slice(0, 8)
+      )}…</span><span class="sep"> · </span>`
+    : "";
+  return `${head}<span class="path">${escapeHtml(cwd)}</span>`;
+}
+
 function renderAccountProfileInto(boxId, listId, info) {
   const box = document.getElementById(boxId);
   const list = document.getElementById(listId);
@@ -2536,18 +2794,20 @@ function renderAccountProfileInto(boxId, listId, info) {
     box.hidden = true;
     return;
   }
+  // 打码时所有账号字段统一显示成 ***，连字段长度都不泄露
+  const v = (text) => (accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(text));
   const rows = [];
-  if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: escapeHtml(info.displayName) });
-  if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: escapeHtml(info.email) });
-  if (info.organizationName) rows.push({ label: t("home.anthropicAccount.profile.org"), value: escapeHtml(info.organizationName) });
-  if (info.organizationRole) rows.push({ label: t("home.anthropicAccount.profile.role"), value: escapeHtml(info.organizationRole) });
-  if (info.organizationType) rows.push({ label: t("home.anthropicAccount.profile.plan"), value: escapeHtml(info.organizationType) });
-  if (info.organizationRateLimitTier) rows.push({ label: t("home.anthropicAccount.profile.rateLimitTier"), value: escapeHtml(info.organizationRateLimitTier) });
-  if (info.billingType) rows.push({ label: t("home.anthropicAccount.profile.billing"), value: escapeHtml(info.billingType) });
+  if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: v(info.displayName) });
+  if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: v(info.email) });
+  if (info.organizationName) rows.push({ label: t("home.anthropicAccount.profile.org"), value: v(info.organizationName) });
+  if (info.organizationRole) rows.push({ label: t("home.anthropicAccount.profile.role"), value: v(info.organizationRole) });
+  if (info.organizationType) rows.push({ label: t("home.anthropicAccount.profile.plan"), value: v(info.organizationType) });
+  if (info.organizationRateLimitTier) rows.push({ label: t("home.anthropicAccount.profile.rateLimitTier"), value: v(info.organizationRateLimitTier) });
+  if (info.billingType) rows.push({ label: t("home.anthropicAccount.profile.billing"), value: v(info.billingType) });
   const createdAt = fmtAccountDate(info.accountCreatedAt);
-  if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: createdAt });
+  if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: v(createdAt) });
   const subCreatedAt = fmtAccountDate(info.subscriptionCreatedAt);
-  if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: subCreatedAt });
+  if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: v(subCreatedAt) });
   box.hidden = rows.length === 0;
   list.innerHTML = rows.map((r) => `<div class="bar-row"><span class="name">${r.label}</span><span>${r.value}</span></div>`).join("");
 }
@@ -2584,7 +2844,7 @@ function renderLimitsInto(box, list, limits) {
                  直接加在 <td> 上，这个单元格就不再随行内最高的兄弟单元格（"重置时间"
                  那一列带了两行内容，行高被撑高）一起拉伸到同样高度，百分比条就贴在
                  单元格顶部、下面多出一截空白，看起来跟同一行的其它列错位。 -->
-            <td><div class="neon-bar-cell">${neonPercentBar(l.percent, l.severity, big)}</div></td>
+            <td><div class="neon-bar-cell">${neonPercentBar(l.percent, l.severity, big, usageBarOverride(100 - (l.percent || 0)))}</div></td>
             <td><span style="color:${SEVERITY_COLOR[l.severity] || "var(--text-dim)"}">${escapeHtml(severityLabel(l.severity))}</span></td>
             <td class="dd-mono">${l.resetsAt ? fmtResetAt(l.resetsAt) : "-"}${limitElapsedBar(l.resetsAt, l.kind)}</td>
             <td>${l.isActive ? "●" : "-"}</td>
@@ -2608,7 +2868,7 @@ function renderStripUsage(bucket) {
   const windowExpired = bucket.resetsAt && new Date(bucket.resetsAt).getTime() < Date.now();
   const usedPct = windowExpired ? 0 : Math.max(0, Math.min(100, Math.round(bucket.utilization)));
   const remaining = 100 - usedPct;
-  const color = conkyStepColor(remaining);
+  const color = usageBarColor(remaining, true);
   const light = rgbToHex(lerpRgb(hexToRgb(color), [255, 255, 255], 0.6));
   const reset = bucket.resetsAt ? fmtResetAt(bucket.resetsAt).replace(/\s*\(.*\)$/, "") : "";
   el.innerHTML = `
@@ -2879,6 +3139,7 @@ document.getElementById("lang-toggle-btn").addEventListener("click", () => {
   setLang(currentLang === "zh" ? "en" : "zh");
   syncGridToggleBtnText();
   syncApprovalsNotifyBtn();
+  syncAccountMaskBtns();
   syncNewSessionModalText();
   setGpuState(gpuState);
   // 静态文案已经在 setLang -> applyStaticI18n 里刷新了；已经拼好 append 到列表里的
@@ -2897,6 +3158,8 @@ async function bootstrap() {
   applyStaticI18n();
   syncGridToggleBtnText();
   syncApprovalsNotifyBtn();
+  syncAccountMaskBtns();
+  syncUsageSchemeSelects();
 
   const initialSessions = await refreshSessionList();
   const lastId = getLastSession();

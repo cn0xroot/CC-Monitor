@@ -367,6 +367,9 @@ html, body {
 .strip-num { font-size: 1.7143rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 .strip-body { min-width: 0; flex: 1 1 auto; }
 .strip-title { font-weight: 600; font-size: 0.9286rem; line-height: 1.3; }
+/* "已监测的 Claude Code 会话"后面那个橙色星芒——标识这张卡统计的是谁的会话。
+   跟顶栏品牌 logo 里那个 spark 用同一组橙色，视觉上是一家的。 */
+.claude-mark { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-left: 5px; }
 .strip-cap { color: var(--text-dim); font-size: 0.8571rem; margin-top: 2px; }
 .strip-cap .clickable { cursor: pointer; }
 .strip-cap .clickable:hover { color: var(--accent); }
@@ -395,6 +398,9 @@ html, body {
 .sec-title { font-size: 0.8571rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; white-space: nowrap; }
 .sec-rule { flex: 1 1 auto; height: 1px; background: var(--border); }
 .sec-note { font-family: Menlo, Consolas, monospace; font-size: 0.7857rem; color: var(--text-dim); white-space: nowrap; }
+/* 分组标题行里的小按钮（比如账号信息的"隐藏敏感信息"）——比正文按钮矮一圈，做成胶囊状 */
+.sec-btn { flex: 0 0 auto; width: auto; margin: 0; padding: 3px 12px; font-size: 0.8571rem; border-radius: 999px; }
+.sec-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
 /* ⓘ 说明：悬停/聚焦时把长段说明文字以气泡形式展开，data-tip 由 i18n 的 data-i18n-tip 填 */
 .info-tip { position: relative; display: inline-flex; width: 14px; height: 14px; color: var(--text-dim); cursor: help; flex: 0 0 auto; outline: none; }
@@ -634,19 +640,20 @@ html, body {
 .vital {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   vertical-align: middle;
   --vital-color: var(--text-dim);
 }
 .vital-heart {
-  width: 14px;
-  height: 14px;
+  /* 心跳图标放大一档：14px 在表格里太小，颜色深浅（也就是"有多活跃"）几乎看不出来 */
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
   color: var(--vital-color);
 }
 .vital-ecg {
-  width: 40px;
-  height: 14px;
+  width: 54px;
+  height: 20px;
   flex: 0 0 auto;
   overflow: visible;
 }
@@ -744,7 +751,7 @@ html, body {
 .log-item.risk-high { border-left-color: var(--badge-danger); background: color-mix(in srgb, var(--badge-danger) 8%, var(--bg-elevated)); font-weight: 600; }
 
 .log-item .row1 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.log-item .ts { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 0.75rem; }
+.log-item .ts { color: var(--cyan); font-variant-numeric: tabular-nums; font-size: 0.75rem; }
 .log-item .session-tag { color: var(--text-dim); font-size: 0.75rem; }
 
 .log-item .risk, .log-item .label, .log-item .decision {
@@ -773,6 +780,13 @@ html, body {
 .log-item .decision.observed { color: #2a0a3d; background: var(--badge-purple); }
 
 .log-item .cwd { color: var(--text-dim); font-size: 0.75rem; margin-top: 4px; }
+/* 事件列表里"文件夹 · session · 路径 · 规则"这一行分段上色——整行灰字的时候，在几百条
+   记录里找"哪个项目、哪条规则"只能一个字一个字读。分隔符用边框色压下去，别抢视线。 */
+.log-item .cwd .folder { color: var(--magenta); font-weight: 600; }
+.log-item .cwd .sid { font-family: Menlo, Consolas, monospace; color: var(--text-dim); }
+.log-item .cwd .path { color: var(--text); }
+.log-item .cwd .sep { color: var(--border); }
+.log-item .cwd .rule { color: var(--red); font-weight: 600; }
 .log-item .summary { margin-top: 4px; word-break: break-word; white-space: pre-wrap; }
 .log-item .extra { margin-top: 2px; color: var(--text-dim); word-break: break-word; white-space: pre-wrap; }
 .log-item .extra .lbl { color: var(--text-dim); }
@@ -939,6 +953,20 @@ html, body {
   font-weight: 700;
   border-color: var(--red);
 }
+/* 截屏详情里的事件类型徽章按"是不是真的截了屏"上色：真截屏三种各给一个实心色
+   （越像"抓走了屏幕内容"越靠红），"只是打开了一张图片"用中性描边，一眼能扫开。
+   这几个 --badge-* 是不随主题变的语义色，跟日志列表里的风险/操作标签同一套。 */
+.dd-badge-category.shot-kind-cliTool { background: var(--badge-danger); color: #fff; border-color: var(--badge-danger); font-weight: 700; }
+.dd-badge-category.shot-kind-headless { background: var(--badge-orange); color: #2b1300; border-color: var(--badge-orange); font-weight: 700; }
+.dd-badge-category.shot-kind-vm { background: var(--badge-yellow); color: #4a3900; border-color: var(--badge-yellow); font-weight: 700; }
+.dd-badge-category.shot-kind-mcp { background: var(--badge-purple); color: #2a0a3d; border-color: var(--badge-purple); font-weight: 700; }
+.dd-badge-category.shot-kind-imageRead { background: var(--badge-blue); color: #fff; border-color: var(--badge-blue); font-weight: 700; }
+/* 顶部的分类小计卡用同色数字呼应下面的徽章 */
+.card-num.shot-kind-cliTool { color: var(--badge-danger); }
+.card-num.shot-kind-headless { color: var(--badge-orange); }
+.card-num.shot-kind-vm { color: var(--yellow); }
+.card-num.shot-kind-mcp { color: var(--magenta); }
+.card-num.shot-kind-imageRead { color: var(--badge-blue); }
 .error-banner button {
   background: transparent;
   border: 1px solid #6b1f1f;
@@ -1225,6 +1253,13 @@ html, body {
 
 /* ---------- 首页下钻详情弹窗 ---------- */
 .modal.modal-wide { width: min(760px, calc(100vw - 32px)); max-height: 80vh; display: flex; flex-direction: column; }
+/* 下钻弹窗装的是多列数据表——会话列表就有 8 列（完整工作路径、36 位 UUID、时间范围…），
+   760px 根本排不下：列头会被压成一列一个字、UUID 折成四行。它跟"选择文件夹"那种窄弹窗
+   共用 .modal-wide，所以这里单独放宽，并允许窄屏下表格横向滚动而不是继续挤。 */
+#drilldown-modal .modal { width: min(1400px, calc(100vw - 48px)); max-height: 86vh; }
+.drilldown-body { overflow: auto; }
+/* 表头永远不在词中间断行 */
+.dd-table th { white-space: nowrap; }
 .modal-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .modal-header-row h3 { margin: 0; }
 .drilldown-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; }

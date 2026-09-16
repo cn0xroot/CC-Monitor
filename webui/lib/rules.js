@@ -19,30 +19,39 @@ function defaultRulesPath() {
   return path.join(__dirname, "..", "..", "cc_monitor", "default_rules.json");
 }
 
-function readRules() {
-  for (const p of [userRulesPath(), defaultRulesPath()]) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
-      if (Array.isArray(parsed)) return parsed;
-    } catch (e) {
-      // 下一个候选
-    }
+function readJson(p) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
   }
-  return [];
+}
+
+function readRules() {
+  return readJson(userRulesPath()) || readJson(defaultRulesPath()) || [];
 }
 
 // 返回 { <rule id>: { title, desc, title_en, desc_en, risk, action } }
 function ruleMeta() {
   const now = Date.now();
   if (now - cache.at < CACHE_MS) return cache.byId;
+  // 用户 rules.json 里被改过的规则，Python 的默认规则合并会刻意跳过（不覆盖用户的
+  // 修改），于是这些规则拿不到新版加的 title/desc。展示时按 id 回退到仓库内置默认
+  // 表的文案——只影响显示，绝不写回用户文件。
+  const fallback = {};
+  for (const r of readJson(defaultRulesPath()) || []) {
+    if (r && typeof r.id === "string") fallback[r.id] = r;
+  }
   const byId = {};
   for (const r of readRules()) {
     if (!r || typeof r.id !== "string") continue;
+    const d = fallback[r.id] || {};
     byId[r.id] = {
-      title: r.title || null,
-      desc: r.desc || null,
-      title_en: r.title_en || null,
-      desc_en: r.desc_en || null,
+      title: r.title || d.title || null,
+      desc: r.desc || d.desc || null,
+      title_en: r.title_en || d.title_en || null,
+      desc_en: r.desc_en || d.desc_en || null,
       risk: r.risk || null,
       action: r.action || null,
     };

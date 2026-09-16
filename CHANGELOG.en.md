@@ -5,7 +5,7 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
-## [1.9.0] - 2026-09-15
+## [2.0.0] - 2026-09-16
 
 ### Added
 - **Cross-workdir behavior detection** (new module `cc_monitor/workdir.py` + a new
@@ -79,6 +79,33 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   (paths inside heredoc bodies/strings don't false-positive, `cd` tracking, write wins over
   read for the same path), and rule mapping/precedence.
 
+- **Screenshot detection greatly expanded**: it used to recognise only desktop tools like
+  `scrot`/`gnome-screenshot` — of 394 records, 391 were actually "opened an image file" and
+  only 3 real screenshot commands were detected. Coverage is now three-way: host screen (X11 /
+  Wayland / macOS / Windows tools, screen recording via ffmpeg x11grab and friends, framebuffer
+  reads, and in-script capture libraries such as `ImageGrab.grab()`, `pyautogui.screenshot()`,
+  mss), web (headless browser `--screenshot`, CDP `captureScreenshot`, Playwright/Puppeteer/
+  Selenium screenshot APIs, shot-scraper/wkhtmltoimage/gowitness…), and VMs / remote devices
+  (QEMU `screendump` in both HMP and QMP form, `virsh screenshot`, VBoxManage, VMware, VNC,
+  `adb shell screencap`, `idevicescreenshot`, `simctl`). Detections went from 3 to 209 — of
+  which **174 QEMU VM captures had never been detected at all**. Zero false positives: wrappers
+  (`sudo`/`env`/`timeout`/path prefixes) are stripped first, pure search commands
+  (`grep`/`rm`/`ls`) don't count even when they mention the keywords, and ImageMagick's
+  `import` needs `-window`/`-screen` or an image filename (so Python's `import` never matches).
+  The drilldown now shows a per-method breakdown with colour-coded badges.
+- **One-click account masking**: a "hide sensitive info" button in the Anthropic account section
+  renders name / email / org / role / plan / rate-limit tier / billing / account-created /
+  subscription-started as `***`. Stored per browser; display only, quota percentages stay visible.
+- **Quota bar colour schemes**: ten options (default / stepped / traffic-light / ocean / neon /
+  sunset / forest / spectrum / mono / accent), applied to the quota cards plus the
+  "used percentage" and "reset window" bars; the default keeps the original severity colours
+  for the latter two.
+- **More detail for claude processes**: uptime, model ID, event count and memory (`ps` `etime`/
+  `rss`, POSIX fields that work on Linux and macOS; the model comes from the audit session's
+  transcript matched by cwd).
+- **Statistics on the blocked-operations drilldown**: total / last 24h / last 7d cards plus
+  breakdowns by matched rule, by tool and by working directory.
+
 ### Changed
 - **Home page redesigned as a compact dashboard** (direction settled on a Claude Design
   canvas first, then implemented; colors/radii/type/card borders all reuse the existing theme
@@ -113,7 +140,28 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   still the old version without the new route); it now shows a message telling the user to
   restart the Web UI.
 
+- **Drilldown dialog widened to 1400px**: the session list has 8 columns (full working path,
+  36-char UUID, time range…) and used to share the 760px width of the folder picker, which
+  squeezed headers to one character per line and wrapped UUIDs over four lines, fitting only
+  ~10 rows. It now fits 24, and narrow viewports scroll horizontally instead of squeezing
+  further; the folder picker keeps its 760px.
+- **Colour-coded event lines**: timestamp, folder name, session id, full path and matched rule
+  each get their own colour (they used to be one grey line), via a shared helper that replaced
+  five hand-built copies; drilldown operation labels reuse the Log Audit page's per-operation
+  colours instead of rendering unstyled.
+- **Larger vital-sign indicator**: heart 14→20px, ECG 40×14→54×20, so the colour depth (how
+  recently active) is actually legible inside tables.
+- **A Claude starburst mark** after "Claude Code sessions monitored" (inline SVG, no assets).
+- **Rule-text fallback**: rules a user has edited are deliberately not overwritten by the
+  default-rule merge, so they never received the new `title`/`desc` and the approval desk could
+  only show a rule id. Display now falls back to the shipped default text by id (both the Python
+  and Node sides) without writing back to the user's `rules.json`.
+
 ### Fixed
+- **Web UI terminal sessions always showed a grey health indicator**: `/api/sessions` never
+  returned `statusAgoMs`, and `vitalHeat()` returns 0 for `undefined`, so the colour collapsed
+  to plain grey with a flat ECG no matter how active the session was. It now returns the more
+  recent of "the PTY produced output" and "that directory had a new audit event".
 - **Account-quota card "Remaining · Session quota" showing 0% right after the window
   expires**: while the 5-hour window has rolled over but no new request has refreshed the
   numbers yet, the API keeps returning the previous window's final utilization (100% if it was

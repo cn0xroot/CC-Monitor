@@ -164,6 +164,17 @@ app.get("/api/sessions", (req, res) => {
       lastTs: match ? match.last_ts : null,
       model: match && match.transcript_path ? transcript.getModel(match.transcript_path) : null,
       status: s.alive ? computeSessionStatus(s, match ? match.session_id : null, match ? match.last_ts : null, pendingSessionIds) : "dead",
+      // 距上次活跃多久——前端的"生命体征"指示器靠它算心跳颜色深浅和波形摆动幅度。
+      // 漏了这个字段的话 vitalHeat() 拿到 undefined 一律返回 0，不管多活跃都画成
+      // 灰色直线（这正是"健康状态没有红色"那个 bug）。两个活跃信号取更近的那个：
+      // PTY 真的吐过字（lastOutputAt），或者这个 cwd 底下有新的审计事件（last_ts）。
+      statusAgoMs: (() => {
+        if (!s.alive) return null;
+        const outputAt = s.lastOutputAt || 0;
+        const eventAt = match && match.last_ts ? new Date(match.last_ts).getTime() : 0;
+        const latest = Math.max(outputAt, eventAt);
+        return latest ? Date.now() - latest : null;
+      })(),
     };
   });
   res.json(enriched);
@@ -239,12 +250,30 @@ app.get("/api/claude-processes", async (req, res) => {
     const prev = lastEventByCwd.get(key);
     if (!prev || r.last_ts > prev) lastEventByCwd.set(key, r.last_ts);
   }
+  // 进程本身不知道自己在用哪个模型——模型只写在 transcript 里。按 cwd 找到该目录下
+  // 最近那个会话，用它的 transcript 解析出模型 ID 和 session id。同一个目录先后开过
+  // 好几个会话时取最近的一个（auditRows 已按 last_ts 倒序）。
+  const sessionByCwd = new Map();
+  for (const r of auditRows) {
+    if (!r.cwd) continue;
+    const key = normCwd(r.cwd, cwdCache);
+    if (!sessionByCwd.has(key)) sessionByCwd.set(key, r);
+  }
   const enriched = procs.map((p) => {
     const lastEventTs = p.cwd ? lastEventByCwd.get(normCwd(p.cwd, cwdCache)) || null : null;
+    const sess = p.cwd ? sessionByCwd.get(normCwd(p.cwd, cwdCache)) : null;
     // 这里永远不会是 "dead"——能进这个列表就说明进程这一刻真的在跑，vitalStatus() 的
     // 第一个参数写死 true，只用它来区分 working（最近有审计事件）还是 idle（挂着但没动静）。
     const v = vitalStatus(true, lastEventTs);
-    return { ...p, lastEventTs, status: v.status, statusAgoMs: v.agoMs };
+    return {
+      ...p,
+      lastEventTs,
+      status: v.status,
+      statusAgoMs: v.agoMs,
+      model: sess && sess.transcript_path ? transcript.getModel(sess.transcript_path) : null,
+      sessionId: sess ? sess.session_id : null,
+      eventCount: sess ? sess.event_count : null,
+    };
   });
   res.json(processScan.summarize(enriched, os.userInfo().username));
 });
@@ -617,11 +646,14 @@ app.get("/api/drilldown/screenshot", (req, res) => {
       cwd: row.cwd,
       toolName: row.tool_name,
       matchedRule: row.matched_rule,
+      kind: row.kind,
       label,
       summaryHtml,
     };
   });
-  res.json(rows);
+  // 带上按方式分类的小计：真截屏（截图工具 / headless 浏览器 / MCP 动作）跟"只是打开
+  // 了一张图片"必须分得开，否则整卡数字几乎全是后者，看不出前者有没有被检测到。
+  res.json({ breakdown: audit.screenshotBreakdown(), events: rows });
 });
 
 app.get("/api/drilldown/tool-calls", (req, res) => {

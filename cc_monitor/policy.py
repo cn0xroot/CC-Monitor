@@ -106,16 +106,34 @@ def ensure_config():
     return _sync_new_default_rules(defaults)
 
 
+def _fill_display_text(rules):
+    """给缺 title/desc 的规则按 id 补上内置默认表里的文案（只在内存里补，不写回
+    用户的 rules.json）。用户改过的规则不会被 _sync_new_default_rules 覆盖，于是拿不到
+    新版加的说明文字——但审批提示总得有句人话，所以展示层回退到默认文案。"""
+    defaults = _read_json(DEFAULT_RULES_PATH) or []
+    by_id = {r.get("id"): r for r in defaults if isinstance(r, dict)}
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        src = by_id.get(rule.get("id"))
+        if not src:
+            continue
+        for key in ("title", "desc", "title_en", "desc_en"):
+            if not rule.get(key) and src.get(key):
+                rule[key] = src[key]
+    return rules
+
+
 def load_rules():
     try:
         merged = ensure_config()
     except OSError:
         merged = None
     if merged is not None:
-        return merged
+        return _fill_display_text(merged)
     local = _read_json(RULES_PATH)
     if isinstance(local, list):
-        return local
+        return _fill_display_text(local)
     return json.loads(DEFAULT_RULES_PATH.read_text(encoding="utf-8"))
 
 

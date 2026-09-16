@@ -540,37 +540,105 @@ function commandNetworkHosts(limit = 2000) {
 //      Playwright/Puppeteer 这类浏览器自动化 MCP server 暴露出来的工具名，比如
 //      mcp__playwright__browser_take_screenshot），或者 Anthropic Computer Use 的
 //      "computer" 工具、action 字段等于 "screenshot"。
-const SCREENSHOT_CLI_RE = /^(scrot|gnome-screenshot|spectacle|flameshot|maim|grim|xwd|deepin-screenshot|xfce4-screenshooter|screencapture)\b/;
-const SCREENSHOT_PORTAL_RE = /^(gdbus|dbus-send)\b/;
+// 截图方式尽量覆盖全：桌面截图工具（X11 / Wayland / macOS / Windows）、屏幕录制、
+// framebuffer 直读、脚本里调抓屏库、无头浏览器/网页截图工具、虚拟机与远程设备抓屏。
+// 分成三类落地：cliTool（宿主机屏幕）、headless（网页）、vm（虚拟机/远程设备）。
+
+// —— 宿主机桌面截图工具 / 屏幕录制 / framebuffer ——
+const SCREENSHOT_CLI_RE =
+  /^(scrot|maim|xwd|shutter|escrotum|ksnip|gscreenshot|deepin-screenshot|xfce4-screenshooter|gnome-screenshot|spectacle|flameshot|screencapture|snippingtool|nircmd|nircmdc|grim|grimshot|wayshot|swappy|hyprshot|slurp|fbgrab|fbcat|recordmydesktop|simplescreenrecorder|vokoscreen|kazam|wf-recorder|wl-screenrec|peek)\b/i;
+// ImageMagick 的 import / magick import 跟 Python 的 `import x` 撞名，必须带截图参数
+// 或图片文件名才算（实测有 `python3 -c "import socket, os"` 被误判成截图）。
+const SCREENSHOT_IMPORT_RE =
+  /^(magick\s+import|import)\b[^\n]*?(\s-(window|screen|root|crop)\b|\.(png|jpe?g|gif|bmp|tiff?|webp|xwd|ppm)(\s|$))/i;
+// 桌面门户（Wayland 下截图常走 DBus 而不是命令行工具）
+const SCREENSHOT_PORTAL_RE = /^(gdbus|dbus-send|qdbus|busctl)\b/i;
+// 屏幕录制同样是"把屏幕内容取走"，只是取的是连续帧
+const SCREENSHOT_FFMPEG_RE = /^(ffmpeg|gst-launch-1\.0)\b/i;
+const SCREENSHOT_FFMPEG_SCREEN_RE =
+  /-f\s+(x11grab|gdigrab|avfoundation|kmsgrab)\b|ximagesrc|dxgiscreencapsrc|avfvideosrc\s+capture-screen/i;
+// 脚本里直接调抓屏库（Python/Node/PowerShell），头部是解释器，得按 API 名认
+const SCREENSHOT_HOST_API_RE =
+  /\bImageGrab\.grab\s*\(|\bpyautogui\.screenshot\s*\(|\bpyscreenshot\.grab\s*\(|\bmss\.mss\s*\(|\bsct\.(shot|grab)\s*\(|\brobotjs\.screen\.capture\s*\(|\bscreenshot-desktop\b|\bCopyFromScreen\s*\(/i;
+
+// —— 无头浏览器 / 网页截图 ——
+const SCREENSHOT_WEB_TOOL_RE =
+  /^(shot-scraper|wkhtmltoimage|cutycapt|gowitness|aquatone|eyewitness|webscreenshot|pageres|capture-website)\b/i;
+const SCREENSHOT_RUNTIME_RE =
+  /^(google-chrome(-stable|-beta|-unstable)?|chromium(-browser)?|chrome|msedge|microsoft-edge|firefox|node|nodejs|deno|bun|python3?|npx|pnpm|yarn|playwright|puppeteer|chromedriver|geckodriver)\b/i;
+const SCREENSHOT_API_RE =
+  /--screenshots?\b|--screenshot=|\bcaptureScreenshot\b|\bpage\.screenshot\s*\(|\bbrowser_take_screenshot\b|\bsave_screenshot\s*\(|\bget_screenshot_as_\w+\s*\(|\btake_screenshot\s*\(/i;
+
+// —— 虚拟机 / 远程设备抓屏 ——
+// QEMU 的 screendump（HMP 或走 QMP socket 发 {"execute":"screendump"}）、libvirt、
+// VirtualBox、VMware、VNC、安卓 adb screencap、iOS。抓的是 guest/设备的屏幕，跟宿主机
+// 桌面截图是两回事，但同样把屏幕内容取走了。实测审计库里有 170+ 条，之前一条都没识别。
+const SCREENSHOT_VM_RE =
+  /\bscreendump\b|\bvirsh\s+screenshot\b|\bVBoxManage\b[^\n]*\bscreenshotpng\b|\bvmrun\b[^\n]*\bcaptureScreen\b|\bvncsnapshot\b|\bvncdo(tool)?\b[^\n]*\bcapture\b|\badb\b[^\n]*\bscreencap\b|\bidevicescreenshot\b|\bsimctl\b[^\n]*\bscreenshot\b/i;
+// 纯检索/文件管理类命令只是"提到"了这些关键字（grep 找它、rm 删产物），不是真截图
+const SCREENSHOT_TEXT_TOOL_RE =
+  /^(grep|rg|ag|ack|sed|awk|ls|find|rm|mv|cp|git|diff|wc|sort|uniq|less|more|nano|vim|vi|code|echo|printf|cat|head|tail)\b/i;
+
 const SCREENSHOT_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
-function commandTakesScreenshot(cmd) {
-  if (!cmd) return false;
-  const segments = splitShellSegments(cmd);
-  for (const raw of segments) {
-    const seg = raw.trim().replace(/^sudo\s+/, "");
-    if (SCREENSHOT_CLI_RE.test(seg)) return true;
-    if (SCREENSHOT_PORTAL_RE.test(seg) && /screenshot/i.test(seg)) return true;
+// 子命令开头的包装剥离：环境变量赋值（DISPLAY=:1 …）、sudo/env/timeout/nohup 之类的
+// 包装命令、以及可执行文件的路径前缀（/usr/bin/scrot -> scrot）。原来只剥了 sudo，
+// 于是 `DISPLAY=:1 import -window …`、`timeout 60 google-chrome …` 这类全匹配不上。
+const SEG_ENV_ASSIGN_RE = /^(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S*)\s+)+/;
+const SEG_WRAPPER_RE = /^(?:sudo(?:\s+-\S+)*|doas|env(?:\s+-\S+)*|nohup|nice(?:\s+-n\s*\S+)?|time|command|exec|xargs(?:\s+-\S+)*|timeout(?:\s+-\S+)*\s+\S+)\s+/;
+function normalizeSegHead(raw) {
+  let seg = (raw || "").trim().replace(/^[({]\s*/, "");
+  for (let i = 0; i < 5; i++) {
+    const before = seg;
+    seg = seg.replace(SEG_ENV_ASSIGN_RE, "").replace(SEG_WRAPPER_RE, "");
+    if (seg === before) break;
   }
-  return false;
+  return seg.replace(/^(\S*\/)(\S+)/, "$2");
+}
+
+// 返回这条 Bash 命令属于哪种截图方式："cliTool"（截图工具/屏幕录制）、
+// "headless"（浏览器或自动化脚本截图），都不是就返回 null。
+function screenshotCommandKind(cmd) {
+  if (!cmd) return null;
+  for (const raw of splitShellSegments(cmd)) {
+    const seg = normalizeSegHead(raw);
+    if (!seg) continue;
+    // 宿主机屏幕
+    if (SCREENSHOT_CLI_RE.test(seg)) return "cliTool";
+    if (SCREENSHOT_IMPORT_RE.test(seg)) return "cliTool";
+    if (SCREENSHOT_PORTAL_RE.test(seg) && /screenshot/i.test(seg)) return "cliTool";
+    if (SCREENSHOT_FFMPEG_RE.test(seg) && SCREENSHOT_FFMPEG_SCREEN_RE.test(seg)) return "cliTool";
+    if (SCREENSHOT_HOST_API_RE.test(seg)) return "cliTool";
+    // 网页
+    if (SCREENSHOT_WEB_TOOL_RE.test(seg)) return "headless";
+    if (SCREENSHOT_RUNTIME_RE.test(seg) && SCREENSHOT_API_RE.test(seg)) return "headless";
+    // 虚拟机 / 远程设备
+    if (!SCREENSHOT_TEXT_TOOL_RE.test(seg) && SCREENSHOT_VM_RE.test(seg)) return "vm";
+  }
+  return null;
+}
+
+// 事件属于"截屏 / 查看图像内容"里的哪一类；不属于就返回 null。
+// cliTool / headless = 真的截了屏；imageRead = 只是读取了一个图片文件；mcp = MCP 或
+// computer-use 工具的截图动作。
+function screenshotKind(toolName, detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    if (toolName === "Bash") return screenshotCommandKind(detail.command || "");
+    if (toolName === "Read") {
+      const filePath = detail.file_path || detail.path || "";
+      return SCREENSHOT_IMAGE_EXT_RE.test(filePath) ? "imageRead" : null;
+    }
+    if (toolName === "computer" && detail.action === "screenshot") return "mcp";
+    if (toolName && toolName !== "Bash" && toolName !== "Read" && /screenshot/i.test(toolName)) return "mcp";
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function isScreenCaptureEvent(toolName, detailJson) {
-  try {
-    const detail = detailJson ? JSON.parse(detailJson) : {};
-    if (toolName === "Bash") {
-      return commandTakesScreenshot(detail.command || "") ? 1 : 0;
-    }
-    if (toolName === "Read") {
-      const filePath = detail.file_path || detail.path || "";
-      return SCREENSHOT_IMAGE_EXT_RE.test(filePath) ? 1 : 0;
-    }
-    if (toolName === "computer" && detail.action === "screenshot") return 1;
-    if (toolName && toolName !== "Bash" && toolName !== "Read" && /screenshot/i.test(toolName)) return 1;
-    return 0;
-  } catch (e) {
-    return 0;
-  }
+  return screenshotKind(toolName, detailJson) ? 1 : 0;
 }
 
 // 敏感操作统计——不像 SSH/下载/Docker 这些分类器那样从头识别命令文本，而是直接
@@ -696,6 +764,7 @@ function withDb(fn, fallback) {
     db.function("cc_is_delete", isDeleteEvent);
     db.function("cc_github_op", githubOpType);
     db.function("cc_is_screenshot", isScreenCaptureEvent);
+    db.function("cc_screenshot_kind", screenshotKind);
     db.function("cc_ssh_op", sshOpType);
     db.function("cc_download_op", downloadOpType);
     db.function("cc_docker_op", dockerOpType);
@@ -1084,11 +1153,27 @@ function screenshotStats() {
   }, { total: 0 });
 }
 
+// 按方式分类小计：真截屏（截图工具 / headless 浏览器 / MCP 动作）和"只是打开了一张
+// 图片"混在一个数字里看不出差别——之前整卡 391 条几乎全是 imageRead，截图命令只有 3
+// 条却完全看不出来。
+function screenshotBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT cc_screenshot_kind(tool_name, detail) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND cc_is_screenshot(tool_name, detail) = 1
+         GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+
 function screenshotDetails(limit = 300) {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail FROM events
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail,
+                cc_screenshot_kind(tool_name, detail) AS kind FROM events
          WHERE source = 'hook_pre' AND cc_is_screenshot(tool_name, detail) = 1
          ORDER BY id DESC LIMIT ?`
       )
@@ -1435,6 +1520,7 @@ module.exports = {
   workdirEscapeBreakdown,
   workdirEscapeEvents,
   screenshotStats,
+  screenshotBreakdown,
   screenshotDetails,
   commandNetworkHosts,
   toolCallStats,
