@@ -544,6 +544,46 @@
     "pattern": "^/(etc|boot|System|Library)/"
   },
   {
+    "id": "workdir_escape_write_sensitive",
+    "risk": "high",
+    "action": "confirm",
+    "tools": ["Bash", "Write", "Edit", "NotebookEdit"],
+    "match": "workdir",
+    "access": "write",
+    "scopes": ["homeDotfile", "otherUserHome", "system"],
+    "ignore_paths": []
+  },
+  {
+    "id": "workdir_escape_write_other",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Bash", "Write", "Edit", "NotebookEdit"],
+    "match": "workdir",
+    "access": "write",
+    "scopes": ["otherProject"],
+    "ignore_paths": []
+  },
+  {
+    "id": "workdir_escape_read_sensitive",
+    "risk": "medium",
+    "action": "log",
+    "tools": ["Bash", "Read", "Glob", "Grep"],
+    "match": "workdir",
+    "access": "read",
+    "scopes": ["homeDotfile", "otherUserHome"],
+    "ignore_paths": []
+  },
+  {
+    "id": "workdir_escape_read_other",
+    "risk": "low",
+    "action": "log",
+    "tools": ["Bash", "Read", "Glob", "Grep"],
+    "match": "workdir",
+    "access": "read",
+    "scopes": ["system", "otherProject"],
+    "ignore_paths": []
+  },
+  {
     "id": "outbound_request",
     "risk": "low",
     "action": "log",

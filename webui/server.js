@@ -425,6 +425,8 @@ app.get("/api/overview", async (req, res) => {
     sensitiveOpsTotal: sumN(audit.sensitiveOpsBreakdown()),
     sensitiveDataTotal: sumN(audit.sensitiveDataBreakdown()),
     advancedThreatTotal: sumN(audit.advancedThreatBreakdown()),
+    workdirEscapeTotal: sumN(audit.workdirEscapeBreakdown()),
+    workdirEscapeBreakdown: audit.workdirEscapeBreakdown(),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
     mcpCalls: audit.mcpCallStats().total,
@@ -560,6 +562,7 @@ app.get("/api/drilldown/procbg-ops", opsDrilldownHandler(audit.procbgOpsBreakdow
 app.get("/api/drilldown/sensitive-ops", opsDrilldownHandler(audit.sensitiveOpsBreakdown, audit.sensitiveOpsEvents));
 app.get("/api/drilldown/sensitive-data", opsDrilldownHandler(audit.sensitiveDataBreakdown, audit.sensitiveDataEvents));
 app.get("/api/drilldown/advanced-threat", opsDrilldownHandler(audit.advancedThreatBreakdown, audit.advancedThreatEvents));
+app.get("/api/drilldown/workdir-escape", opsDrilldownHandler(audit.workdirEscapeBreakdown, audit.workdirEscapeEvents));
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;

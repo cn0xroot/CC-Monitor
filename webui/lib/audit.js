@@ -673,6 +673,22 @@ function advancedThreatType(matchedRule) {
   return ADVANCED_THREAT_RULE_MAP[matchedRule] || null;
 }
 
+// 跨工作目录操作——policy.py 里 match="workdir" 的四条规则（cc_monitor/workdir.py 按
+// "路径相对 cwd 在哪 × 读/写"分档），这里同样只按 matched_rule 归类，不在 JS 里重算
+// 路径。注意这组规则排在规则表靠后的位置兜底：读 ~/.ssh 这种被更具体的规则先命中的
+// 事件算在那条规则里（敏感操作卡片），不会重复出现在这里。
+const WORKDIR_ESCAPE_ORDER = ["writeSensitive", "writeOther", "readSensitive", "readOther"];
+const WORKDIR_ESCAPE_RULE_MAP = {
+  workdir_escape_write_sensitive: "writeSensitive",
+  workdir_escape_write_other: "writeOther",
+  workdir_escape_read_sensitive: "readSensitive",
+  workdir_escape_read_other: "readOther",
+};
+const WORKDIR_ESCAPE_RULES_SQL = Object.keys(WORKDIR_ESCAPE_RULE_MAP).map((r) => `'${r}'`).join(", ");
+function workdirEscapeType(matchedRule) {
+  return WORKDIR_ESCAPE_RULE_MAP[matchedRule] || null;
+}
+
 function withDb(fn, fallback) {
   let db;
   try {
@@ -690,6 +706,7 @@ function withDb(fn, fallback) {
     db.function("cc_sensitive_op", sensitiveOpType);
     db.function("cc_sensitive_data", sensitiveDataType);
     db.function("cc_advanced_threat", advancedThreatType);
+    db.function("cc_workdir_escape", workdirEscapeType);
     return fn(db);
   } catch (e) {
     return fallback;
@@ -1026,6 +1043,31 @@ function advancedThreatEvents(limit = 300) {
       .prepare(
         `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_advanced_threat(matched_rule) AS kind FROM events
          WHERE source = 'hook_pre' AND matched_rule IN (${ADVANCED_THREAT_RULES_SQL})
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
+// 跨工作目录操作——查询形状跟 advancedThreatBreakdown/advancedThreatEvents 一样。
+function workdirEscapeBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT cc_workdir_escape(matched_rule) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN (${WORKDIR_ESCAPE_RULES_SQL})
+         GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+
+function workdirEscapeEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_workdir_escape(matched_rule) AS kind FROM events
+         WHERE source = 'hook_pre' AND matched_rule IN (${WORKDIR_ESCAPE_RULES_SQL})
          ORDER BY id DESC LIMIT ?`
       )
       .all(limit);
@@ -1390,6 +1432,8 @@ module.exports = {
   sensitiveDataEvents,
   advancedThreatBreakdown,
   advancedThreatEvents,
+  workdirEscapeBreakdown,
+  workdirEscapeEvents,
   screenshotStats,
   screenshotDetails,
   commandNetworkHosts,

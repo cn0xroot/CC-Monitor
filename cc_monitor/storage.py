@@ -136,12 +136,13 @@ def log_event(session_id, source, tool_name, detail, cwd, risk, matched_rule, de
 
 
 def iter_hook_pre_events():
-    """按 id 升序把所有 PreToolUse 事件吐出来：(id, tool_name, risk, matched_rule, detail)。
-    给 rematch 用——规则改了以后用当前规则把历史事件重新判一遍。"""
+    """按 id 升序把所有 PreToolUse 事件吐出来：(id, tool_name, risk, matched_rule, detail, cwd)。
+    给 rematch 用——规则改了以后用当前规则把历史事件重新判一遍（cwd 是 workdir 类
+    规则重判时要用的）。"""
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT id, tool_name, risk, matched_rule, detail FROM events WHERE source = 'hook_pre' ORDER BY id"
+            "SELECT id, tool_name, risk, matched_rule, detail, cwd FROM events WHERE source = 'hook_pre' ORDER BY id"
         ).fetchall()
     finally:
         conn.close()
@@ -237,6 +238,22 @@ def fetch_last(limit=200):
             "SELECT id, ts, source, tool_name, risk, matched_rule, decision, detail, cwd "
             "FROM events ORDER BY id DESC LIMIT ?",
             (limit,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def fetch_by_rule_prefix(prefix, limit=200):
+    """按 id 降序返回 matched_rule 以 prefix 开头的 PreToolUse 事件（最新的在前），
+    字段顺序跟 fetch_recent 一致。`CC-Monitor workdir` 用它列跨工作目录的操作。"""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT id, ts, source, tool_name, risk, matched_rule, decision, detail, cwd "
+            "FROM events WHERE source = 'hook_pre' AND matched_rule LIKE ? ESCAPE '\\' "
+            "ORDER BY id DESC LIMIT ?",
+            (prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", limit),
         )
         return cur.fetchall()
     finally:

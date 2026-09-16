@@ -25,6 +25,14 @@ carries, what third-party modules it depends on, and where your data actually go
 - **Bypass detection**: cross-checks commands the system-layer probe actually observed against
   what the application-layer hooks recorded, specifically to catch the harder-to-notice case of
   monitoring being silently disabled.
+- **Cross-workdir behavior detection**: regex rules can't see the cwd, so this layer fills the
+  gap — every path a tool call is about to touch (file tools' `file_path`; Bash commands split
+  into sub-commands with paths resolved, `cd` tracked, and redirects / `rm`/`cp`/`tee`-style
+  writes recognized) is resolved to an absolute path and compared against the current project
+  directory. Anything outside is tiered by location (hidden home-dir config/credentials, other
+  users' homes, system directories, other project directories) × read/write: writes to sensitive
+  locations prompt for confirmation, everything else is logged. Review them with `CC-Monitor workdir` or
+  the "Cross-workdir operations" home-page card.
 - **Network visibility**: eBPF captures the destination IP:port of every `connect()` call
   directly — no TLS termination, no CA certificate to install — with a connection detail table,
   GeoIP lookups, and a WebGL2 world map in the Web UI.

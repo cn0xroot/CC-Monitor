@@ -6,6 +6,8 @@ import re
 import tempfile
 from pathlib import Path
 
+from . import workdir
+
 CONFIG_DIR = Path(os.environ.get("CC_MONITOR_HOME", str(Path.home() / ".cc-monitor")))
 RULES_PATH = CONFIG_DIR / "rules.json"
 SNAPSHOT_PATH = CONFIG_DIR / "rules.defaults_snapshot.json"
@@ -285,18 +287,37 @@ def rules_fingerprint(rules):
     return hashlib.sha256(payload).hexdigest()
 
 
-def evaluate(tool_name, tool_input, rules=None):
+def evaluate(tool_name, tool_input, rules=None, cwd=None):
     """Return (rule, matched_value) for the first matching rule, or (None, None).
 
     matched_value：search 模式下是被匹配的整个字段值；segment 模式下是命中的那个子命令
-    （已剥掉 sudo/env 等包装），审批台/拦截原因里展示这个比整条命令更直观。
+    （已剥掉 sudo/env 等包装），审批台/拦截原因里展示这个比整条命令更直观；workdir
+    模式下是落在工作目录之外的那些路径（家目录折叠成 ~）。
     rules 不传就每次现读 rules.json（hook 一次只判一条，读一次没关系）；rematch 要
-    对几千条历史事件逐条判，传进来一份预加载的表避免反复读文件。"""
+    对几千条历史事件逐条判，传进来一份预加载的表避免反复读文件。
+    cwd 是 hook 输入里 Claude Code 的当前工作目录，只有 match="workdir" 的规则用得到
+    ——不传（老的调用方/单测）这类规则一律不命中。"""
     if rules is None:
         rules = load_rules()
+    workdir_hits = None  # 一次 evaluate 里最多扫一遍路径，几条 workdir 规则共用
     for rule in rules:
         tools = rule.get("tools", ["*"])
         if "*" not in tools and tool_name not in tools:
+            continue
+        if rule.get("match") == "workdir":
+            # 跨工作目录检测不是正则：看的是路径相对 cwd 的位置（见 workdir.py）。
+            # 规则用 scopes（homeDotfile/otherUserHome/system/otherProject）和
+            # access（read/write/any）挑自己关心的那一类，ignore_paths 额外加白名单。
+            if not cwd:
+                continue
+            if workdir_hits is None:
+                try:
+                    workdir_hits = workdir.scan(tool_name, tool_input, cwd)
+                except Exception:
+                    workdir_hits = []
+            selected = workdir.select(workdir_hits, rule.get("scopes"), rule.get("access"), rule.get("ignore_paths"))
+            if selected:
+                return rule, workdir.describe(selected)
             continue
         # field="tool_name" 是个特例：匹配的是 evaluate() 的 tool_name 参数本身，不是
         # tool_input 里的字段——MCP 工具调用的 tool_name 是运行时才知道的动态字符串

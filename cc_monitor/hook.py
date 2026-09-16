@@ -27,7 +27,7 @@ def handle_pre(data):
         sys.exit(0)
 
     rules = policy.load_rules()
-    rule, matched_value = policy.evaluate(tool_name, tool_input, rules=rules)
+    rule, matched_value = policy.evaluate(tool_name, tool_input, rules=rules, cwd=cwd)
     # 规则表跟上次重判历史事件时不一样了（用户改了 rules.json、或者升级带来了新默认
     # 规则）——后台起个进程用新规则把历史事件的 matched_rule 重算一遍，首页统计才准。
     rematch.maybe_schedule(rules)

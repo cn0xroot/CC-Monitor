@@ -31,7 +31,7 @@ def run(apply=False, rules=None):
         rules = policy.load_rules()
     changes = []
     total = 0
-    for event_id, tool_name, risk, matched_rule, detail_raw in storage.iter_hook_pre_events():
+    for event_id, tool_name, risk, matched_rule, detail_raw, cwd in storage.iter_hook_pre_events():
         total += 1
         try:
             tool_input = json.loads(detail_raw) if detail_raw else {}
@@ -39,7 +39,7 @@ def run(apply=False, rules=None):
             continue
         if not isinstance(tool_input, dict):
             continue
-        rule, _ = policy.evaluate(tool_name or "", tool_input, rules=rules)
+        rule, _ = policy.evaluate(tool_name or "", tool_input, rules=rules, cwd=cwd)
         new_rule = rule["id"] if rule else None
         new_risk = rule["risk"] if rule else "low"
         if new_rule != matched_rule or (new_rule and new_risk != risk):

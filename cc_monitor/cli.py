@@ -131,6 +131,47 @@ def cmd_verify(args):
         )
 
 
+WORKDIR_RULE_LABELS = {
+    "workdir_escape_write_sensitive": "写入 · 敏感位置（家目录隐藏文件/别的用户/系统目录）",
+    "workdir_escape_write_other": "写入 · 其它项目目录",
+    "workdir_escape_read_sensitive": "读取 · 敏感位置（家目录隐藏文件/别的用户）",
+    "workdir_escape_read_other": "读取 · 系统目录/其它项目目录",
+}
+
+
+def cmd_workdir(args):
+    """列出 AI 跑到当前工作目录之外去操作文件的记录（命中 workdir_escape_* 规则的事件）。"""
+    rows = storage.fetch_by_rule_prefix("workdir_escape_", limit=args.limit)
+    if not rows:
+        print(col.c("没有发现跨工作目录的文件操作记录。", color="green"))
+        print(col.c("（只统计命中 workdir_escape_* 规则的事件；被更具体的规则先命中的，比如读 ~/.ssh，算在那条规则里。）", dim=True))
+        return
+    by_rule = Counter(r[5] for r in rows)
+    print(col.c("最近 {} 条跨工作目录的文件操作：".format(len(rows)), bold=True))
+    for rule, n in by_rule.most_common():
+        print("  {} {}".format(col.c(str(n).rjust(5), color="cyan"), WORKDIR_RULE_LABELS.get(rule, rule)))
+    print()
+    for row in rows:
+        (_id, ts, _source, tool_name, risk, matched_rule, decision, detail_raw, cwd) = row
+        try:
+            detail = json.loads(detail_raw) if detail_raw else {}
+        except json.JSONDecodeError:
+            detail = {}
+        _label, summary, _extra = fmt.describe(tool_name, "hook_pre", detail)
+        print(
+            "{ts} [{risk}] {tool} → {decision} {rule}  {cwd}".format(
+                ts=col.c(ts, dim=True),
+                risk=col.risk(risk or "-"),
+                tool=col.c(fmt.TOOL_LABELS.get(tool_name, tool_name), color="cyan", bold=True),
+                decision=col.c(DECISION_LABELS.get(decision, decision), color=col.DECISION_COLOR.get(decision), bold=(decision == "blocked")),
+                rule=col.c(WORKDIR_RULE_LABELS.get(matched_rule, matched_rule), color="magenta"),
+                cwd=col.c("cwd={}".format(cwd), dim=True),
+            )
+        )
+        if summary:
+            print("    内容: {}".format(summary))
+
+
 def cmd_tap(args):
     session_id = args.session or storage.get_latest_session_id()
     if not session_id:
@@ -204,6 +245,10 @@ def main():
     p_verify = sub.add_parser("verify", help="查看系统层探针标记的可疑（疑似绕过监测）记录")
     p_verify.add_argument("--limit", type=int, default=5000, help="最多回溯检查多少条事件")
     p_verify.set_defaults(func=cmd_verify)
+
+    p_workdir = sub.add_parser("workdir", help="查看 AI 跨出工作目录去读写文件的记录（命中 workdir_escape_* 规则的事件）")
+    p_workdir.add_argument("--limit", type=int, default=100, help="最多显示多少条（默认 100）")
+    p_workdir.set_defaults(func=cmd_workdir)
 
     p_tap = sub.add_parser("tap", help="Claude Tap：查看某个 session 发给/收到模型的完整对话内容")
     p_tap.add_argument("--session", help="session id（不指定则用最近一次监测到的 session）")
