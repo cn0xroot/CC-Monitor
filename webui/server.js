@@ -385,7 +385,7 @@ app.get("/api/transcript/all", (req, res) => {
 // ---- REST API: 账号级用量/额度（跟 ccstatusline 读同一份 Claude Code OAuth 凭证） ----
 
 // 规则元信息：id -> {title, desc, title_en, desc_en, risk, action}，审批台用来把规则 id
-// 翻译成"这是要确认什么操作"的人话。
+// 翻译成"这是要确认什么操作"的通俗说明。
 app.get("/api/rules/meta", (req, res) => {
   res.json(rulesMeta.ruleMeta());
 });

@@ -1418,7 +1418,7 @@ async function refreshApprovals() {
       const isNotify = r.kind === "notify";
       // kind='permission'：Claude Code 自己要弹的原生确认框（PermissionRequest hook），
       // matched_rule 存的是 "permission:<工具名>" 这种记忆用的 key，不是规则表里的 id，
-      // 展示成人话；按钮跟 confirm 一样，选了就通过 decision.behavior 替用户答掉。
+      // 展示成通俗说明；按钮跟 confirm 一样，选了就通过 decision.behavior 替用户答掉。
       const isPermission = r.kind === "permission";
       // 标题一句话说"要确认的是什么操作"，副标题解释为什么要确认；规则 id 和工具名退到最后
       // 一行小字。三种来源：命中规则的取规则的 title/desc；Claude Code 原生权限确认没有规则，
@@ -1683,7 +1683,7 @@ async function showTargetConnections(ip, port, host) {
 async function openDrilldown(kind) {
   const body = document.getElementById("drilldown-body");
   try {
-    // 好几个下钻要把规则 id 显示成人话（拦截统计、审批历史）。规则文案平时是跟着
+    // 好几个下钻要把规则 id 显示成通俗说明（拦截统计、审批历史）。规则文案平时是跟着
     // 审批台一起刷的，首屏可能还没拉到——这里按需补一次（服务端有 5s 缓存，很便宜）。
     if (Object.keys(ruleMetaCache).length === 0) await refreshRuleMeta();
     await openDrilldownInner(kind);

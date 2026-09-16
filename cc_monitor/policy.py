@@ -109,7 +109,7 @@ def ensure_config():
 def _fill_display_text(rules):
     """给缺 title/desc 的规则按 id 补上内置默认表里的文案（只在内存里补，不写回
     用户的 rules.json）。用户改过的规则不会被 _sync_new_default_rules 覆盖，于是拿不到
-    新版加的说明文字——但审批提示总得有句人话，所以展示层回退到默认文案。"""
+    新版加的说明文字——但审批提示总得有一句通俗的说明，所以展示层回退到默认文案。"""
     defaults = _read_json(DEFAULT_RULES_PATH) or []
     by_id = {r.get("id"): r for r in defaults if isinstance(r, dict)}
     for rule in rules:
