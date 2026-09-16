@@ -9,6 +9,9 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 依赖了哪些第三方模块、你的数据到底存在哪——见
 [SECURITY.md](./SECURITY.md)（[English](./SECURITY.en.md)）。
 
+每个版本新增了什么、改了什么、修了哪些 bug，都记在
+[CHANGELOG.md](./CHANGELOG.md)（[English](./CHANGELOG.en.md)）里；当前版本 **v2.0**。
+
 ## 核心能力一览
 
 - **应用层 + 系统层双重监测**：Claude Code hooks 拿语义信息，Linux eBPF / macOS nettop 探针在内核/系统层独立交叉验证——hooks 被绕过或篡改也能兜底发现，不是只靠 Claude Code 自己诚实上报。

@@ -11,6 +11,10 @@ Everything is audit-logged. The technical design doc is available in
 carries, what third-party modules it depends on, and where your data actually goes, see
 [SECURITY.md](./SECURITY.en.md) ([Chinese](./SECURITY.md)).
 
+Every release — what was added, changed and fixed — is recorded in
+[CHANGELOG.md](./CHANGELOG.en.md) ([Chinese](./CHANGELOG.md)); the current release is
+**v2.0**.
+
 ## Core capabilities at a glance
 
 - **Two independent layers of monitoring**: Claude Code hooks capture semantic detail; a
