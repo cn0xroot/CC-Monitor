@@ -121,6 +121,19 @@ class SegmentMatchTest(unittest.TestCase):
         self.assertEqual([s.strip() for s in segs if s.strip()], ["echo 'a; b'", "cat <<EOF\nx | y\nEOF", "ls"])
 
 
+class RuleMetaTest(unittest.TestCase):
+    """每条默认规则都要有通俗的 title/desc（中英文）——审批台和终端确认框靠它们告诉人
+    "这是要确认什么操作"，光给一个规则 id 看不懂。"""
+
+    def test_every_default_rule_has_title_and_desc(self):
+        import json
+        rules = json.loads(policy.DEFAULT_RULES_PATH.read_text(encoding="utf-8"))
+        for r in rules:
+            for key in ("title", "desc", "title_en", "desc_en"):
+                self.assertTrue(isinstance(r.get(key), str) and r[key].strip(), "{} 缺 {}".format(r["id"], key))
+            self.assertLess(len(r["title"]), 40, r["id"])
+
+
 class RematchTest(unittest.TestCase):
     """规则改了之后，历史事件的 matched_rule 要能按新规则重算；decision 不动。"""
 

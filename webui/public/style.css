@@ -258,7 +258,12 @@ html, body {
   padding: 10px 14px;
   background: color-mix(in srgb, var(--yellow) 8%, var(--bg-elevated));
 }
-.approval-rule { margin-top: 4px; font-size: 0.8571rem; color: var(--text-dim); }
+/* 审批卡三层文案：标题（要确认什么操作）> 解释（为什么要确认）> 规则 id + 工具（小字） */
+.approval-headline { margin-top: 6px; font-size: 1rem; font-weight: 700; line-height: 1.35; }
+.approval-headline-prefix { color: var(--yellow); margin-right: 2px; }
+.approval-item-notify .approval-headline { font-weight: 600; }
+.approval-explain { margin-top: 4px; font-size: 0.8929rem; line-height: 1.5; color: var(--text); opacity: 0.85; }
+.approval-rule { margin-top: 6px; font-size: 0.7857rem; font-family: Menlo, Consolas, monospace; color: var(--text-dim); }
 .approval-value {
   margin-top: 6px;
   padding: 6px 8px;

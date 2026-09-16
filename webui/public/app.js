@@ -1363,8 +1363,26 @@ function formatQuestionValue(matchedValue) {
   }
 }
 
+// 规则元信息（id -> title/desc 中英文）：审批台把"命中了哪条规则"翻译成"要确认的是什么
+// 操作"。启动时拉一次、之后跟审批列表一起刷新（用户改了 rules.json 里的文案也能跟上）。
+let ruleMetaCache = {};
+async function refreshRuleMeta() {
+  const meta = await api("/api/rules/meta");
+  if (meta && typeof meta === "object") ruleMetaCache = meta;
+}
+function ruleTitle(ruleId) {
+  const m = ruleMetaCache[ruleId];
+  if (!m) return null;
+  return (currentLang === "en" ? m.title_en || m.title : m.title || m.title_en) || null;
+}
+function ruleDesc(ruleId) {
+  const m = ruleMetaCache[ruleId];
+  if (!m) return null;
+  return (currentLang === "en" ? m.desc_en || m.desc : m.desc || m.desc_en) || null;
+}
+
 async function refreshApprovals() {
-  const rows = await api("/api/pending-approvals");
+  const [rows] = await Promise.all([api("/api/pending-approvals"), refreshRuleMeta()]);
   const badge = document.getElementById("approvals-badge");
   if (!rows) return;
   badge.hidden = rows.length === 0;
@@ -1390,7 +1408,21 @@ async function refreshApprovals() {
       // matched_rule 存的是 "permission:<工具名>" 这种记忆用的 key，不是规则表里的 id，
       // 展示成人话；按钮跟 confirm 一样，选了就通过 decision.behavior 替用户答掉。
       const isPermission = r.kind === "permission";
-      const ruleLabel = isPermission ? t("approvals.permission.rule") : r.matched_rule || "-";
+      // 标题一句话说"要确认的是什么操作"，副标题解释为什么要确认；规则 id 和工具名退到最后
+      // 一行小字。三种来源：命中规则的取规则的 title/desc；Claude Code 原生权限确认没有规则，
+      // 按工具名给一句；用户自定义规则没写 title 就退回 id。
+      let headline;
+      let explain;
+      if (isPermission) {
+        headline = t("approvals.permission.rule");
+        explain = t("approvals.permission.explain", { tool: toolLabel(r.tool_name, r.tool_name) });
+      } else {
+        headline = ruleTitle(r.matched_rule) || r.matched_rule || "-";
+        explain = ruleDesc(r.matched_rule) || "";
+      }
+      const ruleLine = isPermission
+        ? escapeHtml(toolLabel(r.tool_name, r.tool_name))
+        : `${t("approvals.ruleLabel")} ${escapeHtml(r.matched_rule || "-")} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}`;
       return `
     <div class="approval-item${isNotify ? " approval-item-notify" : ""}${isPermission ? " approval-item-permission" : ""}" data-id="${r.id}">
       <div class="row1">
@@ -1398,7 +1430,9 @@ async function refreshApprovals() {
         <span class="risk ${r.risk}">${escapeHtml(riskLabel(r.risk))}</span>
         <span class="session-tag">📁 ${escapeHtml(folderName(r.cwd))} · ${r.session_id ? escapeHtml(r.session_id.slice(0, 8)) + "…" : "-"}</span>
       </div>
-      <div class="approval-rule">${escapeHtml(ruleLabel)} · ${escapeHtml(toolLabel(r.tool_name, r.tool_name))}</div>
+      <div class="approval-headline">${isNotify ? "" : `<span class="approval-headline-prefix">${t("approvals.needConfirm")}</span>`}${escapeHtml(headline)}</div>
+      ${explain ? `<div class="approval-explain">${escapeHtml(explain)}</div>` : ""}
+      <div class="approval-rule">${ruleLine}</div>
       ${
         isNotify
           ? `<div class="approval-value">${formatQuestionValue(r.matched_value)}</div>
@@ -1520,7 +1554,7 @@ async function refreshApprovalHistory() {
           <td class="dd-mono dd-nowrap">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19).replace("T", " "))}</td>
           <td class="dd-mono">${sessionIdCell(r.session_id, r.cwd)}</td>
           <td class="dd-nowrap">${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : r.kind === "permission" ? " (native)" : ""}</td>
-          <td>${escapeHtml(r.kind === "permission" ? t("approvals.permission.rule") : r.matched_rule || "-")}</td>
+          <td title="${escapeHtml(r.matched_rule || "")}">${escapeHtml(r.kind === "permission" ? t("approvals.permission.rule") : ruleTitle(r.matched_rule) || r.matched_rule || "-")}</td>
           <td class="dd-mono dd-clip" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
           <td class="dd-nowrap"><span class="${APPROVAL_STATUS_CLASS[r.status] || ""}">${escapeHtml(approvalStatusLabel(r.status))}</span></td>
           <td class="dd-clip" title="${escapeHtml(answer || "")}">${answer ? escapeHtml(answer.slice(0, 60)) : "-"}</td>

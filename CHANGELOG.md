@@ -47,6 +47,15 @@
     之前会被 realpath 解析成"往 /usr/lib 写"。
   - `/` 本身归到 `system` 档（`find /`、`ls /`）。
 - **`CC-Monitor workdir` 子命令**：按规则小计 + 逐条列出最近的跨工作目录文件操作。
+- **审批弹窗说人话**：74 条默认规则每条新增 `title` / `desc`（及 `title_en` / `desc_en`），
+  用一句大白话说明这条规则拦的是什么操作、为什么要确认（比如 `git_force_push` →
+  "git 强制推送：会覆盖远程分支历史，别人已拉取的提交可能丢失"）。AI 审批台的每张卡
+  先显示"需要确认：<title>"，下面一行解释，规则 id 和工具名退到最后一行小字；Claude Code
+  原生权限确认（没命中规则）按工具名给一句说明；审批历史表的"命中规则"列也显示人话标题
+  （悬停看 id）。终端里的确认提示和桌面通知同样带上 title/desc。新增 `/api/rules/meta`
+  （`webui/lib/rules.js` 读 `~/.cc-monitor/rules.json`，用户改过的文案也能跟上）。
+  老用户的 `rules.json` 会通过默认规则同步机制自动补上这些字段；用户自定义的规则没写
+  title 就退回显示 id。
 - **首页"跨工作目录操作"卡片** + `/api/drilldown/workdir-escape`：跟"高级威胁检测"
   同一套 `matched_rule` 归类/下钻模板，四个分类对应上面四条规则。
 - **`tests/test_workdir.py`**：分档、文件类工具、Bash 路径抽取（含 heredoc 正文/字符串

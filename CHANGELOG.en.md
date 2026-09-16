@@ -61,6 +61,17 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   - `/` itself is classified as `system` (`find /`, `ls /`).
 - **`CC-Monitor workdir` subcommand**: per-rule totals plus a list of recent cross-workdir
   file operations.
+- **Approval prompts in plain language**: every one of the 74 default rules gains `title` /
+  `desc` (plus `title_en` / `desc_en`) — one plain sentence on what the rule catches and why
+  it needs a decision (e.g. `git_force_push` → "git force push: overwrites remote branch
+  history; commits others already pulled may be lost"). Each Approval Desk card now leads
+  with "Confirm: <title>", an explanation line below, and the rule id + tool name demoted to
+  a small last line; Claude Code's native permission prompts (no rule matched) get a
+  per-tool sentence; the approval-history table's rule column shows the title (hover for
+  the id). The terminal confirm prompt and desktop notification carry title/desc too. New
+  `/api/rules/meta` (`webui/lib/rules.js` reads `~/.cc-monitor/rules.json`, so user-edited
+  wording is honored). Existing users' `rules.json` picks the fields up through the default-
+  rule sync; a user-defined rule without a title falls back to its id.
 - **"Cross-workdir operations" home-page card** + `/api/drilldown/workdir-escape`: same
   `matched_rule` grouping/drilldown template as "Advanced Threat Detection", four categories
   mapping to the four rules above.

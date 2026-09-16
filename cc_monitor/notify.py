@@ -131,7 +131,11 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
     "一直允许"会在这里顺带把 session_id+matched_rule 记进 session_always_allow，
     调用方（hook.py）不用另外处理。
     """
-    desktop_notify("CC-Monitor 需要确认", "{}: {}".format(tool_name, matched_value[:80]))
+    # 规则的 title/desc（default_rules.json 里每条都有）：告诉人"这是要确认什么操作"，
+    # 光给一个 git_force_push 这样的 id 大多数人看不懂。用户自己加的规则没写就退回 id。
+    title = rule.get("title") or rule["id"]
+    desc = rule.get("desc") or ""
+    desktop_notify("CC-Monitor 需要确认：{}".format(title), "{}: {}".format(tool_name, matched_value[:80]))
     approval_id = storage.create_pending_approval(
         session_id=session_id,
         tool_name=tool_name,
@@ -145,10 +149,17 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
     if tty is not None:
         _tty_write(
             tty,
-            "\n[CC-Monitor] 检测到中风险操作 (规则: {})\n"
-            "工具: {}\n匹配内容: {}\n"
-            "是否允许? [y/N]（也可以去 Web UI 的“待批准”页面处理，等待 {}s 后默认拒绝）: ".format(
-                rule["id"], tool_name, matched_value, timeout
+            "\n[CC-Monitor] 需要确认：{title}\n"
+            "{desc}"
+            "规则: {rule} · 风险: {risk} · 工具: {tool}\n匹配内容: {value}\n"
+            "是否允许? [y/N]（也可以去 Web UI 的“AI 审批台”处理，等待 {timeout}s 后默认拒绝）: ".format(
+                title=title,
+                desc=("说明: " + desc + "\n") if desc else "",
+                rule=rule["id"],
+                risk=rule.get("risk", "-"),
+                tool=tool_name,
+                value=matched_value,
+                timeout=timeout,
             ),
         )
 

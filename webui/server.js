@@ -17,6 +17,7 @@ const usage = require("./lib/usage");
 const account = require("./lib/account");
 const archives = require("./lib/archives");
 const auditState = require("./lib/auditState");
+const rulesMeta = require("./lib/rules");
 const browse = require("./lib/browse");
 const remoteAccess = require("./lib/remoteAccess");
 const approvals = require("./lib/approvals");
@@ -353,6 +354,12 @@ app.get("/api/transcript/all", (req, res) => {
 });
 
 // ---- REST API: 账号级用量/额度（跟 ccstatusline 读同一份 Claude Code OAuth 凭证） ----
+
+// 规则元信息：id -> {title, desc, title_en, desc_en, risk, action}，审批台用来把规则 id
+// 翻译成"这是要确认什么操作"的人话。
+app.get("/api/rules/meta", (req, res) => {
+  res.json(rulesMeta.ruleMeta());
+});
 
 app.get("/api/usage", async (req, res) => {
   const result = await usage.getUsage();
