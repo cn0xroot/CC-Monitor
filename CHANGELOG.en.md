@@ -5,6 +5,110 @@ English | [简体中文](./CHANGELOG.md)
 This file records what shipped in each version of CC-Monitor. Loosely follows
 [Keep a Changelog](https://keepachangelog.com/) without strictly enforcing its categories.
 
+## [1.9.0] - 2026-09-15
+
+### Added
+- **Cross-workdir behavior detection** (new module `cc_monitor/workdir.py` + a new
+  `match: "workdir"` rule type in `policy.py`): every existing rule is "a regex over one
+  field", which can't see the hook input's cwd and therefore can't tell where a path sits
+  relative to the current project. The new module extracts every path a tool call is about to
+  touch (Read/Write/Edit/Glob/Grep: `file_path`/`path` directly; Bash: reuses
+  `split_shell_segments` to split into sub-commands, `shlex` to tokenize, expands
+  `~`/`$HOME`/`$PWD`, lets a `cd` inside the same command rebase later relative paths,
+  recognizes `>`/`>>` redirects and `rm`/`mv`/`cp`/`tee`/`sed -i`/`tar -xC`/`git clone`
+  etc. as writes, and recurses into `bash -c "..."`), resolves them to absolute paths and
+  compares against cwd. Anything outside is tiered by location (`homeDotfile` hidden files
+  under home, `otherUserHome`, `system`, `otherProject`) × read/write. Temp directories,
+  `/dev`, interpreters living in system directories (`/usr/bin/python3 x.py`) and the
+  directories the user already authorized via Claude Code's
+  `permissions.additionalDirectories` are never reported. `evaluate()` gained a `cwd`
+  parameter; the hook and rematch both pass it.
+- **Four new default rules** (placed after every specific rule as a fallback — reads of
+  `~/.ssh` and the like that a more specific rule catches first still count under that rule):
+  `workdir_escape_write_sensitive` (`high`/`confirm`: writes into hidden home files, other
+  users' homes or system directories), `workdir_escape_write_other` (`medium`/`log`:
+  writes into other project directories — in real history one session editing hundreds of
+  files in a sibling project is common, so this only logs by default; flip its action to
+  `confirm` to be prompted), `workdir_escape_read_sensitive` (`medium`/`log`),
+  `workdir_escape_read_other` (`low`/`log`). Each carries `scopes`/`access`/`ignore_paths`
+  so users can retune tiers or whitelist paths in `rules.json`. Rule count goes from 70 to 74.
+  The "claude runs as root but the project lives under `/home/<user>`" case is handled: the
+  user home containing cwd also counts as "own home", so a sibling project there is
+  `otherProject` rather than being mistaken for another user's home.
+- **Noise reduction for cross-workdir detection** (tuned against 2,500+ real historical
+  events): eliminates the "cd into a subdirectory then the whole project looks external" class
+  (about 70% of the false positives in practice), plus exemptions for read-only system
+  directories and Claude's own state dirs; what remains is genuinely outside the project (e.g.
+  reading/writing project B's files from within project A's directory — which the tool cannot
+  tell apart even when the two are copies of the same work; use a rule's `ignore_paths` to fold
+  one directory into another when needed):
+  - **The boundary is the project root, not the hook's cwd**: after Claude Code's Bash tool
+    `cd`s into a subdirectory, the hook input's `cwd` follows it (e.g. `proj/webui`), so editing
+    `proj/README.md` looked like a cross-directory write — about 70% of the old false
+    positives. The root is now found by walking up from cwd for `.git`/`.hg`/`.svn`/
+    `CLAUDE.md`/`.claude` markers, taking the highest marked directory below the home dir.
+  - **Reads inside read-only system directories are not reported** (`/usr`, `/lib*`, `/bin`,
+    `/opt`, `/snap`, `/nix`, `/System`, `/Library`, `/Applications`, plus `~/.cache`): looking up
+    shared libraries, headers and running programs all read there; writes there are still
+    reported at the `system` tier. Reads of config/state directories (`/etc`, `/proc`, `/var`,
+    `/root`) are still reported.
+  - **`~/.claude/projects` is ignored entirely**: Claude Code's own transcripts / auto-memory /
+    todos — reading and writing them is part of its normal operation; everything else under
+    `~/.claude` (settings, credentials) is still reported.
+  - **Paths inside the project or an ignored directory are judged literally, without following
+    symlinks**: `ln -sf /usr/lib/x.so /tmp/build/x.so` used to realpath into "a write to
+    /usr/lib".
+  - `/` itself is classified as `system` (`find /`, `ls /`).
+- **`CC-Monitor workdir` subcommand**: per-rule totals plus a list of recent cross-workdir
+  file operations.
+- **"Cross-workdir operations" home-page card** + `/api/drilldown/workdir-escape`: same
+  `matched_rule` grouping/drilldown template as "Advanced Threat Detection", four categories
+  mapping to the four rules above.
+- **`tests/test_workdir.py`**: regression tests for tiering, file tools, Bash path extraction
+  (paths inside heredoc bodies/strings don't false-positive, `cd` tracking, write wins over
+  read for the same path), and rule mapping/precedence.
+
+### Changed
+- **Home page redesigned as a compact dashboard** (direction settled on a Claude Design
+  canvas first, then implemented; colors/radii/type/card borders all reuse the existing theme
+  variables — no new colors):
+  - A **status strip** at the top: audit state + claude process count, sessions monitored
+    (with active Web UI terminal sessions), pending approvals (click jumps to the approval
+    desk), blocked + suspected bypasses, session quota remaining — numbers that used to be
+    scattered across the page.
+  - The four control bars that each carried a paragraph of explanation (audit toggle /
+    archive & clear / sync update / remote access) collapse into **one toolbar**; the
+    explanations move into ⓘ hover bubbles (new `data-i18n-tip`, switches with the language).
+  - Every group becomes a **short title + ⓘ** instead of a full-width line of description;
+    the six security cards sit in one row with a one-line coverage hint under each (the
+    cross-workdir card shows live read/write/sensitive counts — `/api/overview` gained
+    `workdirEscapeBreakdown`); activity/command groups use dense cards (1.5rem numbers), the
+    three low-frequency counters MCP / Glob·Grep / TodoWrite merge into one card (each number
+    still opens its own drilldown); file operations / software installs move into two boxes.
+  - Account info + quota cards + limit details share one two-column row. The page is roughly
+    half as tall; every drilldown entry and element id is preserved (app.js bindings untouched).
+- **The other seven tabs share one page header** (`.page-head`: short title + ⓘ explanation +
+  inline controls): the Status tab uses the same two-column account/quota layout as home, with
+  section headers for model usage and session status; on Network the GeoIP accuracy badge moves
+  into the header, summary cards become dense cards and the map legend sits on the section
+  header; on the Approval Desk the desktop-notification button moves into the header and the
+  history table stops wrapping the time/result/via columns and clips long text columns (hover
+  for the full value); Audit Log / Claude Tap fold their toggles and session dropdown into the
+  header, and Claude Tap shows a hint instead of a blank page when no session is selected; the
+  terminal sidebar title and the Archives header follow suit. Every long explanatory paragraph
+  moved from the body into ⓘ.
+- **Drilldown dialog reports load failures**: a 404/unresponsive endpoint used to leave the
+  dialog stuck on "Loading…" (typically: code just updated but the running Web UI server is
+  still the old version without the new route); it now shows a message telling the user to
+  restart the Web UI.
+
+### Fixed
+- **Account-quota card "Remaining · Session quota" showing 0% right after the window
+  expires**: while the 5-hour window has rolled over but no new request has refreshed the
+  numbers yet, the API keeps returning the previous window's final utilization (100% if it was
+  used up) together with an already-past `resets_at`; computing "remaining" from that gives
+  0%. An expired `resets_at` is now treated as 0% used, and utilization is clamped to 0–100.
+
 ## [1.8.0] - 2026-09-14
 
 ### Added

@@ -355,6 +355,102 @@ html, body {
 #remote-access-row.active { color: var(--red); font-weight: 700; }
 #remote-access-row.active .switch-track { background: var(--red); }
 
+/* ---------- 首页：紧凑仪表盘（态势摘要条 / 工具栏 / 分组标题 / 网格） ----------
+   配色、圆角、字号全部沿用上面 .card/.home-box/.box-title 那套，这里只加排版容器。 */
+.home-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.strip-card { display: flex; align-items: center; gap: 14px; padding: 12px 16px; }
+.strip-num { font-size: 1.7143rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.strip-body { min-width: 0; flex: 1 1 auto; }
+.strip-title { font-weight: 600; font-size: 0.9286rem; line-height: 1.3; }
+.strip-cap { color: var(--text-dim); font-size: 0.8571rem; margin-top: 2px; }
+.strip-cap .clickable { cursor: pointer; }
+.strip-cap .clickable:hover { color: var(--accent); }
+.strip-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: var(--text-dim); }
+/* 心跳徽章在摘要卡里不悬浮在右上角（会压住标题），改成行尾的一个普通 flex 项 */
+.strip-card .card-vital-badge { position: static; margin-left: auto; flex: 0 0 auto; align-self: flex-start; }
+.strip-dot.running { background: var(--green); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--green); }
+.strip-dot.paused { background: var(--yellow); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--yellow); }
+.strip-dot.stopped { background: var(--red); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--red); }
+.strip-users { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 0.7857rem; color: var(--text-dim); margin-top: 2px; }
+.strip-users .bar-row { font-size: inherit; gap: 4px; }
+.strip-users .bar-row .name { flex: 0 0 auto; }
+.accent-red-text { color: var(--red); }
+.accent-yellow-text { color: var(--yellow); }
+#strip-usage .neon-bar { height: 12px; margin: 4px 0; }
+
+.home-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 12px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; }
+.home-toolbar button { width: auto; margin-bottom: 0; flex: 0 0 auto; }
+.home-toolbar .sec-title { margin-right: 2px; }
+.tb-divider { width: 1px; height: 22px; background: var(--border); margin: 0 4px; flex: 0 0 auto; }
+.tb-spacer { flex: 1 1 auto; }
+.home-toolbar-note { display: block; margin: 6px 2px 0; min-height: 0; }
+.home-toolbar-note:empty { display: none; }
+
+.sec { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px; }
+.sec-title { font-size: 0.8571rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; white-space: nowrap; }
+.sec-rule { flex: 1 1 auto; height: 1px; background: var(--border); }
+.sec-note { font-family: Menlo, Consolas, monospace; font-size: 0.7857rem; color: var(--text-dim); white-space: nowrap; }
+
+/* ⓘ 说明：悬停/聚焦时把长段说明文字以气泡形式展开，data-tip 由 i18n 的 data-i18n-tip 填 */
+.info-tip { position: relative; display: inline-flex; width: 14px; height: 14px; color: var(--text-dim); cursor: help; flex: 0 0 auto; outline: none; }
+.info-tip svg { width: 14px; height: 14px; }
+.info-tip:hover, .info-tip:focus { color: var(--accent); }
+.info-tip::after {
+  content: attr(data-tip);
+  position: absolute; left: -8px; top: 22px; z-index: 30; width: 380px; max-width: 70vw;
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; font-size: 0.8571rem; line-height: 1.55; white-space: normal; text-transform: none; letter-spacing: 0; font-weight: 400;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity .12s, transform .12s;
+}
+.info-tip.tip-left::after { left: auto; right: -8px; }
+.info-tip:hover::after, .info-tip:focus::after { opacity: 1; transform: translateY(0); }
+.info-tip[data-tip=""]::after { display: none; }
+
+.home-grid { display: grid; gap: 14px; }
+.home-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.home-grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.home-grid.cols-6 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.home-grid.cols-7 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.home-grid .card { flex: none; }
+.card.dense { padding: 12px 14px; }
+.card.dense .card-num { font-size: 1.5rem; }
+.card-sub { font-family: Menlo, Consolas, monospace; font-size: 0.7857rem; color: var(--text-dim); margin-top: 6px; }
+.card.accent-red-strong .card-sub { color: var(--text-dim); font-weight: 400; }
+.card-num-multi { display: flex; align-items: baseline; gap: 8px; }
+.card-num-multi .sep { color: var(--text-dim); font-weight: 400; }
+.card-num-multi .clickable { cursor: pointer; }
+.card-num-multi .clickable:hover { color: var(--accent); }
+.mini-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px; }
+.mini-stat { min-width: 0; }
+.mini-stat .card-num { font-size: 1.5rem; }
+.mini-stat.clickable { cursor: pointer; border-radius: 6px; }
+.mini-stat.clickable:hover .card-num { color: var(--accent); }
+
+.home-account { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .home-account { grid-template-columns: 1fr; } }
+.home-account .home-box { flex: none; }
+.kv-list { display: flex; flex-direction: column; gap: 6px; }
+.kv-list .bar-row { font-size: 0.8929rem; }
+.kv-list .bar-row .name { flex: 0 0 96px; }
+.usage-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 14px; }
+.usage-row .card { background: transparent; border: none; padding: 0; flex: none; }
+.usage-row .card .neon-bar-lg { width: 100%; }
+.usage-row .empty-state { grid-column: 1 / -1; }
+
+/* ---------- 各标签页统一的页头：短标题 + ⓘ + 行内控件（跟首页 .sec 同一套） ---------- */
+.page-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 14px; padding: 8px 12px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; flex: 0 0 auto; }
+.page-head .sec-rule { flex: 1 1 auto; }
+.page-head .pill-select { max-width: 320px; }
+.page-head .geo-acc-badge { margin: 0; }
+.page-head.sidebar-head { padding: 0 0 8px; margin: 0; background: transparent; border: none; border-radius: 0; gap: 8px; }
+.table-wrap { overflow-x: auto; }
+.home-box.table-wrap { padding: 6px 10px 10px; }
+.home-box.table-wrap .dd-table th { background: var(--bg-panel); }
+#view-logs .page-head, #view-tap .page-head { margin-bottom: 10px; }
+#view-network .home-grid { margin-bottom: 4px; }
+#view-status .home-account { margin-bottom: 4px; }
+
 /* ---------- 历史数据记录列表 ---------- */
 .archives-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; }
 .archive-item {
@@ -427,7 +523,7 @@ html, body {
 /* 跟 Claude Tap 那边保持一致的布局：允许换行，会话筛选下拉推到工具栏最右边，
    标题和自动滚动开关留在左边一组。 */
 #view-logs .logs-toolbar { flex-wrap: wrap; }
-#view-logs #log-session-filter { margin-left: auto; order: 1; }
+#view-logs #log-session-filter { order: 1; }
 /* 自动滚动开关：视觉上是个 iOS 风格的滑动开关，底层还是原生 <input type="checkbox">——
    只是把它缩到看不见（依然占位、依然可以被 <label> 点击/键盘聚焦），旁边这两个 <span>
    纯粹是画出来的轨道+圆点，用 :checked 同级选择器联动样式，不用额外写 JS。 */
@@ -603,6 +699,7 @@ html, body {
 .empty-hint {
   position: absolute;
   inset: 0;
+  z-index: 2; /* 压在 xterm 的黑底画布上面，不然提示文字被终端盖住看不见 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1130,6 +1227,10 @@ html, body {
 .dd-table { width: 100%; border-collapse: collapse; font-size: 0.8571rem; }
 .dd-table th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-panel); }
 .dd-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+/* 表格里两类特殊单元格：短标签（时间/结果/处理方式）不折行；长文本（匹配内容/回答）
+   限宽 + 省略号，完整内容在 title 里悬停看，不让一列把整张表撑歪。 */
+.dd-table td.dd-nowrap { white-space: nowrap; }
+.dd-table td.dd-clip { max-width: 0; width: 24%; min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dd-table tr:hover td { background: var(--bg-elevated); }
 .dd-mono { font-family: Menlo, Consolas, monospace; font-size: 0.7857rem; color: var(--text-dim); }
 .dd-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 3px; }

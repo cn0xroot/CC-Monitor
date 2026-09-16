@@ -864,6 +864,15 @@ function refreshTapSessionOptions(rows) {
     // 得自己手动拉一下数据，不然下拉框显示对了但内容是空的。
     if (!current) pollTap();
   }
+  showTapPlaceholder();
+}
+
+// 还没选会话时列表是空的——给一句提示，不然整页空白像是坏了。
+function showTapPlaceholder() {
+  const list = document.getElementById("tap-list");
+  if (!tapSelect.value && list.children.length === 0) {
+    list.innerHTML = `<div class="empty-state">${t("tap.pickSession")}</div>`;
+  }
 }
 
 tapSelect.addEventListener("change", () => {
@@ -872,6 +881,7 @@ tapSelect.addEventListener("change", () => {
   tapMeta.textContent = "";
   rememberTapSession(tapSelect.value || null);
   if (tapSelect.value) pollTap();
+  else showTapPlaceholder();
 });
 
 function renderTapEntry(entry) {
@@ -992,6 +1002,17 @@ async function refreshOverview() {
   document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
   document.getElementById("stat-sensitive-data-total").textContent = s.sensitiveDataTotal;
   document.getElementById("stat-advanced-threat-total").textContent = s.advancedThreatTotal;
+  document.getElementById("stat-workdir-escape-total").textContent = s.workdirEscapeTotal;
+  if (Array.isArray(s.workdirEscapeBreakdown)) {
+    // 卡片下面的小字：读/写各多少、其中落在敏感位置（家目录隐藏文件/别的用户/系统目录）的多少
+    const byKind = Object.fromEntries(s.workdirEscapeBreakdown.map((r) => [r.kind, r.n]));
+    const n = (k) => byKind[k] || 0;
+    document.getElementById("stat-workdir-escape-sub").textContent = t("home.workdirEscape.sub", {
+      read: n("readSensitive") + n("readOther"),
+      write: n("writeSensitive") + n("writeOther"),
+      sensitive: n("readSensitive") + n("writeSensitive"),
+    });
+  }
   if (s.screenshotOps) {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
@@ -1040,6 +1061,13 @@ const auditToggleBtn = document.getElementById("audit-toggle-btn");
 function applyAuditState(state) {
   document.getElementById("audit-state-pill").className = "pill audit-state-" + state;
   document.getElementById("audit-state-text").textContent = t("auditState." + state);
+  // 首页态势摘要条第一张卡：同一个状态在顶栏 pill 和首页各显示一份
+  const stripDot = document.getElementById("strip-audit-dot");
+  if (stripDot) {
+    stripDot.className = "strip-dot " + state;
+    const key = { running: "home.strip.auditRunning", paused: "home.strip.auditPaused", stopped: "home.strip.auditStopped" }[state];
+    document.getElementById("strip-audit-text").textContent = key ? t(key) : state;
+  }
 
   if (state === "running") {
     auditToggleBtn.textContent = t("home.auditCtl.pause");
@@ -1341,6 +1369,13 @@ async function refreshApprovals() {
   if (!rows) return;
   badge.hidden = rows.length === 0;
   badge.textContent = String(rows.length);
+  // 首页态势摘要条的"待审批"卡跟顶栏徽章同源
+  const stripPending = document.getElementById("strip-pending");
+  if (stripPending) {
+    stripPending.textContent = String(rows.length);
+    stripPending.classList.toggle("accent-yellow-text", rows.length > 0);
+    document.getElementById("strip-pending-cap").textContent = t(rows.length > 0 ? "home.strip.pendingSome" : "home.strip.pendingNone");
+  }
   notifyNewApprovals(rows);
 
   const list = document.getElementById("approvals-list");
@@ -1482,14 +1517,14 @@ async function refreshApprovalHistory() {
           .map((r) => {
             const answer = formatAnswerValue(r.resolved_value);
             return `<tr>
-          <td class="dd-mono">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19))}</td>
+          <td class="dd-mono dd-nowrap">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19).replace("T", " "))}</td>
           <td class="dd-mono">${sessionIdCell(r.session_id, r.cwd)}</td>
-          <td>${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : r.kind === "permission" ? " (native)" : ""}</td>
+          <td class="dd-nowrap">${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : r.kind === "permission" ? " (native)" : ""}</td>
           <td>${escapeHtml(r.kind === "permission" ? t("approvals.permission.rule") : r.matched_rule || "-")}</td>
-          <td class="dd-mono" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
-          <td><span class="${APPROVAL_STATUS_CLASS[r.status] || ""}">${escapeHtml(approvalStatusLabel(r.status))}</span></td>
-          <td title="${escapeHtml(answer || "")}">${answer ? escapeHtml(answer.slice(0, 60)) : "-"}</td>
-          <td>${escapeHtml(approvalViaLabel(r.resolved_via))}</td>
+          <td class="dd-mono dd-clip" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
+          <td class="dd-nowrap"><span class="${APPROVAL_STATUS_CLASS[r.status] || ""}">${escapeHtml(approvalStatusLabel(r.status))}</span></td>
+          <td class="dd-clip" title="${escapeHtml(answer || "")}">${answer ? escapeHtml(answer.slice(0, 60)) : "-"}</td>
+          <td class="dd-nowrap">${escapeHtml(approvalViaLabel(r.resolved_via))}</td>
         </tr>`;
           })
           .join("")}
@@ -1551,8 +1586,18 @@ document.addEventListener("click", (ev) => {
     showTargetConnections(targetEl.dataset.targetIp, targetEl.dataset.targetPort, targetEl.dataset.targetHost);
     return;
   }
-  const drilldownEl = ev.target.closest(".card.clickable[data-drilldown]");
-  if (drilldownEl) openDrilldown(drilldownEl.dataset.drilldown);
+  // 首页紧凑布局里，一张卡内可能嵌着更小的可点区域（合并卡里的三个数字、文件操作盒子
+  // 里的四个小统计、摘要卡说明行里的"终端会话"），closest 取最近的那个，内层优先。
+  const drilldownEl = ev.target.closest(".clickable[data-drilldown]");
+  if (drilldownEl) {
+    openDrilldown(drilldownEl.dataset.drilldown);
+    return;
+  }
+  const gotoEl = ev.target.closest("[data-goto-tab]");
+  if (gotoEl) {
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${gotoEl.dataset.gotoTab}"]`);
+    if (tabBtn) tabBtn.click();
+  }
 });
 
 async function showTargetConnections(ip, port, host) {
@@ -1586,7 +1631,22 @@ async function showTargetConnections(ip, port, host) {
     </table>`;
 }
 
+// 下钻接口请求失败（比如 Web UI 服务还是旧代码、没有这条新路由，返回 404）时，各分支
+// 里的 `if (!result) return;` 会直接退出，弹窗就一直停在"加载中…"——统一在这层兜底：
+// 跑完之后占位符还在，就换成一句说明，告诉用户该怎么办。
 async function openDrilldown(kind) {
+  const body = document.getElementById("drilldown-body");
+  try {
+    await openDrilldownInner(kind);
+  } finally {
+    const placeholder = body.querySelector(".empty-state");
+    if (placeholder && body.children.length === 1 && placeholder.textContent === t("drilldown.loading")) {
+      placeholder.textContent = t("drilldown.loadFailed");
+    }
+  }
+}
+
+async function openDrilldownInner(kind) {
   const title = document.getElementById("drilldown-title");
   const body = document.getElementById("drilldown-body");
   body.innerHTML = `<div class="empty-state">${t("drilldown.loading")}</div>`;
@@ -1832,6 +1892,7 @@ async function openDrilldown(kind) {
     "sensitive-ops": { titleKey: "home.sensitiveOps.title", labels: { sshKey: "home.sensitiveOps.sshKey", credential: "home.sensitiveOps.credential", envVar: "home.sensitiveOps.envVar", other: "home.sensitiveOps.other" } },
     "sensitive-data": { titleKey: "home.sensitiveData.title", labels: { credential: "home.sensitiveData.credential", pii: "home.sensitiveData.pii", vpnConfig: "home.sensitiveData.vpnConfig", other: "home.sensitiveData.other" } },
     "advanced-threat": { titleKey: "home.advancedThreat.title", labels: { cryptoMining: "home.advancedThreat.cryptoMining", dbFileWrite: "home.advancedThreat.dbFileWrite", webshell: "home.advancedThreat.webshell", reverseEscapeShell: "home.advancedThreat.reverseEscapeShell", downloadExec: "home.advancedThreat.downloadExec", c2Framework: "home.advancedThreat.c2Framework", postExploitation: "home.advancedThreat.postExploitation", suspiciousMcp: "home.advancedThreat.suspiciousMcp", pentestRecon: "home.advancedThreat.pentestRecon", covertTunnel: "home.advancedThreat.covertTunnel" } },
+    "workdir-escape": { titleKey: "home.workdirEscape.title", labels: { writeSensitive: "home.workdirEscape.writeSensitive", writeOther: "home.workdirEscape.writeOther", readSensitive: "home.workdirEscape.readSensitive", readOther: "home.workdirEscape.readOther" } },
   };
   // 首页卡片用 accent-red-strong 标红的那几组，下钻详情里的分类徽章也跟着标红加粗。
   // 一开始只标红"敏感操作/敏感数据/高级威胁检测/逆向分析工具调用"这几组，后来陆续被
@@ -2321,11 +2382,20 @@ function conkyStepColor(pct) {
   return CONKY_STEPS[CONKY_STEPS.length - 1][1];
 }
 
-function usageCard(label, bucket, windowMs) {
+// optional=true 的额度（按模型的 Sonnet/Opus 周额度）：接口没返回这个桶就整张卡不画——
+// 不是每个账号都有这两项（比如只有 Fable 限额的账号），画一张"-"只会让人以为出了错。
+// 单次额度和全模型周额度不是可选的：没数据也要占位，提示"这里本该有东西"。
+function usageCard(label, bucket, windowMs, optional = false) {
   if (!bucket || bucket.utilization === null) {
+    if (optional) return "";
     return `<div class="card"><div class="card-num">-</div><div class="card-label">${label}</div></div>`;
   }
-  const usedPct = Math.round(bucket.utilization);
+  // resets_at 已经是过去的时间点，说明这个窗口已经到期滚动了、只是还没有新请求让接口
+  // 刷新数字——接口这时候仍会把上一个窗口末尾的用量（比如刚好用满的 100%）原样返回，
+  // 按它算"剩余"就是 0%，跟实际（新窗口、什么都还没用）完全相反。到期的窗口按 0 已用
+  // 处理；另外把用量夹在 0~100 之间，接口偶尔给超过 100 的值也不会算出负的剩余。
+  const windowExpired = bucket.resetsAt && new Date(bucket.resetsAt).getTime() < Date.now();
+  const usedPct = windowExpired ? 0 : Math.max(0, Math.min(100, Math.round(bucket.utilization)));
   const isSession = windowMs === SESSION_WINDOW_MS;
   const accent = usedPct >= 90 ? "accent-red" : usedPct >= 70 ? "accent-yellow" : "";
   // 单次额度（session）显示"剩余百分比"，剩得越多越健康；其它额度依旧显示"已使用
@@ -2364,8 +2434,8 @@ async function refreshUsageBoard() {
   el.innerHTML = [
     usageCard(t("status.usage.session"), d.session, SESSION_WINDOW_MS),
     usageCard(t("status.usage.weekly"), d.weekly, WEEKLY_WINDOW_MS),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS, true),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS, true),
     ...perModelWeeklyCards(d),
   ].join("");
 }
@@ -2491,8 +2561,33 @@ function renderLimitsInto(box, list, limits) {
     </table>`;
 }
 
+// 首页态势摘要条最右一张卡：单次额度剩余百分比 + 迷你 neon 条 + 重置倒计时。
+// 跟下面账号区里那张大卡是同一份数据、同一套 conky 分段配色，只是尺寸缩小。
+function renderStripUsage(bucket) {
+  const el = document.getElementById("strip-usage");
+  if (!el) return;
+  const title = `<div class="strip-title">${t("home.strip.sessionQuota")}</div>`;
+  if (!bucket || bucket.utilization === null) {
+    el.innerHTML = `<div class="strip-num" style="color:var(--text-dim)">-</div><div class="strip-body">${title}<div class="strip-cap">${t("home.strip.quotaUnavailable")}</div></div>`;
+    return;
+  }
+  const windowExpired = bucket.resetsAt && new Date(bucket.resetsAt).getTime() < Date.now();
+  const usedPct = windowExpired ? 0 : Math.max(0, Math.min(100, Math.round(bucket.utilization)));
+  const remaining = 100 - usedPct;
+  const color = conkyStepColor(remaining);
+  const light = rgbToHex(lerpRgb(hexToRgb(color), [255, 255, 255], 0.6));
+  const reset = bucket.resetsAt ? fmtResetAt(bucket.resetsAt).replace(/\s*\(.*\)$/, "") : "";
+  el.innerHTML = `
+    <div class="strip-num" style="color:${color}">${remaining}%</div>
+    <div class="strip-body">
+      ${title}
+      <div class="neon-bar" style="border:1px solid ${color}; box-shadow:0 0 8px ${withAlpha(color, 0.45)};"><div class="neon-bar-fill" style="width:${remaining}%; background:linear-gradient(90deg, ${light}, ${color});"></div></div>
+      ${reset ? `<div class="strip-cap">${t("home.strip.quotaReset", { when: reset })}</div>` : ""}
+    </div>`;
+}
+
 async function refreshHomeAnthropicInfo() {
-  refreshAccountProfile();
+  await refreshAccountProfile();
   const result = await api("/api/usage");
   const cardsEl = document.getElementById("anthropic-usage-cards");
   const limitsBox = document.getElementById("anthropic-limits-box");
@@ -2504,14 +2599,16 @@ async function refreshHomeAnthropicInfo() {
     cardsEl.innerHTML = `<div class="empty-state">${t("status.usageError", { msg: escapeHtml(result.error) })}</div>`;
     limitsBox.hidden = true;
     spendBox.hidden = true;
+    renderStripUsage(null);
     return;
   }
   const d = result.data;
+  renderStripUsage(d.session);
   cardsEl.innerHTML = [
     usageCard(t("status.usage.session"), d.session, SESSION_WINDOW_MS),
     usageCard(t("status.usage.weekly"), d.weekly, WEEKLY_WINDOW_MS),
-    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS),
-    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS),
+    usageCard(t("status.usage.weeklySonnet"), d.weeklySonnet, WEEKLY_WINDOW_MS, true),
+    usageCard(t("status.usage.weeklyOpus"), d.weeklyOpus, WEEKLY_WINDOW_MS, true),
     ...perModelWeeklyCards(d),
   ].join("");
 
@@ -2535,6 +2632,10 @@ async function refreshHomeAnthropicInfo() {
   } else {
     spendBox.hidden = true;
   }
+  // 左边那个账号信息盒子：账号资料和 spend 两块都没内容（比如没登录凭证）就整个收起，
+  // 不留一个空框。
+  const accountCol = document.querySelector(".home-account .account-col");
+  if (accountCol) accountCol.hidden = document.getElementById("anthropic-profile-box").hidden && spendBox.hidden;
 }
 
 // ---------- claude 进程运行身份检测 ----------
@@ -2630,10 +2731,10 @@ async function refreshNetworkTraffic() {
 
   const s = trafficResult.summary;
   document.getElementById("network-summary").innerHTML = `
-    <div class="card"><div class="card-num">${formatBytes(s.txBytes)}</div><div class="card-label">${t("network.totalTx")}</div></div>
-    <div class="card"><div class="card-num">${formatBytes(s.rxBytes)}</div><div class="card-label">${t("network.totalRx")}</div></div>
-    <div class="card clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.connectCount}</div><div class="card-label">${t("network.totalConnects")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
-    <div class="card clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.distinctIps}</div><div class="card-label">${t("network.distinctIps")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
+    <div class="card dense"><div class="card-num">${formatBytes(s.txBytes)}</div><div class="card-label">${t("network.totalTx")}</div></div>
+    <div class="card dense"><div class="card-num">${formatBytes(s.rxBytes)}</div><div class="card-label">${t("network.totalRx")}</div></div>
+    <div class="card dense clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.connectCount}</div><div class="card-label">${t("network.totalConnects")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
+    <div class="card dense clickable" data-drilldown="ai-trajectory"><div class="card-num">${s.distinctIps}</div><div class="card-label">${t("network.distinctIps")} <span class="click-hint">${t("home.card.clickHint")}</span></div></div>
   `;
 
   const rows = trafficResult.rows;
