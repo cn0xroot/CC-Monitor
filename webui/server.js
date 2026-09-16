@@ -494,6 +494,9 @@ app.get("/api/drilldown/sessions", async (req, res) => {
     blockedCount: r.blocked_count,
     bypassCount: r.bypass_count,
     model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
+    // 模型的输入/输出/缓存 token 用量——从这个会话的 transcript 里算（跟"状态信息"页
+    // 那张模型用量表同一个 getTokenStats），会话列表里直接能看到每个会话烧了多少。
+    tokenStats: r.transcript_path ? transcript.getTokenStats(r.transcript_path) : null,
     active: r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false,
     ...(() => {
       const v = vitalStatus(r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false, r.last_ts);

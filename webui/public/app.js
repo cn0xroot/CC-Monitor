@@ -1765,7 +1765,10 @@ async function openDrilldownInner(kind) {
         <thead><tr>
           <th>${t("drilldown.sessions.cwd")}</th><th>${t("drilldown.sessions.sessionId")}</th>
           <th>${t("drilldown.sessions.status")}</th><th>${t("drilldown.lastActive")}</th>
-          <th>${t("drilldown.sessions.model")}</th><th>${t("drilldown.sessions.events")}</th>
+          <th>${t("drilldown.sessions.model")}</th>
+          <th>${t("drilldown.sessions.tokIn")}</th><th>${t("drilldown.sessions.tokOut")}</th>
+          <th>${t("drilldown.sessions.tokCached")}</th><th>${t("drilldown.sessions.tokTotal")}</th>
+          <th>${t("drilldown.sessions.events")}</th>
           <th>${t("drilldown.sessions.flags")}</th><th>${t("drilldown.sessions.range")}</th>
         </tr></thead>
         <tbody>
@@ -1778,6 +1781,10 @@ async function openDrilldownInner(kind) {
               <td class="dd-nowrap">${renderVital(r.status, r.statusAgoMs)}</td>
               <td class="dd-mono dd-nowrap">${r.lastTs ? formatAgo(Date.now() - new Date(r.lastTs).getTime()) : "-"}</td>
               <td class="dd-nowrap">${escapeHtml(modelShort(r.model) || "-")}</td>
+              <td class="dd-mono dd-nowrap">${r.tokenStats ? formatTokensShort(r.tokenStats.totalInputTokens) : "-"}</td>
+              <td class="dd-mono dd-nowrap">${r.tokenStats ? formatTokensShort(r.tokenStats.totalOutputTokens) : "-"}</td>
+              <td class="dd-mono dd-nowrap">${r.tokenStats ? formatTokensShort(r.tokenStats.totalCachedTokens) : "-"}</td>
+              <td class="dd-mono dd-nowrap">${r.tokenStats ? formatTokensShort(r.tokenStats.totalTokens) : "-"}</td>
               <td class="dd-nowrap">${r.eventCount}</td>
               <td class="dd-nowrap">${r.blockedCount > 0 ? `🛑${r.blockedCount} ` : ""}${r.bypassCount > 0 ? `⚠${r.bypassCount}` : ""}${
                 r.blockedCount === 0 && r.bypassCount === 0 ? "-" : ""
