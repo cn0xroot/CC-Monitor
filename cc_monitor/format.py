@@ -1,4 +1,4 @@
-"""把 hook 采集到的原始 tool_input/tool_response 翻译成人类可读的事件描述。"""
+"""把 hook 采集到的原始 tool_input/tool_response 翻译成通俗易懂的事件描述。"""
 import re
 
 from . import colors as col

@@ -1,5 +1,5 @@
 "use strict";
-// JS 版的 cc_monitor/format.py + cc_monitor/colors.py：把审计事件翻译成人类可读的 HTML 片段
+// JS 版的 cc_monitor/format.py + cc_monitor/colors.py：把审计事件翻译成通俗易懂的 HTML 片段
 // （用 CSS class 上色，而不是终端 ANSI 码，因为渲染目标是浏览器）。
 
 const TOOL_LABELS = {

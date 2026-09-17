@@ -1213,7 +1213,7 @@
   `claude` 进程派生出的所有子进程的 `execve`/`connect`，`CC-Monitor verify` 交叉比对
   hooks 记录，标出"探针看到了、hook 没记录"的可疑差异（绕过检测）。
 - 网络层可视化：eBPF 直接抓 `connect()` 目标 IP:port，不解密 TLS、不用装 CA 证书。
-- 人类可读实时日志：`CC-Monitor tail`，终端自动彩色高亮，Bash 命令按语法着色。
+- 实时日志通俗呈现：`CC-Monitor tail`，终端自动彩色高亮，Bash 命令按语法着色。
 
 ### Web UI
 - **首页**：概览统计，各卡片可点击下钻详情。
