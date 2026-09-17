@@ -585,7 +585,11 @@ html, body {
 .bar-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
 .bar-row .name { flex: 0 0 130px; color: var(--text-dim); }
 .bar-row .track { flex: 1 1 auto; height: 8px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; }
-.bar-row .fill { height: 100%; border-radius: 4px; }
+/* .fill 必须显式 block：它是 span，默认 display:inline，而行内非替换元素的 width/
+   height 根本不生效，于是宽高都是 0，背景色设了也画不出来——底部"分布"那三组数据条
+   一直是全白的就是这个原因。旁边的 .dot 同样是 span 却正常，是因为它是 .bar-row 这个
+   flex 容器的直接子项，被 blockify 了；.fill 在 .track 里面，.track 不是 flex 容器。 */
+.bar-row .fill { display: block; height: 100%; border-radius: 4px; }
 .bar-row .count { flex: 0 0 40px; text-align: right; }
 
 /* ---------- Log 审计（全宽页） ---------- */
