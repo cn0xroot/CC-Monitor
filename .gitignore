@@ -40,3 +40,6 @@ Thumbs.db
 # 本地笔记，不进仓库
 Note.MD
 
+
+# 官网静态页面（HTML/）不入库
+HTML/
