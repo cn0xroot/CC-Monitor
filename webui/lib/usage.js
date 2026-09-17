@@ -7,7 +7,7 @@
 //   接口: GET https://api.anthropic.com/api/oauth/usage  (Bearer token)
 // 只读查询，用的是 Claude Code 本来就持有、本来就信任的凭证，不做任何写操作。
 const https = require("https");
-const { readClaudeOauth, credentialsLocationHint } = require("./credentials");
+const { readClaudeOauth, credentialsLocationHint, isExpired } = require("./credentials");
 // https-proxy-agent 装的是纯 ESM 包（package.json 里 "type":"module"，没有 require 导出条件），
 // 普通 node（本环境是 v22，支持同步 require(esm)）能 require 但 Electron 自带的旧版 Node 不行，
 // 会直接抛 ERR_REQUIRE_ESM 把桌面版启动流程崩掉——改成动态 import() 两边都兼容。
@@ -29,8 +29,16 @@ async function proxyAgent() {
 
 let cached = null; // { fetchedAt, data } | { fetchedAt, error }
 
+// 返回 { token } 或 { error }：凭证没有 / 已过期分开提示，别都糊成 "usage API 返回 401"。
 function readAccessToken() {
-  return readClaudeOauth()?.accessToken || null;
+  const oauth = readClaudeOauth();
+  if (!oauth?.accessToken) {
+    return { error: `没找到 Claude Code 的登录凭证 (${credentialsLocationHint()})，无法查询额度` };
+  }
+  if (isExpired(oauth)) {
+    return { error: "Claude Code 登录凭证已过期，在 Claude Code 里跑一次任意命令让它自动刷新，或执行 /login 重新登录" };
+  }
+  return { token: oauth.accessToken };
 }
 
 function bucketInfo(bucket) {
@@ -139,9 +147,9 @@ async function getUsage() {
   const now = Date.now();
   if (cached && now - cached.fetchedAt < CACHE_MAX_AGE_MS) return cached;
 
-  const token = readAccessToken();
+  const { token, error } = readAccessToken();
   if (!token) {
-    cached = { fetchedAt: now, error: `没找到 Claude Code 的登录凭证 (${credentialsLocationHint()})，无法查询额度` };
+    cached = { fetchedAt: now, error };
     return cached;
   }
   const result = await fetchUsageOnce(token);

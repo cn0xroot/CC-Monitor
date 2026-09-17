@@ -30,6 +30,31 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   The Claude Code starburst goes 16→24px and the brand logo 24→30px.
 
 ### Fixed
+- **macOS quota lookups returning 401**: the keychain can hold several records under one
+  service. Running Claude Code once under `sudo` (macOS's sudo does not reset `HOME` by
+  default) makes root write credentials into *your* login keychain, adding an `acct=root`
+  `Claude Code-credentials` entry — and that is exactly what `security find-generic-password -s`
+  returns without `-a`. Nothing refreshes it, so it expires within hours and quota lookups fail
+  with 401 forever. Now the keychain is queried by current username (`-a`) first, falling back
+  to the unqualified lookup, and among all parsed sources a non-expired one wins; if every one
+  is expired the latest-expiring is returned for the caller to judge (fields like plan type
+  remain usable even when the token has expired).
+- **All session vitals grey on macOS**: `tryReadCwd()` only read Linux's `/proc/<pid>/cwd`, so
+  every claude process on macOS had a null cwd. That left the "cwds of live processes" set
+  empty, marked every session dead, and drew every vital-sign indicator as a flat grey line —
+  including sessions that were working seconds earlier. macOS now batches one
+  `lsof -a -p <pid,…> -d cwd -Fpn` call and parses its machine-readable output rather than the
+  human-aligned table.
+- **Quota errors now distinguish "no credentials" from "credentials expired"**: expiry is caught
+  locally with a concrete next step ("run any command in Claude Code to let it refresh, or
+  `/login`") instead of sending a stale token and reporting a vague "usage API returned 401".
+
+  Verified on Linux with no regression: `lsof` is never invoked (strace confirms only `node` and
+  `ps` are exec'd), the `/proc` branch is untouched (cwd resolved for 4/4 processes, session
+  liveness still works), and both functions whose signatures changed have exactly one call site
+  each, updated in step. The one behavior change is that the expiry check also applies on Linux,
+  with no tolerance window — clock skew or a stale `expiresAt` will report expiry instead of
+  trying.
 - **Distribution bars never had any color**: `.fill` is a span, so `display:inline` by default,
   and width/height simply don't apply to a non-replaced inline element — its measured size was
   0×0, so the background color had no box to paint. The dot beside it is also a span but works,

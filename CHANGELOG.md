@@ -25,6 +25,24 @@
   固定用强调色。Claude Code 星芒 16→24px，品牌 logo 24→30px。
 
 ### 修复
+- **macOS 额度查询 401**：钥匙串里同一个 service 可能有多条记录。用 `sudo` 跑过一次
+  Claude Code（macOS 的 sudo 默认不重置 `HOME`），root 会把凭证写进*你的*登录钥匙串，
+  多出一条 `acct=root` 的 `Claude Code-credentials`；而 `security find-generic-password -s`
+  不带 `-a` 返回的正是这条，它没人刷新，8 小时后过期，于是额度查询一直 401。改成先按
+  当前用户名（`-a`）查、再退回不带 `-a`，所有来源解析后优先挑未过期的，全过期时返回过期
+  最晚的那份交给调用方判断（套餐类型这类字段过期了照样能用）。
+- **macOS 会话心跳全灰**：`tryReadCwd()` 只读 Linux 的 `/proc/<pid>/cwd`，macOS 上每个
+  claude 进程的 cwd 都是 null，于是"活着的进程 cwd 集合"为空、每个会话都被判成 dead、
+  生命体征一律画成灰色直线，刚刚还在干活的会话也一样。macOS 改用一次
+  `lsof -a -p <pid,…> -d cwd -Fpn` 批量取，解析机器可读输出而不是给人看的对齐表格。
+- **额度错误提示区分"没有凭证"和"凭证已过期"**：过期在本地就拦下来，给出"去 Claude Code
+  里跑一次命令让它自动刷新，或执行 `/login`"的具体提示，不再拿过期 token 去请求然后回报
+  一句笼统的"usage API 返回 401"。
+
+  Linux 侧已实测无回归：`lsof` 一次都不会被调用（strace 确认只 execve 了 `node` 和 `ps`），
+  `/proc` 分支原封不动（4/4 进程取到 cwd，会话 active 判定照常工作），两处改了签名的函数
+  都只有一个调用点且已同步。唯一的行为变化是过期检查在 Linux 上同样生效，且判断没有容差，
+  时钟偏差或 `expiresAt` 字段不准时会直接报过期而不再尝试。
 - **分布数据条一直没有颜色**：`.fill` 是 span，默认 `display:inline`，而行内非替换元素的
   width/height 根本不生效，实际宽高一直是 0，背景色设了也画不出来。旁边的圆点同样是 span
   却正常，是因为它是 flex 容器的直接子项被 blockify 了。
