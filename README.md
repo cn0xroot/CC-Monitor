@@ -20,7 +20,7 @@ Every release — what was added, changed and fixed — is recorded in
 - **Two independent layers of monitoring**: Claude Code hooks capture semantic detail; a
   Linux eBPF / macOS nettop probe cross-verifies at the kernel/system level, independent of
   the hooks — so a bypassed or tampered hook config doesn't mean monitoring silently stops.
-- **70+ built-in detection rules, auto-triaged by risk**: high-risk operations get blocked
+- **86 built-in detection rules, auto-triaged by risk**: high-risk operations get blocked
   outright (`rm -rf`, reverse shells, writing SSH keys…), medium-risk ones pop a confirmation
   prompt, low-risk ones are logged silently — you're not babysitting every single action.
 - **Full audit trail**: every tool call's command, path, arguments, and decision are logged to
