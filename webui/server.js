@@ -605,8 +605,10 @@ app.get("/api/drilldown/workdir-escape", opsDrilldownHandler(audit.workdirEscape
 
 app.get("/api/drilldown/install-op/:type", (req, res) => {
   const type = req.params.type;
-  if (!["pip", "system", "npm", "other"].includes(type)) {
-    return res.status(400).json({ error: "type 必须是 pip/system/npm/other 之一" });
+  // 合法取值直接问 audit 那边的分组表，避免这里跟分组定义各维护一份、加组时漏改。
+  const validTypes = audit.installGroupNames();
+  if (!validTypes.includes(type)) {
+    return res.status(400).json({ error: `type 必须是 ${validTypes.join("/")} 之一` });
   }
   const rows = audit.installDetails(type).map((row) => {
     let detail = {};

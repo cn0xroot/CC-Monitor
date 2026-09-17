@@ -922,13 +922,28 @@ function fileOpDetails(type, limit = 300) {
 // 识别逻辑只有一份，不会跟 policy 那边判断的标准不一致）。
 const INSTALL_RULE_GROUPS = {
   pip: ["sudo_pip_install", "pip_install_venv_context", "pip_install_no_venv"],
+  // uv 单独一张卡，不并进 pip：它是另一个可执行文件、另一套规则，而且默认行为跟 pip
+  // 相反（没有激活的虚拟环境时 uv 直接报错而不是装进系统 Python），风险画像不一样，
+  // 混在一起统计会让"有多少次装进了系统 Python"这个数失真。
+  uv: ["sudo_uv_pip_install", "uv_pip_install_system", "uv_pip_install", "uv_project_install"],
+  // conda/poetry/pipenv/pipx/pdm/rye 这一类：都是 Python 包，但既不是 pip 也不是 uv，
+  // 各自管自己的环境。跟 pip 分开统计，是因为"有多少次可能装进了系统 Python"这个问题
+  // 只有 pip 那一组答得上来。
+  pythonOther: ["python_package_install_other", "python_legacy_install"],
+  // npm / yarn / pnpm / bun / deno 合成一张"JS 包管理器"卡：对使用者来说它们是同一件事，
+  // 分成五张卡只会让每张都是个位数，看不出总量。全局安装那两条也在里面，下钻能区分。
+  js: ["npm_global_install", "npm_local_install", "js_package_install_global", "js_package_install"],
+  toolchain: ["toolchain_install"],
   system: ["system_package_install"],
   // 本地/全局两条规则都算进"npm 安装"这一张卡片的总数，点开详情时前端按
   // matchedRule 再拆成"本地安装"/"全局安装"两组分别列出（见 app.js 的
   // install-op-npm 特判），不是简单平铺一份列表。
-  npm: ["npm_global_install", "npm_local_install"],
-  other: ["package_install_other"],
+  other: ["package_install_other", "source_build_install", "container_image_pull", "editor_plugin_install"],
 };
+
+function installGroupNames() {
+  return Object.keys(INSTALL_RULE_GROUPS);
+}
 
 function installStats() {
   return withDb((db) => {
@@ -938,16 +953,13 @@ function installStats() {
         .prepare(`SELECT COUNT(*) AS n FROM events WHERE source = 'hook_pre' AND matched_rule IN (${placeholders})`)
         .get(...rules).n;
     };
-    return {
-      pip: countRules(INSTALL_RULE_GROUPS.pip),
-      system: countRules(INSTALL_RULE_GROUPS.system),
-      npm: countRules(INSTALL_RULE_GROUPS.npm),
-      other: countRules(INSTALL_RULE_GROUPS.other),
-    };
-  }, { pip: 0, system: 0, npm: 0, other: 0 });
+    const out = {};
+    for (const key of Object.keys(INSTALL_RULE_GROUPS)) out[key] = countRules(INSTALL_RULE_GROUPS[key]);
+    return out;
+  }, Object.fromEntries(Object.keys(INSTALL_RULE_GROUPS).map((k) => [k, 0])));
 }
 
-// 首页软件安装统计卡片（pip/系统包/npm/其它）的下钻详情：具体是哪些安装指令。
+// 首页软件安装统计卡片的下钻详情：具体是哪些安装指令。
 function installDetails(type, limit = 300) {
   const rules = INSTALL_RULE_GROUPS[type];
   if (!rules) return [];
@@ -1498,6 +1510,7 @@ module.exports = {
   getTranscriptPath,
   fileOpsStats,
   fileOpDetails,
+  installGroupNames,
   installStats,
   installDetails,
   githubOpsBreakdown,

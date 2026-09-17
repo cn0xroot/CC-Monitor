@@ -1008,10 +1008,11 @@ async function refreshOverview() {
     document.getElementById("stat-file-deletes").textContent = s.fileOps.deletes;
   }
   if (s.installOps) {
-    document.getElementById("stat-install-pip").textContent = s.installOps.pip;
-    document.getElementById("stat-install-system").textContent = s.installOps.system;
-    document.getElementById("stat-install-npm").textContent = s.installOps.npm;
-    document.getElementById("stat-install-other").textContent = s.installOps.other;
+    // 分组名就是元素 id 后缀，后端加一组、前端加一张卡即可，不用再动这里。
+    for (const [key, n] of Object.entries(s.installOps)) {
+      const el = document.getElementById("stat-install-" + key);
+      if (el) el.textContent = n;
+    }
   }
   document.getElementById("stat-github-total").textContent = s.githubOpsTotal;
   document.getElementById("stat-ssh-total").textContent = s.sshOpsTotal;
@@ -2276,7 +2277,7 @@ async function openDrilldownInner(kind) {
     // （那七组下钻现在是"分类小计表 + 事件明细"，跟 file-op/install-op 这种平铺
     // 列表已经不是同一种形状）。
     const OP_LABEL_KEYS = {
-      "install-op": { pip: "home.installOps.pip", system: "home.installOps.system", npm: "home.installOps.npm", other: "home.installOps.other" },
+      "install-op": { pip: "home.installOps.pip", uv: "home.installOps.uv", pythonOther: "home.installOps.pythonOther", js: "home.installOps.js", toolchain: "home.installOps.toolchain", system: "home.installOps.system", other: "home.installOps.other" },
       "file-op": { read: "home.fileOps.reads", write: "home.fileOps.writes", edit: "home.fileOps.edits", delete: "home.fileOps.deletes" },
     };
     const apiKind = OP_DRILLDOWN_PREFIXES.find((p) => kind.startsWith(p)).slice(0, -1);
