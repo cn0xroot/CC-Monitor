@@ -8,6 +8,61 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [Unreleased]
 
 ### Added
+- **Intervention levels renamed, plus permissive mode**: the old "audit switch:
+  start/pause/stop" is now "intervention level: Enforcing / Permissive / Off". The old name
+  labelled as "stopped" the very thing that keeps running in the `paused` level — auditing
+  never misses a beat there, only blocking stops — so "pause audit" read as if logging stopped
+  too (the old stop-confirmation dialog had to spend a whole sentence explaining "what you
+  usually want is pause", which was a patch over the naming). `permissive` is now the primary
+  name for that level, after SELinux's permissive and AppArmor's complain: still evaluates,
+  still records, just never blocks. The CLI gains `audit permissive` / `observe` and accepts
+  `enforcing`/`enforce`/`log-only`/`disabled`/`off` as aliases; `audit pause` still works.
+  **On disk and over `/api/audit-state` the values are still `running`/`paused`/`stopped`** —
+  aliases are normalized at the entry points, so older versions and any script reading the
+  state file keep working.
+- **Intervention level is now a segmented control**: it used to be one toggle button plus a
+  separate stop button, labelled with the action rather than the state, so only one option was
+  ever visible; and starting from "Off" the toggle pointed at "Enforcing", which meant
+  **you could not get from Off to Permissive in one step** — you had to go back through
+  Enforcing, and that intermediate step really did block. It's now a three-option
+  `radiogroup`: all three visible, click one to go straight there, every pair one step apart,
+  and the control itself is the state display. The active level is expressed via
+  `aria-checked` (one source of truth for both styling and screen readers), arrow keys and
+  Home/End work, and a line below the control explains whichever level is active. Only
+  switching to Off still asks for confirmation.
+- **Dedicated colors per level**: Enforcing purple `#9333ea`, Permissive green `#22c55e`,
+  Off yellow `#facc15`, applied consistently across the segmented control, the top-bar status
+  pill and the home summary dot. Deliberately not reusing `--green`/`--yellow`/`--red`: those
+  are theme-dependent good/warning/bad semantic colors, whereas a level needs an identity
+  color that is distinct and consistent across themes (Permissive isn't a "warning" and Off
+  isn't an "error"). Each level carries a foreground color chosen by contrast ratio, lowest
+  5.38:1, all meeting WCAG AA. The selected state also differs by a filled vs hollow dot, so
+  it isn't conveyed by color alone.
+- **IPv6 coverage in the Linux probe**: all three probe points in `probe_linux.bt` only tested
+  for `AF_INET`, so on a machine with IPv6 enabled not a single v6 connection was recorded —
+  not an error, a silent observation blind spot. `sys_enter_connect` gains an `AF_INET6`
+  branch; `tcp_sendmsg`/`tcp_cleanup_rbuf` switch to `skc_v6_daddr` by address family (on an
+  IPv6 socket `skc_daddr` is 0, so the old code would pile all v6 traffic onto `0.0.0.0`). The
+  byte-map parser needed no change, since colons in an IPv6 address don't affect splitting on
+  commas.
+- **New "Intervention levels" section in both READMEs**: explains in plain terms how far each
+  level goes and when to pick which, focusing on the pair people confuse most — Permissive vs
+  Off. Neither one blocks you; the difference is whether there's anything left to look at.
+
+### Fixed
+- **`CC-Monitor verify` no longer shows a false all-clear on macOS**: bypass detection works by
+  comparing kernel-level execve observations against hook records, and only the Linux bpftrace
+  probe produces those; the macOS probe uses nettop and covers network only, so
+  `hook_bypass_suspected` is permanently empty and the command permanently printed a green
+  "no suspicious records found". Users read that as "the check passed" when it actually meant
+  "the check never ran" — a false sense of security that's worse than not having the feature.
+  macOS now states plainly that the check is unavailable on this platform and lists what still
+  works. The permanently-zero "suspected bypass attempt(s)" figure on the Web UI home page gets
+  the same treatment via a new `bypassSupported` flag, showing "n/a" with an explanatory tooltip.
+- **`npm test` could not run**: `node --test test/` in `package.json` fails to resolve the
+  directory under Node 22 with `Cannot find module .../webui/test`, meaning the whole Web UI
+  test suite had never actually been running (only naming a file directly worked). Changed to
+  `node --test "test/**/*.test.js"`.
 - **Bilingual install/start scripts**: `install.sh` and `start.sh` now detect the system
   language and print Chinese in a Chinese locale, English everywhere else (~30 messages).
   Resolution order: an explicit `CC_MONITOR_LANG` > `LC_ALL` / `LC_MESSAGES` / `LANG` >

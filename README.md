@@ -90,6 +90,60 @@ optional, separate add-on you can install later whenever you want it. For the ex
 flags each script takes, what `install.sh`'s 5 steps actually do, and installing to a
 system path (`make install`), see the [Installation](#installation) section below.
 
+## Intervention levels: picking one
+
+Once installed, you decide how strict the tool is. There are three levels, and exactly one
+is active at any time.
+
+Think of it as a guard at the door:
+
+| Level | What the guard does | Color |
+|---|---|---|
+| **Enforcing** | Stops anyone suspicious outright, asks you about the borderline cases, notes down the rest | Purple |
+| **Permissive** | Writes everyone down, but stops nobody and never interrupts you | Green |
+| **Off** | The guard went home and took the notebook with them | Yellow |
+
+In concrete terms:
+
+- **Enforcing** is the default; it's what you get if you change nothing after installing.
+  Operations matching a high-risk rule are blocked outright, things like `rm -rf /`, reverse
+  shells, or writing into `~/.ssh`. Medium-risk matches pop a confirmation and only proceed
+  if you say so. Everything else is logged silently.
+- **Permissive** records without stopping. Rules are still evaluated and the risk level and
+  matched rule still land in the audit log, it just **never blocks and never prompts**. Two
+  situations call for it: you're heads-down and don't want confirmation dialogs interrupting
+  you but do want to know afterwards what the agent did; or you just installed the tool and
+  don't yet know which rules your normal workflow trips, so you run it this way for a couple
+  of days and read the log before tightening anything.
+- **Off** is the only level that genuinely stops auditing. Nothing is evaluated, nothing is
+  recorded, exactly as if the tool weren't installed. Its use is narrow: you suspect
+  CC-Monitor itself is causing a problem and want to compare with it out of the picture.
+
+**Permissive and Off are the easy pair to confuse.** Neither one will stop you. The
+difference is whether there's anything to look at afterwards. Permissive keeps the log
+filling; Off leaves a blank stretch you can never go back and inspect. So if you just want
+fewer interruptions, pick Permissive, not Off.
+
+You can switch from the command line:
+
+```bash
+CC-Monitor audit start        # Enforcing
+CC-Monitor audit permissive   # Permissive (the old name, pause, still works)
+CC-Monitor audit stop         # Off
+CC-Monitor audit status       # Show the current level
+```
+
+Or in the browser, on the left of the home page toolbar: three levels side by side, click one
+to switch, and the active one is highlighted in its color. Switching to Off asks once more
+first, because that's the level that leaves a gap in the audit trail. A matching status pill
+also sits permanently in the top bar, so you can tell the current level without going back
+to the home page.
+
+One thing to know: **the system-layer probe is not controlled by this switch**. As long as
+the probe is running it keeps recording command execution and network connections at the
+kernel level, whichever level you pick. That's deliberate. The probe's whole value is
+observing independently of the hooks, so shutting it off alongside them would defeat the point.
+
 ## Web UI
 
 `webui/` is a standalone Node.js service that provides a browser UI:
@@ -101,10 +155,12 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
 ```
 
 - **Home**:
-  - **Audit control**: a three-state toggle — running / paused / stopped (merged into one
-    button plus a separate stop button). `paused` still evaluates rules and logs normally,
-    but never actually blocks or asks for confirmation; `stopped` doesn't intervene at all —
-    no evaluation, no logging. A persistent status pill sits in the top bar.
+  - **Intervention level**: Enforcing / Permissive / Off as a segmented control, so all
+    three are visible at once and clicking one switches straight to it, with the active one
+    highlighted in its color (purple / green / yellow). A line below the control explains
+    whichever level is active. Switching to Off asks for confirmation. A matching status pill
+    sits permanently in the top bar. See [Intervention levels](#intervention-levels-picking-one)
+    above for what each level means.
   - **Claude Code identity check**: detects which OS user every running `claude` process
     belongs to (cross-platform, implemented via `ps`), and flags it prominently when that
     differs from the Web UI's own user — the Web UI and the hooks each resolve
