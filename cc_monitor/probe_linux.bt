@@ -44,6 +44,11 @@ uprobe:libc:getaddrinfo
     @dns_query[pid] = str(arg0);
 }
 
+// AF_INET(2) 和 AF_INET6(10) 两族都要认。以前只判了 AF_INET，于是在开了 IPv6 的机器上
+// （现在绝大多数云主机和家宽都默认开着，很多 API 域名也同时有 AAAA 记录）走 v6 的连接
+// 一条都不会被记下来——不是报错，是静默的观测盲区，比漏报更难发现。
+// 端口在两族里都是网络序的 16 位，换算方式一样；地址取法不同：v4 是一个 32 位整数，
+// v6 是 16 字节数组，ntop() 两种都能格式化。
 tracepoint:syscalls:sys_enter_connect
 /@watch[pid]/
 {
@@ -52,6 +57,11 @@ tracepoint:syscalls:sys_enter_connect
         $sin = (struct sockaddr_in *) $sa;
         $port = ($sin->sin_port >> 8) | (($sin->sin_port << 8) & 0xff00);
         printf("CONNECT\t%d\t%d\t%s\t%s\t%d\t%s\n", pid, uid, comm, ntop($sin->sin_addr.s_addr), $port, @dns_query[pid]);
+    }
+    if ($sa->sa_family == 10) {
+        $sin6 = (struct sockaddr_in6 *) $sa;
+        $port6 = ($sin6->sin6_port >> 8) | (($sin6->sin6_port << 8) & 0xff00);
+        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\t%s\n", pid, uid, comm, ntop($sin6->sin6_addr.in6_u.u6_addr8), $port6, @dns_query[pid]);
     }
 }
 
@@ -67,13 +77,16 @@ kprobe:tcp_sendmsg
 /@watch[pid]/
 {
     $sk = (struct sock *)arg0;
-    if ($sk->__sk_common.skc_family == 2) {
-        $size = (int32)arg2;
-        if ($size > 0) {
-            $dport_raw = $sk->__sk_common.skc_dport;
-            $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
-            @tx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($size);
-        }
+    $size = (int32)arg2;
+    $dport_raw = $sk->__sk_common.skc_dport;
+    $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
+    if ($sk->__sk_common.skc_family == 2 && $size > 0) {
+        @tx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($size);
+    }
+    // IPv6 的目的地址在 skc_v6_daddr（v4 那个 skc_daddr 在 v6 socket 上是 0），
+    // 否则 v6 连接的流量会全部堆到 "0.0.0.0" 这个假地址上。
+    if ($sk->__sk_common.skc_family == 10 && $size > 0) {
+        @tx_bytes[ntop($sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8), $dport] = sum($size);
     }
 }
 
@@ -81,13 +94,14 @@ kprobe:tcp_cleanup_rbuf
 /@watch[pid]/
 {
     $sk = (struct sock *)arg0;
-    if ($sk->__sk_common.skc_family == 2) {
-        $copied = (int32)arg1;
-        if ($copied > 0) {
-            $dport_raw = $sk->__sk_common.skc_dport;
-            $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
-            @rx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($copied);
-        }
+    $copied = (int32)arg1;
+    $dport_raw = $sk->__sk_common.skc_dport;
+    $dport = ($dport_raw >> 8) | (($dport_raw << 8) & 0xff00);
+    if ($sk->__sk_common.skc_family == 2 && $copied > 0) {
+        @rx_bytes[ntop($sk->__sk_common.skc_daddr), $dport] = sum($copied);
+    }
+    if ($sk->__sk_common.skc_family == 10 && $copied > 0) {
+        @rx_bytes[ntop($sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8), $dport] = sum($copied);
     }
 }
 
