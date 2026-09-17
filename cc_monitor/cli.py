@@ -1,5 +1,6 @@
 import argparse
 import json
+import platform
 import sys
 import time
 from collections import Counter
@@ -9,7 +10,13 @@ from . import colors as col
 from . import format as fmt
 from . import policy, rematch, storage, transcript
 
-STATE_LABELS = {"running": "运行中", "paused": "已暂停（只观察不拦截）", "stopped": "已停止（完全不介入）"}
+# 介入级别的显示文案。注意不要再写成"暂停审计"——paused 这一档审计照常在跑，
+# 停下来的只是拦截，叫"暂停审计"会让人以为记录也断了（见 audit_state.py 的模块注释）。
+STATE_LABELS = {
+    "running": "拦截中（判定 + 记录 + 拦截）",
+    "paused": "观察模式 permissive（判定 + 记录，不拦截、不弹确认框）",
+    "stopped": "已关闭（不判定、不记录，等价于没装）",
+}
 
 DECISION_LABELS = {
     "allowed": "放行",
@@ -107,6 +114,22 @@ def cmd_stats(args):
 
 
 def cmd_verify(args):
+    # 绕过检测的原理是拿系统层探针观测到的 execve 跟 hook 层记录的命令做比对。只有
+    # Linux 的 bpftrace 探针看得到 execve；macOS 那份探针用的是 nettop，只覆盖网络，
+    # 压根不产生 execve 观测，于是 hook_bypass_suspected 这个标记在 macOS 上恒为空。
+    # 如果照旧打印绿色的"未发现可疑记录"，用户看到的是"检查通过"，实际是"从未检查过"——
+    # 这种假安全感比没有这个功能更危险，所以在 macOS 上如实说明能力缺失。
+    if platform.system() == "Darwin":
+        print(col.c("本平台（macOS）不支持执行层交叉验证。", color="yellow", bold=True))
+        print(
+            "绕过检测要靠内核层观测每一次 execve，再跟 hook 记录比对。macOS 上的系统层探针用的是\n"
+            "nettop，只能看到网络连接，看不到命令执行（Apple 的 Endpoint Security Framework 需要\n"
+            "签过名的 system extension，见 DESIGN.md 的规划）。所以这里既不会报警，也不代表安全——\n"
+            "是这项检查在本平台上根本没有运行。"
+        )
+        print(col.c("仍然有效的部分：hook 层的完整审计记录、以及探针的网络连接/流量观测。", dim=True))
+        return
+
     rows = storage.fetch_last(limit=args.limit)
     suspects = [r for r in rows if r[5] == "hook_bypass_suspected"]
     if not suspects:
@@ -218,7 +241,16 @@ def cmd_audit(args):
         if info.get("changedAt"):
             print(col.c("切换时间: {}".format(info["changedAt"]), dim=True))
         return
-    state = {"start": "running", "pause": "paused", "stop": "stopped"}[args.action]
+    state = {
+        "start": "running",
+        "enforcing": "running",
+        # permissive 是主推的名字，pause 保留下来是为了不打断老用户的肌肉记忆和已有脚本。
+        "permissive": "paused",
+        "observe": "paused",
+        "pause": "paused",
+        "stop": "stopped",
+        "off": "stopped",
+    }[args.action]
     audit_state.set_state(state)
     print(col.c("已切换到: {}".format(STATE_LABELS[state]), color="green", bold=True))
 
@@ -256,8 +288,23 @@ def main():
     p_tap.add_argument("-f", "--follow", action="store_true", help="像 tail -f 一样持续追踪新内容")
     p_tap.set_defaults(func=cmd_tap)
 
-    p_audit = sub.add_parser("audit", help="开始/暂停/停止审计，或查看当前状态")
-    p_audit.add_argument("action", choices=["start", "pause", "stop", "status"])
+    p_audit = sub.add_parser(
+        "audit",
+        help="切换介入级别（拦截 / 观察模式 permissive / 关闭），或查看当前级别",
+    )
+    p_audit.add_argument(
+        "action",
+        choices=[
+            "start", "enforcing",
+            "permissive", "observe", "pause",
+            "stop", "off",
+            "status",
+        ],
+        help=(
+            "start/enforcing=正常拦截；permissive/observe=观察模式，只记录不拦截不弹框"
+            "（pause 是它的旧名字，仍可用）；stop/off=完全不介入；status=查看当前级别"
+        ),
+    )
     p_audit.set_defaults(func=cmd_audit)
 
     args = parser.parse_args()
