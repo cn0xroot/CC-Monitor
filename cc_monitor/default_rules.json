@@ -7,7 +7,9 @@
     "desc": "rm -rf 直接作用在 /、~ 或 .. 上，会把整块目录不可恢复地删掉。正常开发几乎不可能需要这样做。",
     "title_en": "Recursive force-delete of / , ~ or the parent dir",
     "desc_en": "rm -rf pointed at /, ~ or .. wipes an entire directory tree irreversibly. Almost never something normal development needs.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\\s+(/|~|\\$HOME|\\.\\.)(\\s|$)"
   },
@@ -19,7 +21,9 @@
     "desc": "dd、mkfs、fdisk、parted 直接操作磁盘或分区，会清空数据，甚至让系统无法启动。",
     "title_en": "Raw disk write / partitioning",
     "desc_en": "dd, mkfs, fdisk, parted operate on raw disks or partitions — they erase data and can leave the system unbootable.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(?<![\\w-])(dd|mkfs|fdisk|parted)(?![\\w-])"
   },
@@ -31,7 +35,9 @@
     "desc": "从网上下载的内容不落地、直接交给 shell 执行，你看不到到底跑了什么。一键安装脚本常这么写，也是植入恶意代码的经典手法。",
     "title_en": "Download piped straight into a shell",
     "desc_en": "Content fetched from the network is executed without ever being saved, so you never see what actually ran. Common in one-line installers — and a classic way to plant malicious code.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(curl|wget)[^|;\\n]*\\|\\s*(sudo\\s+)?(sh|bash|zsh)\\b"
   },
@@ -43,7 +49,9 @@
     "desc": "把本机的 shell 连到一个远程地址，让外部可以远程控制这台机器。正常开发几乎用不到。",
     "title_en": "Reverse shell",
     "desc_en": "Connects a local shell out to a remote address so an outside party can control this machine. Almost never legitimate in development.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": ">&\\s*/dev/tcp/\\S+/\\d+|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*e[a-zA-Z]*\\s+/bin/(ba)?sh\\b|\\b(nc|ncat|netcat)\\b[^\\n]*-[a-zA-Z]*c[a-zA-Z]*\\s+(/bin/)?(ba)?sh\\b|\\bsocat\\b[^\\n]*exec:['\"]?/?(bin/)?(ba)?sh\\b|/bin/(ba)?sh\\s+-i\\s*(<|>&)|\\bmkfifo\\b[^\\n]*\\b(nc|ncat|netcat)\\b[^\\n]*\\|\\s*(/bin/)?(ba)?sh\\b"
   },
@@ -55,7 +63,9 @@
     "desc": "用 find -exec、awk system()、vim -c、tar --checkpoint-action 这类看似无害的工具间接启动 shell，通常是为了绕过限制。",
     "title_en": "Shell escape via an everyday utility",
     "desc_en": "Uses find -exec, awk system(), vim -c, tar --checkpoint-action and similar to spawn a shell indirectly — usually to slip past restrictions.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bfind\\b[^\\n]*-exec\\s+(/bin/)?(ba|z)?sh\\b|\\bawk\\b[^\\n]*system\\s*\\(\\s*[\"']?(/bin/)?(ba|z)?sh\\b|\\bperl\\b[^\\n]*\\bexec\\s+[\"']?(/bin/)?(ba|z)?sh\\b|\\bpython3?\\b[^\\n]*(pty\\.spawn|os\\.system)\\s*\\(\\s*[\"']?(/bin/)?(ba|z)?sh\\b|\\btar\\b[^\\n]*--checkpoint-action=exec=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\b(vim?|nvim)\\b[^\\n]*-c\\s+[\"']?:?(shell|!\\s*(/bin/)?(ba|z)?sh)\\b|\\bzip\\b[^\\n]*--unzip-command=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\bscript\\s+(-[a-zA-Z]*c\\b|(-\\S+\\s+)*-c\\b)[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b|\\bssh\\b[^\\n]*ProxyCommand=[^\\n]*?\\b(/bin/)?(ba|z)?sh\\b"
   },
@@ -67,7 +77,9 @@
     "desc": "把 base64 / 十六进制编码的内容解码后直接执行。编码的目的通常就是让人看不出要跑的是什么。",
     "title_en": "Decode-then-execute hidden payload",
     "desc_en": "Decodes base64 / hex content and runs it directly. The encoding usually exists precisely so nobody can read what is about to run.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(base64\\s+(-d|--decode)|xxd\\s+-r\\s+-p?)\\b[^|;\\n]*\\|\\s*(sudo\\s+)?(sh|bash|zsh|python3?)\\b"
   },
@@ -79,7 +91,9 @@
     "desc": "先用 curl / wget 把脚本下载到本地，再单独运行它。放行前看清下载地址和脚本内容。",
     "title_en": "Download a script, then run it",
     "desc_en": "curl / wget saves a script locally, then it gets executed separately. Check the download URL and the script before allowing.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(?=.*\\b(curl|wget2?)\\b[^\\n]*(-o\\b|-O\\b|--output\\b|--remote-name\\b))(?=.*\\.(sh|py|pl|rb)\\b)(?=.*\\b(bash|sh|zsh|python3?|perl|ruby|chmod\\s+\\+x|\\./)\\b)"
   },
@@ -91,7 +105,9 @@
     "desc": "ssh -R / -L / -D、socat、chisel 会在本机和远程之间打通端口，可能把内网服务暴露到外面。",
     "title_en": "SSH tunnel / port forwarding",
     "desc_en": "ssh -R / -L / -D, socat or chisel open a port path between this machine and a remote host, potentially exposing internal services.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bssh\\b[^\\n]*\\s-[a-zA-Z]*[RDL][a-zA-Z]*\\b|\\bsocat\\b|\\bchisel\\b\\s+(client|server)\\b"
   },
@@ -103,7 +119,9 @@
     "desc": "dnscat2、iodine、ptunnel 等把数据藏进 DNS 或 ping 流量里往外传的工具，用来绕过防火墙。",
     "title_en": "DNS / ICMP covert-tunnel tool",
     "desc_en": "dnscat2, iodine, ptunnel and friends smuggle data inside DNS or ping traffic to get past firewalls.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bdnscat2?\\b|\\biodine\\b|\\bdns2tcp\\b|\\bptunnel\\b|\\bicmptunnel\\b|\\bhans\\s+-[cs]\\b|\\bpingtunnel\\b"
   },
@@ -115,7 +133,9 @@
     "desc": "命令里出现矿池地址或 stratum 协议，是挖矿木马的典型特征。",
     "title_en": "Connecting to a crypto-mining pool",
     "desc_en": "The command references a mining-pool domain or the stratum protocol — a hallmark of crypto-mining malware.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bstratum\\+(tcp|ssl|tcps)://|\\b(pool\\.minergate\\.com|pool\\.minexmr\\.com|opmoner\\.com|crypto-pool\\.fr|backup-pool\\.com|monerohash\\.com|poolto\\.be|xminingpool\\.com|prohash\\.net|dwarfpool\\.com|crypto-pools\\.org|monero\\.net|hashinvest\\.net|moneropool\\.com|xmrpool\\.eu|ppxxmr\\.com|alimabi\\.cn|aeon-pool\\.com)\\b"
   },
@@ -127,7 +147,9 @@
     "desc": "msfconsole、cobaltstrike、sliver、havoc 这类攻击框架。除非你正在做授权的安全测试，否则不该出现。",
     "title_en": "Pentest / C2 framework",
     "desc_en": "msfconsole, cobaltstrike, sliver, havoc and similar attack frameworks. Should not appear unless you are running an authorized security test.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bmsfconsole\\b|\\bmsfvenom\\b|\\bmsfdb\\b|\\bcobaltstrike\\b|\\bteamserver\\b|\\bpowershell.?empire\\b|\\bsliver-(client|server)\\b|\\bhavoc\\b|\\bmimikatz\\b|\\bimpacket-[a-zA-Z]+\\b|\\bcrackmapexec\\b|\\bresponder\\.py\\b|\\bpacu\\b"
   },
@@ -139,7 +161,9 @@
     "desc": "linpeas、bloodhound、netexec、smbmap 等用来提权和探测内网的工具。",
     "title_en": "Post-exploitation / lateral-movement tool",
     "desc_en": "linpeas, bloodhound, netexec, smbmap and similar tools for privilege escalation and internal network reconnaissance.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\blinpeas(\\.sh)?\\b|\\bnetexec\\b|\\bbloodhound\\b|\\bsharphound\\b|\\bsmbmap\\b|\\brpcclient\\b|\\benum4linux(-ng)?\\b"
   },
@@ -151,7 +175,9 @@
     "desc": "要调用的 MCP 工具名字里带 reverse-shell / c2 / beacon / backdoor 字样。",
     "title_en": "Suspicious MCP tool",
     "desc_en": "The MCP tool being called has reverse-shell / c2 / beacon / backdoor in its name.",
-    "tools": ["*"],
+    "tools": [
+      "*"
+    ],
     "field": "tool_name",
     "pattern": "^mcp__[a-zA-Z0-9_-]*(reverse[_-]?shell|c2server|[_-]c2[_-]|beacon|backdoor)"
   },
@@ -163,7 +189,9 @@
     "desc": "nmap、masscan、sqlmap、hydra、nikto 等端口扫描或暴力破解工具。",
     "title_en": "Scanning / brute-force tool",
     "desc_en": "nmap, masscan, sqlmap, hydra, nikto and similar port-scanning or brute-forcing tools.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bnmap\\b|\\bmasscan\\b|\\bsqlmap\\b|\\bhydra\\b|\\bnikto\\b|\\b(gobuster|dirbuster|dirb)\\b|\\bwpscan\\b|\\bhashcat\\b|\\bjohn\\s+(--wordlist|--format|--rules)\\b|\\brustscan\\b|\\barp-scan\\b|\\bnbtscan\\b|\\bamass\\b|\\bsubfinder\\b|\\bkatana\\b|\\bgau\\b|\\bparamspider\\b|\\bwaybackurls\\b|\\bfierce\\b|\\bdnsenum\\b|\\bffuf\\b|\\bferoxbuster\\b|\\bdirsearch\\b|\\bjaeles\\b|\\bdalfox\\b|\\bx8\\b|\\barjun\\b|\\bwafw00f\\b"
   },
@@ -175,7 +203,9 @@
     "desc": "chmod 777 递归作用到 / 或家目录，之后任何用户、任何程序都能改这些文件。",
     "title_en": "Make a whole directory tree world-writable",
     "desc_en": "chmod 777 applied recursively to / or the home dir — afterwards any user or program can modify those files.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchmod\\s+(-R\\s+)?777\\b.*\\s(/|~)"
   },
@@ -187,7 +217,9 @@
     "desc": "会把系统或家目录下所有文件的归属一起改掉，很可能让系统或你的账号出问题。",
     "title_en": "Recursively change owner of / or ~",
     "desc_en": "Rewrites ownership of every file under the system or home directory — very likely to break the system or your account.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchown\\s+(-R\\s+)?\\S+\\s+(/|~)(\\s|$)"
   },
@@ -199,7 +231,9 @@
     "desc": "同递归改所有者，作用于组。",
     "title_en": "Recursively change group of / or ~",
     "desc_en": "Same as the recursive owner change, applied to the group.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchgrp\\s+(-R\\s+)?\\S+\\s+(/|~)(\\s|$)"
   },
@@ -211,7 +245,9 @@
     "desc": "让这个程序以文件所有者（通常是 root）的身份运行，是经典的提权后门做法。",
     "title_en": "Set the setuid / setgid bit",
     "desc_en": "Makes the program run as the file's owner (usually root) — a classic privilege-escalation backdoor.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchmod\\s+(-R\\s+)?\\S*[ug]\\+s\\b|\\bchmod\\s+(-R\\s+)?[0-7]?[42][0-7]{3}\\b"
   },
@@ -223,7 +259,9 @@
     "desc": "chmod -R 会改一整棵目录树的权限，确认范围是否只在项目里。",
     "title_en": "Recursive permission change",
     "desc_en": "chmod -R changes permissions on an entire directory tree; check that the scope stays inside the project.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchmod\\s+-R\\b"
   },
@@ -235,7 +273,9 @@
     "desc": "777 权限过于宽松，看看是不是真的需要。",
     "title_en": "Make a file world-readable/writable/executable",
     "desc_en": "777 is far more permissive than almost anything needs; check whether it is really required.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bchmod\\s+777\\b"
   },
@@ -247,7 +287,9 @@
     "desc": "无限自我复制的进程，会在几秒内耗尽系统资源。",
     "title_en": "Fork bomb",
     "desc_en": "A process that replicates itself endlessly, exhausting system resources within seconds.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": ":\\s*\\(\\s*\\)\\s*\\{[^}]*:\\s*\\|\\s*:[^}]*&[^}]*\\}\\s*;\\s*:"
   },
@@ -259,7 +301,9 @@
     "desc": "useradd、userdel、usermod、passwd 会改动这台机器上的账号。",
     "title_en": "Add / remove / modify system users or passwords",
     "desc_en": "useradd, userdel, usermod, passwd change the accounts on this machine.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(useradd|userdel|usermod|adduser|deluser|passwd)\\b"
   },
@@ -271,7 +315,9 @@
     "desc": "往 authorized_keys 追加公钥 = 给某人这台机器的免密登录权限。",
     "title_en": "Write to SSH authorized_keys / config",
     "desc_en": "Appending a public key to authorized_keys grants someone passwordless login to this machine.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": ">>?\\s*~?/?(\\.ssh/authorized_keys|\\.ssh/id_\\w+|\\.ssh/config)\\b"
   },
@@ -283,7 +329,9 @@
     "desc": "修改 crontab 或 /etc/cron，让某个命令以后定期自动运行——常见的驻留手法。",
     "title_en": "Add a scheduled task",
     "desc_en": "Edits crontab or /etc/cron so a command keeps running on a schedule — a common persistence technique.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bcrontab\\s+-[erl]\\b|>>?\\s*/etc/cron"
   },
@@ -295,7 +343,9 @@
     "desc": "systemctl enable / start 会让某个服务开机自启或立即运行。",
     "title_en": "Enable / start a system service",
     "desc_en": "systemctl enable / start makes a service start at boot or right now.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bsystemctl\\s+(enable|start)\\s+\\S+"
   },
@@ -307,7 +357,9 @@
     "desc": "关掉 SELinux、防火墙，清空 iptables，或停掉安全相关服务。",
     "title_en": "Disable security controls",
     "desc_en": "Turns off SELinux or the firewall, flushes iptables, or stops security-related services.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bsetenforce\\s+0\\b|\\bufw\\s+disable\\b|\\biptables\\s+(-F|--flush)\\b|\\bsystemctl\\s+(stop|disable)\\s+(firewalld|ufw|apparmor)\\b"
   },
@@ -319,7 +371,9 @@
     "desc": "试图杀掉监控探针或 hook，等于把这个监控关掉。",
     "title_en": "Kill CC-Monitor's own processes",
     "desc_en": "Tries to kill the monitoring probe or hook — effectively switching this monitor off.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(kill|pkill|killall)\\b[^\\n]*\\b(CC-Monitor-probe|CC-Monitor-hook|probe_linux\\.bt|probe_darwin\\.py|cc_monitor\\.probe|bpftrace)\\b"
   },
@@ -331,7 +385,9 @@
     "desc": "kill / pkill / killall 结束进程，看一下目标是不是自己的进程。",
     "title_en": "Kill a process",
     "desc_en": "kill / pkill / killall terminates processes; check the target is one of yours.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(kill|pkill|killall)\\b"
   },
@@ -343,9 +399,26 @@
     "desc": "会直接改系统级 Python，可能弄坏系统自带的工具；应该改用虚拟环境。",
     "title_en": "sudo pip install into the system Python",
     "desc_en": "Modifies the system-wide Python and can break OS tooling; use a virtualenv instead.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bsudo\\s+(python3?\\s+-m\\s+pip|pip3?)\\s+install\\b",
+    "match": "segment"
+  },
+  {
+    "id": "sudo_uv_pip_install",
+    "risk": "high",
+    "action": "block",
+    "title": "用 sudo 通过 uv 往系统 Python 装包",
+    "desc": "sudo uv pip install 会把包写进系统 Python，跟 sudo pip install 一样会污染发行版自己管理的目录。",
+    "title_en": "sudo uv pip install into the system Python",
+    "desc_en": "sudo uv pip install writes into the system Python, polluting distro-managed directories the same way sudo pip install does.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\bsudo\\s+uv\\s+pip\\s+install\\b",
     "match": "segment"
   },
   {
@@ -356,9 +429,11 @@
     "desc": "apt、yum、dnf、pacman、brew、port 会往系统里装或删软件。",
     "title_en": "System package manager install / remove",
     "desc_en": "apt, yum, dnf, pacman, brew, port install or remove software system-wide.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
-    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-(?-i:[A-Za-z]*[SRU][A-Za-z]*)\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b|\\bbrew\\s+(cask\\s+)?(install|reinstall|uninstall|remove|rm|upgrade|tap|untap|bundle)\\b|\\bport\\s+(-{1,2}[A-Za-z][\\w-]*(=\\S+|\\s+/\\S+)?\\s+)*(install|uninstall|upgrade|activate|deactivate|selfupdate|sync)\\b",
+    "pattern": "\\b(apt|apt-get)\\s+(install|remove|purge|autoremove)\\b|\\b(yum|dnf)\\s+(install|remove|erase)\\b|\\bpacman\\s+-(?-i:[A-Za-z]*[SRU][A-Za-z]*)\\b|\\bapk\\s+(add|del)\\b|\\bzypper\\s+(install|remove)\\b|\\bbrew\\s+(cask\\s+)?(install|reinstall|uninstall|remove|rm|upgrade|tap|untap|bundle)\\b|\\bport\\s+(-{1,2}[A-Za-z][\\w-]*(=\\S+|\\s+/\\S+)?\\s+)*(install|uninstall|upgrade|activate|deactivate|selfupdate|sync)\\b|\\bsnap\\s+(install|remove)\\b|\\bflatpak\\s+(install|uninstall)\\b|\\bdpkg\\s+(-i\\b|--install\\b)|\\brpm\\s+-(i|U|e)\\b|\\bemerge\\b|\\bnix-env\\s+-\\S*[ie]\\S*\\b|\\bnix\\s+profile\\s+(install|remove)\\b|\\bxbps-install\\b|\\bpkg\\s+(install|add|delete)\\b|\\bmas\\s+install\\b|\\beopkg\\s+(install|it)\\b",
     "match": "segment"
   },
   {
@@ -369,7 +444,9 @@
     "desc": "sudo 后面的命令会以管理员身份运行，看清它要做什么。",
     "title_en": "Run a command as root",
     "desc_en": "Whatever follows sudo runs with administrator privileges; read it carefully.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(^|;|&&|\\|\\|)\\s*sudo\\b",
     "match": "segment"
@@ -382,7 +459,9 @@
     "desc": "su 或 pkexec 提权，之后的操作不再受普通用户权限限制。",
     "title_en": "Switch to root / escalate privileges",
     "desc_en": "su or pkexec escalates privileges; subsequent actions are no longer bound by normal user permissions.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(^|;|&&|\\|\\|)\\s*(su|pkexec)\\b",
     "match": "segment"
@@ -395,7 +474,9 @@
     "desc": "在 venv / conda 环境里装包，影响范围限于这个环境。",
     "title_en": "pip install inside a virtualenv",
     "desc_en": "Installs into a venv / conda environment; the impact is confined to that environment.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(?=.*\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b)(?=.*(venv|virtualenv|\\.venv|conda\\s+activate|pipx\\s+install|pipenv\\s+install|poetry\\s+(add|install)|--user\\b))"
   },
@@ -407,9 +488,56 @@
     "desc": "没有激活虚拟环境就 pip install，会装到用户级或系统级 Python 里。",
     "title_en": "pip install outside a virtualenv",
     "desc_en": "pip install with no virtualenv active installs into the user- or system-level Python.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(pip3?\\s+install|python3?\\s+-m\\s+pip\\s+install)\\b",
+    "match": "segment"
+  },
+  {
+    "id": "uv_pip_install_system",
+    "risk": "high",
+    "action": "confirm",
+    "title": "uv 装到系统/用户级 Python",
+    "desc": "uv pip install 默认只往激活的虚拟环境里装，加了 --system 或 --break-system-packages 就绕过这层保护，直接写系统或用户级 Python。",
+    "title_en": "uv installing into the system/user Python",
+    "desc_en": "uv pip install normally only touches the active virtualenv; --system or --break-system-packages bypasses that and writes into the system or user Python.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "^uv\\s+pip\\s+install\\b.*(?:--system|--break-system-packages)\\b",
+    "match": "segment"
+  },
+  {
+    "id": "uv_pip_install",
+    "risk": "low",
+    "action": "log",
+    "title": "uv pip 安装",
+    "desc": "用 uv 的 pip 兼容接口装 Python 包。uv 在没有激活虚拟环境时会直接报错而不是装进系统，所以默认只记录不打扰。",
+    "title_en": "uv pip install",
+    "desc_en": "Installing Python packages through uv's pip-compatible interface. uv errors out rather than installing system-wide when no virtualenv is active, so this is logged only.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "^uv\\s+pip\\s+(?:install|sync)\\b",
+    "match": "segment"
+  },
+  {
+    "id": "uv_project_install",
+    "risk": "low",
+    "action": "log",
+    "title": "uv 项目/工具安装",
+    "desc": "uv add / uv sync / uv tool install 这类安装：依赖装进项目的 .venv，工具装进 uv 自己的目录，都不碰系统 Python。",
+    "title_en": "uv project/tool install",
+    "desc_en": "uv add / uv sync / uv tool install: dependencies go into the project's .venv and tools into uv's own directory, neither touching the system Python.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "^uv\\s+(?:add|sync|tool\\s+install)\\b",
     "match": "segment"
   },
   {
@@ -420,7 +548,9 @@
     "desc": "npm install -g 装到系统级 node_modules，所有项目都会受影响。",
     "title_en": "npm global install",
     "desc_en": "npm install -g installs into the system-wide node_modules, affecting every project.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\s+.*(-g\\b|--global\\b)",
     "match": "segment"
@@ -433,9 +563,131 @@
     "desc": "在当前项目里 npm install。",
     "title_en": "npm install in the project",
     "desc_en": "npm install scoped to the current project.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(sudo\\s+)?npm\\s+(install|i)\\b",
+    "match": "segment"
+  },
+  {
+    "id": "js_package_install_global",
+    "risk": "medium",
+    "action": "confirm",
+    "title": "JS 包管理器全局安装",
+    "desc": "yarn/pnpm/bun/deno 往全局装包，装完在任何目录都能直接调用，影响范围不限于当前项目。",
+    "title_en": "Global install via a JS package manager",
+    "desc_en": "yarn/pnpm/bun/deno installing globally: the package becomes callable from any directory, not just this project.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\byarn\\s+global\\s+add\\b|\\b(pnpm|bun)\\s+(add|install|i)\\b[^|;&]*(-g\\b|--global\\b)|\\bdeno\\s+install\\b",
+    "match": "segment"
+  },
+  {
+    "id": "js_package_install",
+    "risk": "low",
+    "action": "log",
+    "title": "JS 包管理器安装依赖",
+    "desc": "yarn/pnpm/bun 装项目依赖，或 npm ci 按 lock 文件重装。装进项目的 node_modules，不出项目目录。",
+    "title_en": "JS package manager installing dependencies",
+    "desc_en": "yarn/pnpm/bun installing project dependencies, or npm ci reinstalling from the lockfile. Everything lands in the project's node_modules.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\b(yarn|pnpm|bun)\\s+(add|install|i)\\b|\\bnpm\\s+ci\\b|\\bdeno\\s+add\\b|\\byarn\\s*$",
+    "match": "segment"
+  },
+  {
+    "id": "python_package_install_other",
+    "risk": "low",
+    "action": "log",
+    "title": "其它 Python 包管理器安装",
+    "desc": "conda/mamba/poetry/pipenv/pipx/pdm/rye 装 Python 包。这些都装进各自管理的环境，不动系统 Python。",
+    "title_en": "Install via another Python package manager",
+    "desc_en": "conda/mamba/poetry/pipenv/pipx/pdm/rye installing Python packages. Each installs into the environment it manages, leaving the system Python alone.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\b(conda|mamba|micromamba)\\s+(install|env\\s+(create|update))\\b|\\bpoetry\\s+(add|install|update)\\b|\\bpipenv\\s+(install|update|sync)\\b|\\bpipx\\s+(install|inject|upgrade)\\b|\\bpdm\\s+(add|install|sync)\\b|\\brye\\s+(add|sync)\\b|\\bhatch\\s+env\\s+create\\b",
+    "match": "segment"
+  },
+  {
+    "id": "python_legacy_install",
+    "risk": "medium",
+    "action": "confirm",
+    "title": "用过时方式安装 Python 包",
+    "desc": "easy_install 和 python setup.py install 会直接往 site-packages 写，绕过 pip 的依赖解析和卸载记录，装完很难干净移除。",
+    "title_en": "Installing a Python package the legacy way",
+    "desc_en": "easy_install and python setup.py install write straight into site-packages, bypassing pip's dependency resolution and uninstall records, which makes them hard to remove cleanly.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\beasy_install\\b|\\bpython3?\\s+setup\\.py\\s+(install|develop)\\b",
+    "match": "segment"
+  },
+  {
+    "id": "toolchain_install",
+    "risk": "low",
+    "action": "log",
+    "title": "工具链 / 版本管理器安装",
+    "desc": "asdf/nvm/pyenv/rustup/mise 这类装语言运行时或工具链。装进家目录，通常还会改 shell 配置文件。",
+    "title_en": "Toolchain / version manager install",
+    "desc_en": "asdf/nvm/pyenv/rustup/mise installing a language runtime or toolchain. These write into the home directory and usually touch shell rc files too.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\b(asdf|nvm|pyenv|rbenv|nodenv|goenv|tfenv|jenv|volta|mise|rtx|gvm|ghcup)\\s+(install|use|add)\\b|\\brustup\\s+(toolchain\\s+install|component\\s+add|target\\s+add|install|update)\\b|\\bsdk\\s+install\\b",
+    "match": "segment"
+  },
+  {
+    "id": "container_image_pull",
+    "risk": "low",
+    "action": "log",
+    "title": "拉取容器镜像 / 部署 Chart",
+    "desc": "docker/podman 拉镜像，或 helm 装 chart。拉下来的是别人打好的完整文件系统，内容不受本机规则约束。",
+    "title_en": "Pulling a container image / installing a chart",
+    "desc_en": "docker/podman pulling an image, or helm installing a chart. What comes down is someone else's prebuilt filesystem, whose contents this machine's rules never see.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\b(docker|podman|nerdctl)\\s+(pull|image\\s+pull)\\b|\\bdocker\\s+compose\\s+pull\\b|\\bhelm\\s+(install|upgrade)\\b|\\bskopeo\\s+copy\\b",
+    "match": "segment"
+  },
+  {
+    "id": "editor_plugin_install",
+    "risk": "low",
+    "action": "log",
+    "title": "编辑器 / CLI 插件安装",
+    "desc": "给 VS Code、gh、kubectl、Claude Code 装插件或 MCP server。插件拿到的权限跟宿主程序一样大。",
+    "title_en": "Editor / CLI plugin install",
+    "desc_en": "Installing a plugin or MCP server into VS Code, gh, kubectl or Claude Code. A plugin runs with the same privileges as its host.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\b(code|codium|cursor)\\s+--install-extension\\b|\\bgh\\s+extension\\s+install\\b|\\bkubectl\\s+krew\\s+install\\b|\\bkrew\\s+install\\b|\\bhelm\\s+plugin\\s+install\\b|\\bclaude\\s+mcp\\s+add\\b",
+    "match": "segment"
+  },
+  {
+    "id": "source_build_install",
+    "risk": "low",
+    "action": "log",
+    "title": "从源码编译安装",
+    "desc": "make install / cmake --install 会把编译产物copy到安装前缀下，目标路径写在构建脚本里，命令文本上看不出来装到了哪。",
+    "title_en": "Installing from a source build",
+    "desc_en": "make install / cmake --install copies build output into the install prefix. The destination lives in the build script, so the command text alone never shows where it lands.",
+    "tools": [
+      "Bash"
+    ],
+    "field": "command",
+    "pattern": "\\bmake\\b[^|;&]*\\binstall\\b|\\bcmake\\s+--install\\b|\\bninja\\s+install\\b|\\bcheckinstall\\b",
     "match": "segment"
   },
   {
@@ -446,9 +698,11 @@
     "desc": "gem、cargo、go install、composer 等。",
     "title_en": "Other package manager install",
     "desc_en": "gem, cargo, go install, composer and similar.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
-    "pattern": "\\bgem\\s+install\\b|\\bcargo\\s+install\\b|\\bgo\\s+install\\b|\\bcomposer\\s+(require|global\\s+require)\\b",
+    "pattern": "\\bgem\\s+install\\b|\\bcargo\\s+install\\b|\\bgo\\s+install\\b|\\bcomposer\\s+(require|global\\s+require)\\b|\\bbundle\\s+install\\b|\\bcargo\\s+binstall\\b|\\bgo\\s+get\\b|\\bcomposer\\s+install\\b|\\bdotnet\\s+(add\\s+package|tool\\s+install)\\b|\\bcabal\\s+install\\b|\\bstack\\s+install\\b|\\bcpanm?\\b|\\bluarocks\\s+install\\b|\\bnimble\\s+install\\b|\\bmix\\s+(deps\\.get|archive\\.install)\\b|\\b(dart|flutter)\\s+pub\\s+(get|add|global\\s+activate)\\b|\\bswift\\s+package\\s+(resolve|update)\\b|\\bpub\\s+global\\s+activate\\b|\\b(R|Rscript)\\b[^|;&]*install\\.packages|\\bjulia\\b[^|;&]*Pkg\\.add",
     "match": "segment"
   },
   {
@@ -459,7 +713,9 @@
     "desc": "git push --force 会覆盖远程分支的历史，别人已经拉取的提交可能丢失。确认分支和远程无误。",
     "title_en": "git force push",
     "desc_en": "git push --force overwrites the remote branch history; commits others already pulled may be lost. Verify the branch and remote.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bgit\\s+push\\b.*(--force|-f)\\b"
   },
@@ -471,7 +727,9 @@
     "desc": "reset --hard 或 clean -fd 会丢掉未提交的改动和未跟踪的文件，不可恢复。",
     "title_en": "git hard reset / clean untracked files",
     "desc_en": "reset --hard or clean -fd throws away uncommitted changes and untracked files — irreversibly.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*f[a-zA-Z]*d?[a-zA-Z]*\\b"
   },
@@ -483,7 +741,9 @@
     "desc": "改 core.hooksPath 或 url.insteadOf，可以让以后每次 git 操作都悄悄执行别的东西。",
     "title_en": "Change git hooks path / URL rewrite",
     "desc_en": "Changing core.hooksPath or url.insteadOf can make every future git operation silently run something else.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bgit\\s+config\\b[^\\n]*\\b(core\\.hooksPath|url\\.\\S+\\.insteadOf)\\b|>>?\\s*\\.git/hooks/"
   },
@@ -495,7 +755,9 @@
     "desc": "删掉 shell 的历史记录，常用于抹掉痕迹。",
     "title_en": "Clear / tamper with shell history",
     "desc_en": "Deletes the shell history — commonly done to erase traces.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bhistory\\s+-c\\b|>\\s*~?/?\\.(bash|zsh)_history\\b|\\brm\\s+(-\\S+\\s+)*~?/\\.(bash|zsh)_history\\b|\\brm\\s+(-\\S+\\s+)*[^\\n|;&]*\\.(zsh|bash)_sessions/"
   },
@@ -507,7 +769,9 @@
     "desc": "读 .bash_history / .zsh_history 等，里面可能有你敲过的密码和密钥。",
     "title_en": "Read shell history",
     "desc_en": "Reads .bash_history / .zsh_history etc., which may contain passwords and keys you typed.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\$\\{?HISTFILE\\b|\\.claude/history\\.jsonl\\b|(^|[;&|(`])\\s*(history|fc\\s+-[a-zA-Z]*l[a-zA-Z]*)\\b(?!\\s*-c\\b)"
   },
@@ -519,7 +783,10 @@
     "desc": "用文件工具读 shell 历史记录，同上。",
     "title_en": "Read a history file",
     "desc_en": "Reads shell history via a file tool; same concern as above.",
-    "tools": ["Read", "Grep"],
+    "tools": [
+      "Read",
+      "Grep"
+    ],
     "field": "file_path",
     "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\.claude/history\\.jsonl\\b"
   },
@@ -531,7 +798,9 @@
     "desc": "DROP、DELETE、TRUNCATE、FLUSHALL 等会删数据。",
     "title_en": "Destructive database command",
     "desc_en": "DROP, DELETE, TRUNCATE, FLUSHALL and similar delete data.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(mysql|psql|redis-cli|mongo|mongosh|sqlite3)\\b[^\\n|;&]*\\b(DROP|DELETE|TRUNCATE|FLUSHALL|FLUSHDB)\\b"
   },
@@ -543,7 +812,9 @@
     "desc": "用 OUTFILE / DUMPFILE 导出或改 general_log_file 路径，让数据库往磁盘写文件，常被用来落地 webshell。",
     "title_en": "Arbitrary file write via the database",
     "desc_en": "OUTFILE / DUMPFILE exports or redirecting general_log_file make the database write files to disk — often used to drop a webshell.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bgeneral_log_file\\s*=\\s*['\"]?/|\\bSET\\s+(GLOBAL\\s+)?general_log\\s*=\\s*['\"]?ON\\b"
   },
@@ -555,7 +826,9 @@
     "desc": "--privileged、挂载 / 或 docker.sock，容器里可以完全控制宿主机。",
     "title_en": "Privileged container / host root mount",
     "desc_en": "--privileged, mounting / or docker.sock gives the container full control of the host.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bdocker\\s+run\\b[^\\n]*(--privileged\\b|-v\\s+/:/|docker\\.sock)"
   },
@@ -567,7 +840,11 @@
     "desc": "改这些文件等于改你的身份凭证。",
     "title_en": "Write to SSH keys / cloud credentials / .env",
     "desc_en": "Modifying these files is modifying your identity credentials.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "file_path",
     "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$|known_hosts$)"
   },
@@ -579,7 +856,10 @@
     "desc": "改 .bashrc / .zshrc / .profile，里面的内容以后每次开终端都会自动执行。",
     "title_en": "Modify shell startup files",
     "desc_en": "Edits .bashrc / .zshrc / .profile — whatever goes in there runs every time a terminal opens.",
-    "tools": ["Write", "Edit"],
+    "tools": [
+      "Write",
+      "Edit"
+    ],
     "field": "file_path",
     "pattern": "(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile|\\.zprofile)$"
   },
@@ -591,7 +871,11 @@
     "desc": "改 settings.json / hooks / CLAUDE.md / .mcp.json，能改变 Claude 的权限和行为，甚至关掉这个监控。",
     "title_en": "Modify Claude Code's own configuration",
     "desc_en": "Editing settings.json / hooks / CLAUDE.md / .mcp.json can change Claude's permissions and behavior — even disable this monitor.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "file_path",
     "pattern": "(^|/)\\.claude/settings(\\.local)?\\.json$|(^|/)\\.claude/hooks/|(^|/)CLAUDE\\.md$|(^|/)\\.mcp\\.json$|(^|/)\\.claude/skills/"
   },
@@ -603,7 +887,11 @@
     "desc": ".git/hooks 里的脚本会在 commit / push 时自动执行。",
     "title_en": "Write a git hook script",
     "desc_en": "Scripts under .git/hooks run automatically on commit / push.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "file_path",
     "pattern": "(^|/)\\.git/hooks/"
   },
@@ -615,7 +903,11 @@
     "desc": "要写进文件的内容里出现私钥、AK/SK、API Token 等格式，可能是在把密钥硬编码进代码。",
     "title_en": "Secret / token in written content",
     "desc_en": "The content about to be written contains a private key, AK/SK or API token pattern — possibly hard-coding a secret into the code.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----|\\bAKIA[0-9A-Z]{16}\\b|\\bASIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}\\b|\\bgithub_pat_[A-Za-z0-9_]{20,}\\b|\\bsk-ant-[A-Za-z0-9_-]{20,}\\b|\\bsk-proj-[A-Za-z0-9_-]{20,}\\b|\\bsk-[A-Za-z0-9]{32,48}\\b|\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b|\\bAIza[0-9A-Za-z_-]{35}\\b|\\bnpm_[A-Za-z0-9]{36}\\b|\\bsk_live_[0-9a-zA-Z]{24,}\\b|\\bLTAI[0-9A-Za-z]{12,20}\\b|\\bAKID[0-9A-Za-z]{32,}\\b|\\bglpat-[0-9A-Za-z_-]{20,}\\b|gitee\\.com[^\\n]{0,80}\\b[0-9a-f]{40}\\b|\\bPrivateKey\\s*=\\s*[A-Za-z0-9+/]{40,}={0,2}|\\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key)\\s*[:=]\\s*['\"][^'\"\\s]{6,}['\"]"
   },
@@ -627,7 +919,11 @@
     "desc": "身份证号、手机号、邮箱等个人信息。",
     "title_en": "PII in written content",
     "desc_en": "ID numbers, phone numbers, email addresses and similar personal data.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "\\b[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b|\\b1[3-9]\\d{9}\\b|\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
   },
@@ -639,7 +935,11 @@
     "desc": "把 HTTP 请求参数（POST / GET）直接交给 eval / assert 执行——一句话木马的经典特征。",
     "title_en": "Writing webshell code",
     "desc_en": "Request parameters (POST / GET) passed straight into eval / assert — the classic one-liner webshell signature.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "eval\\s*\\(\\s*\\$_(POST|GET|REQUEST|COOKIE)\\s*\\[|assert\\s*\\(\\s*\\$_(POST|GET|REQUEST|COOKIE)\\s*\\[|system\\s*\\(\\s*\\$_(POST|GET|REQUEST)\\s*\\[|eval\\s+request\\s*\\(|Runtime\\.getRuntime\\(\\)\\.exec\\s*\\(\\s*request\\.getParameter"
   },
@@ -651,7 +951,11 @@
     "desc": "eval / exec / os.system / subprocess shell=True，看一下是否必要。",
     "title_en": "Dynamic code execution in written content",
     "desc_en": "eval / exec / os.system / subprocess shell=True; check whether it is really needed.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "\\beval\\s*\\(|\\bexec\\s*\\(|\\bos\\.system\\s*\\(|\\bsubprocess\\.(Popen|call|run)\\s*\\([^)]*shell\\s*=\\s*True|\\bnew Function\\s*\\(|\\bchild_process\\.exec\\s*\\("
   },
@@ -663,7 +967,11 @@
     "desc": "文件内容里出现 OUTFILE / DUMPFILE 导出或 general_log_file 改路径这类让数据库往磁盘写文件的语句。",
     "title_en": "Database file-write statement in written content",
     "desc_en": "The file content contains OUTFILE / DUMPFILE exports or general_log_file redirection — statements that make a database write to disk.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bgeneral_log_file\\s*=\\s*['\"]?/|\\bSET\\s+(GLOBAL\\s+)?general_log\\s*=\\s*['\"]?ON\\b"
   },
@@ -675,7 +983,11 @@
     "desc": "文件内容里出现矿池域名或 stratum 协议。",
     "title_en": "Mining-pool address in written content",
     "desc_en": "The file content references a mining-pool domain or the stratum protocol.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "content",
     "pattern": "\\bstratum\\+(tcp|ssl|tcps)://|\\b(pool\\.minergate\\.com|pool\\.minexmr\\.com|opmoner\\.com|crypto-pool\\.fr|backup-pool\\.com|monerohash\\.com|poolto\\.be|xminingpool\\.com|prohash\\.net|dwarfpool\\.com|crypto-pools\\.org|monero\\.net|hashinvest\\.net|moneropool\\.com|xmrpool\\.eu|ppxxmr\\.com|alimabi\\.cn|aeon-pool\\.com)\\b"
   },
@@ -687,7 +999,11 @@
     "desc": ".ovpn、wireguard、kubeconfig、阿里云 / 腾讯云凭据目录。",
     "title_en": "Write VPN / cloud CLI config",
     "desc_en": ".ovpn, wireguard, kubeconfig, Alibaba / Tencent Cloud credential directories.",
-    "tools": ["Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "field": "file_path",
     "pattern": "\\.ovpn$|wireguard|wg0\\.conf$|(^|/)\\.aliyun/|(^|/)\\.tencentcloud/|\\.kube/config$"
   },
@@ -699,7 +1015,9 @@
     "desc": "读取 .ovpn、wireguard、kubeconfig、云厂商凭据。",
     "title_en": "Read VPN / cloud CLI config",
     "desc_en": "Reads .ovpn, wireguard, kubeconfig or cloud-provider credentials.",
-    "tools": ["Read"],
+    "tools": [
+      "Read"
+    ],
     "field": "file_path",
     "pattern": "\\.ovpn$|wireguard|wg0\\.conf$|(^|/)\\.aliyun/|(^|/)\\.tencentcloud/|\\.kube/config$"
   },
@@ -711,7 +1029,9 @@
     "desc": "这些文件里是你的身份凭证。",
     "title_en": "Read SSH keys / cloud credentials / .env",
     "desc_en": "These files hold your identity credentials.",
-    "tools": ["Read"],
+    "tools": [
+      "Read"
+    ],
     "field": "file_path",
     "pattern": "(\\.ssh/|\\.aws/credentials|\\.env$|id_rsa|id_ed25519|\\.pem$|\\.p12$)"
   },
@@ -723,7 +1043,9 @@
     "desc": "Chrome / Firefox 的 Login Data、Cookies 等文件，里面是你登录各网站的凭据。",
     "title_en": "Read browser-saved passwords / cookies",
     "desc_en": "Chrome / Firefox Login Data, Cookies and similar files hold your logins for every website.",
-    "tools": ["Read"],
+    "tools": [
+      "Read"
+    ],
     "field": "file_path",
     "pattern": "(^|/)(Cookies|Login Data|Web Data)$|(^|/)(cookies\\.sqlite|logins\\.json|key4\\.db)$|(Chrome|Chromium|BraveSoftware|Microsoft.Edge|Vivaldi|Opera.Software)[/\\\\].*[/\\\\](Cookies|Login Data)$"
   },
@@ -735,7 +1057,9 @@
     "desc": "cat / less / head 等读 .ssh、.aws、.env 等文件。",
     "title_en": "Read a sensitive file via a command",
     "desc_en": "cat / less / head etc. reading .ssh, .aws, .env and similar files.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(cat|less|more|head|tail|strings|xxd|hexdump|od)\\s+[^\\n|;&]*(\\.ssh/|\\.aws/credentials|\\.env\\b|id_rsa|id_ed25519|\\.pem\\b|\\.p12\\b)"
   },
@@ -747,7 +1071,9 @@
     "desc": "cat / sqlite3 / cp 等读浏览器的密码库或 Cookie 文件。",
     "title_en": "Read browser credentials via a command",
     "desc_en": "cat / sqlite3 / cp etc. reading the browser's password store or cookie files.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\b(cat|cp|sqlite3|strings|xxd|hexdump|od)\\s+[^\\n|;&]*(Cookies|Login Data|Web Data|cookies\\.sqlite|logins\\.json|key4\\.db)\\b"
   },
@@ -759,7 +1085,9 @@
     "desc": "grep -r password / token / secret 之类的递归搜索，像是在找凭据。",
     "title_en": "Recursive search for password / secret strings",
     "desc_en": "grep -r for password / token / secret — looks like credential hunting.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "(?=.*\\b(grep|rg|ag|ack)\\b)(?=.*(-[a-zA-Z]*[rR][a-zA-Z]*\\b|--recursive\\b))(?=.*\\b(password|passwd|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key|credential|token)\\b)"
   },
@@ -771,7 +1099,9 @@
     "desc": "npx / pnpm dlx / pipx run / uvx 会当场下载一个包并执行，你没审核过它的代码。",
     "title_en": "Download and run a package on the fly",
     "desc_en": "npx / pnpm dlx / pipx run / uvx download a package and execute it immediately — code you have not reviewed.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "\\bnpx\\s|\\bpnpm\\s+dlx\\s|\\bbunx\\s|\\bpipx\\s+run\\b|\\buvx\\b"
   },
@@ -783,7 +1113,9 @@
     "desc": "/proc/<pid>/environ 和 cmdline 里常有其它程序的密钥和 Token。",
     "title_en": "Read another process's environment / command line",
     "desc_en": "/proc/<pid>/environ and cmdline often contain other programs' secrets and tokens.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
     "pattern": "/proc/(\\d+|\\$\\w+|\\$\\{[^}]+\\})/(environ|cmdline)\\b"
   },
@@ -795,9 +1127,11 @@
     "desc": "env / printenv 会把当前环境里所有变量（可能含密钥）打出来。",
     "title_en": "Dump all environment variables",
     "desc_en": "env / printenv prints every variable in the environment, secrets included.",
-    "tools": ["Bash"],
+    "tools": [
+      "Bash"
+    ],
     "field": "command",
-    "pattern": "\\b(env|printenv)\\b(?!\\s+[A-Za-z_][A-Za-z0-9_]*=)(\\s|$)|\\bexport\\s+-p\\b"
+    "pattern": "(?:^|[;&|]\\s*|\\$\\(\\s*)(env|printenv)\\b(?!\\s+[A-Za-z_][A-Za-z0-9_]*=)(\\s|\\)|;|&|\\||$)|\\bexport\\s+-p\\b"
   },
   {
     "id": "system_config_write",
@@ -807,7 +1141,10 @@
     "desc": "写 /etc、/boot、/System、/Library 下的文件，影响整台机器。",
     "title_en": "Modify a system configuration file",
     "desc_en": "Writes under /etc, /boot, /System, /Library affect the whole machine.",
-    "tools": ["Write", "Edit"],
+    "tools": [
+      "Write",
+      "Edit"
+    ],
     "field": "file_path",
     "pattern": "^/(etc|boot|System|Library)/"
   },
@@ -819,10 +1156,19 @@
     "desc": "目标在家目录的隐藏配置（~/.xxx）、别的用户的家目录或系统目录里，不在当前项目内。",
     "title_en": "Write outside the project into a sensitive location",
     "desc_en": "The target is a hidden home-dir config (~/.xxx), another user's home or a system directory — not inside the current project.",
-    "tools": ["Bash", "Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Bash",
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "match": "workdir",
     "access": "write",
-    "scopes": ["homeDotfile", "otherUserHome", "system"],
+    "scopes": [
+      "homeDotfile",
+      "otherUserHome",
+      "system"
+    ],
     "ignore_paths": []
   },
   {
@@ -833,10 +1179,17 @@
     "desc": "目标不在当前项目里，而是在别的项目 / 数据目录。",
     "title_en": "Write into another project directory",
     "desc_en": "The target is outside the current project, in another project / data directory.",
-    "tools": ["Bash", "Write", "Edit", "NotebookEdit"],
+    "tools": [
+      "Bash",
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
     "match": "workdir",
     "access": "write",
-    "scopes": ["otherProject"],
+    "scopes": [
+      "otherProject"
+    ],
     "ignore_paths": []
   },
   {
@@ -847,10 +1200,18 @@
     "desc": "读家目录的隐藏配置（~/.xxx）或别的用户的家目录。",
     "title_en": "Read a sensitive location outside the project",
     "desc_en": "Reads hidden home-dir config (~/.xxx) or another user's home directory.",
-    "tools": ["Bash", "Read", "Glob", "Grep"],
+    "tools": [
+      "Bash",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
     "match": "workdir",
     "access": "read",
-    "scopes": ["homeDotfile", "otherUserHome"],
+    "scopes": [
+      "homeDotfile",
+      "otherUserHome"
+    ],
     "ignore_paths": []
   },
   {
@@ -861,10 +1222,18 @@
     "desc": "读系统目录或别的项目目录里的文件。",
     "title_en": "Read a file outside the project",
     "desc_en": "Reads a file in a system directory or another project directory.",
-    "tools": ["Bash", "Read", "Glob", "Grep"],
+    "tools": [
+      "Bash",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
     "match": "workdir",
     "access": "read",
-    "scopes": ["system", "otherProject"],
+    "scopes": [
+      "system",
+      "otherProject"
+    ],
     "ignore_paths": []
   },
   {
@@ -875,7 +1244,9 @@
     "desc": "Claude 要访问一个网址并读取内容。",
     "title_en": "Fetch a web page",
     "desc_en": "Claude is about to fetch a URL and read its content.",
-    "tools": ["WebFetch"],
+    "tools": [
+      "WebFetch"
+    ],
     "field": "url",
     "pattern": ".*"
   },
@@ -887,7 +1258,9 @@
     "desc": "Claude 要进行一次网络搜索，搜索词会发给搜索引擎。",
     "title_en": "Web search",
     "desc_en": "Claude is about to run a web search; the query is sent to a search engine.",
-    "tools": ["WebSearch"],
+    "tools": [
+      "WebSearch"
+    ],
     "field": "query",
     "pattern": ".*"
   },
@@ -899,7 +1272,9 @@
     "desc": "这不是权限确认——Claude 需要你在它的终端里选一个选项。",
     "title_en": "Claude is asking you a question",
     "desc_en": "This is not a permission prompt — Claude needs you to pick an option in its terminal.",
-    "tools": ["AskUserQuestion"],
+    "tools": [
+      "AskUserQuestion"
+    ],
     "field": "questions",
     "pattern": ".*"
   }
