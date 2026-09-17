@@ -12,7 +12,7 @@
   "scripts": {
     "start": "node server.js",
     "postinstall": "node scripts/fix-node-pty-perms.js",
-    "test": "node --test test/",
+    "test": "node --test \"test/**/*.test.js\"",
     "electron": "node scripts/electron-start.js",
     "electron:rebuild": "electron-rebuild -f -w node-pty,better-sqlite3",
     "dist:linux": "npm run electron:rebuild && electron-builder --linux AppImage --x64 --arm64",
