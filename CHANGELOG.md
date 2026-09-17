@@ -8,6 +8,39 @@
 ## [未发布]
 
 ### 变更
+- **软件安装识别按生态补齐，规则数 74 → 86**：原来的安装类规则是按具体可执行文件名
+  枚举的，只认 pip / npm / apt 系 / gem / cargo / go / composer。拿 96 条真实安装命令跑了一遍
+  规则引擎，覆盖率只有 22%——工具链和容器插件两类是 0%。补法不是继续堆枚举，而是按生态
+  合并成 8 条规则：`js_package_install` / `js_package_install_global`（yarn/pnpm/bun/deno/npm ci）、
+  `python_package_install_other`（conda/mamba/poetry/pipenv/pipx/pdm/rye）、`python_legacy_install`
+  （easy_install、setup.py install）、`toolchain_install`（asdf/nvm/pyenv/rustup/mise/sdk/volta…）、
+  `container_image_pull`（docker/podman pull、helm install）、`editor_plugin_install`
+  （VS Code 扩展、gh extension、krew、`claude mcp add`）、`source_build_install`
+  （make install、cmake --install、ninja install）。另外扩充了两条已有规则的正则：
+  `system_package_install` 纳入 snap/flatpak/dpkg -i/rpm -i/emerge/nix/xbps/pkg/mas/eopkg，
+  `package_install_other` 纳入 dotnet/cabal/stack/cpanm/luarocks/nimble/mix/dart/flutter/swift/R/julia
+  及 go get、cargo binstall、bundle install、composer install。覆盖率 22% → 92%。
+  风险分档沿用原有逻辑：写系统的要确认，写用户目录/项目目录的只记录。
+- **uv 安装识别**：新增 `uv_pip_install`、`uv_pip_install_system`、`uv_project_install`、
+  `sudo_uv_pip_install` 四条规则。此前 `uv pip install` 完全不命中任何规则——安装类规则都是
+  `match: "segment"`（从子命令开头匹配），而 `uv pip install` 的开头是 `uv` 不是 `pip`，
+  于是 `pip install requests` 会弹确认框、`uv pip install requests` 却一路畅通。
+  分档按 uv 自己的语义定：它在没有激活虚拟环境时直接报错而不是装进系统 Python，所以普通
+  `uv pip install` 是 low/log，只有 `--system` / `--break-system-packages` 才是 high/confirm，
+  `sudo uv pip install` 跟 `sudo pip install` 一样 high/block。
+- **首页软件安装统计从 5 张卡扩到 7 张**：新增"uv 安装 Python 包""其它 Python 包管理器"
+  "工具链 / 版本管理器"，原"npm 安装"改为"JS 包管理器（npm/yarn/pnpm/bun）"。后端的
+  `INSTALL_RULE_GROUPS` 现在是唯一事实来源，接口白名单和前端卡片渲染都从它推导，
+  以后加一组不用再改三个地方。
+
+### 修复
+- **`env_dump` 规则的误判**：正则是全文搜索 `\b(env|printenv)\b`，于是任何把 `env` 当独立
+  词用的命令都会被记成"打印全部环境变量（可能含密钥）"。实测误伤 `hatch env create`、
+  `conda env list`、`poetry env info`、`nix-env -iA`、`mkdir env`。其中 `nix-env -i` 本来该算
+  系统包安装，被这条规则抢先命中之后连分类都错了。改成只在命令开头、shell 操作符之后
+  或 `$()` 里才算，语义正是"单独执行 env"。顺带把 `$(env)` 这种此前也匹配不到的写法补上。
+  用 49 条正常命令（`make build`、`yarn test`、`docker run`、`conda activate`、`pip list` 等）
+  回归，零误报。
 - **"隐藏敏感信息"按钮收窄到三项**：原来把账号面板九个字段全部显示成 `***`，遮完之后
   整块面板只剩一列星号，失去了展示价值。现在只遮能指认到具体某个人的三项：姓名、
   邮箱、组织名；组织角色、套餐类型、额度档位、计费方式、账号创建时间、订阅开始时间

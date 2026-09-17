@@ -8,6 +8,44 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [Unreleased]
 
 ### Changed
+- **Software-install detection filled in by ecosystem; rules 74 → 86**: install rules used to
+  enumerate specific executables, recognizing only pip / npm / the apt family / gem / cargo / go /
+  composer. Running 96 real install commands through the rule engine put coverage at 22%, with
+  toolchains and container plugins at 0%. Rather than piling on more enumeration, eight rules now
+  group by ecosystem: `js_package_install` / `js_package_install_global` (yarn/pnpm/bun/deno/npm ci),
+  `python_package_install_other` (conda/mamba/poetry/pipenv/pipx/pdm/rye), `python_legacy_install`
+  (easy_install, setup.py install), `toolchain_install` (asdf/nvm/pyenv/rustup/mise/sdk/volta…),
+  `container_image_pull` (docker/podman pull, helm install), `editor_plugin_install` (VS Code
+  extensions, gh extension, krew, `claude mcp add`) and `source_build_install` (make install,
+  cmake --install, ninja install). Two existing rules were widened as well: `system_package_install`
+  now covers snap/flatpak/dpkg -i/rpm -i/emerge/nix/xbps/pkg/mas/eopkg, and `package_install_other`
+  covers dotnet/cabal/stack/cpanm/luarocks/nimble/mix/dart/flutter/swift/R/julia plus go get,
+  cargo binstall, bundle install and composer install. Coverage went from 22% to 92%. Risk tiers
+  follow the existing logic: writing into the system asks, writing into the home or project dir logs.
+- **uv install detection**: adds `uv_pip_install`, `uv_pip_install_system`, `uv_project_install` and
+  `sudo_uv_pip_install`. Until now `uv pip install` matched no rule at all — install rules use
+  `match: "segment"`, which anchors at the head of each sub-command, and `uv pip install` starts with
+  `uv`, not `pip`. So `pip install requests` raised a confirmation prompt while `uv pip install
+  requests` sailed straight through. Tiers follow uv's own semantics: it errors out rather than
+  installing into the system Python when no virtualenv is active, so a plain `uv pip install` is
+  low/log, only `--system` / `--break-system-packages` is high/confirm, and `sudo uv pip install` is
+  high/block like `sudo pip install`.
+- **The home page's software-install stats grow from 5 cards to 7**: new cards for uv, other Python
+  package managers and toolchain/version managers; the old "npm installs" card becomes "JS package
+  managers (npm/yarn/pnpm/bun)". `INSTALL_RULE_GROUPS` on the backend is now the single source of
+  truth, with the API whitelist and the front-end cards both derived from it, so adding a group no
+  longer means editing three places.
+
+### Fixed
+- **False positives from the `env_dump` rule**: its regex searched the whole command for
+  `\b(env|printenv)\b`, so any command using `env` as a standalone word was recorded as "dumps every
+  environment variable (secrets included)". Confirmed misfires on `hatch env create`, `conda env
+  list`, `poetry env info`, `nix-env -iA` and `mkdir env`. `nix-env -i` should have counted as a
+  system package install, but this rule matched first and mislabeled it. It now only matches at the
+  start of a command, after a shell operator, or inside `$()`, which is exactly what "running env on
+  its own" means. `$(env)`, which never matched before either, is now covered. Regression-tested
+  against 49 ordinary commands (`make build`, `yarn test`, `docker run`, `conda activate`, `pip list`
+  and others) with zero false positives.
 - **The "hide sensitive info" button now covers three fields instead of nine**: it used to
   replace every field in the account panel with `***`, which left the whole panel as a
   column of asterisks and defeated its purpose. It now hides only what identifies a specific
