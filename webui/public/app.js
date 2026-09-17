@@ -2851,20 +2851,24 @@ function renderAccountProfileInto(boxId, listId, info) {
     box.hidden = true;
     return;
   }
-  // 打码时所有账号字段统一显示成 ***，连字段长度都不泄露
-  const v = (text) => (accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(text));
+  // 打码只作用于能指认到具体某个人的三项：姓名、邮箱、组织名。截图和录屏的实际
+  // 需求是"别让人看出这是谁的号"，而不是把整块面板糊掉——套餐类型、额度档位、
+  // 计费方式、账号/订阅创建时间这些是账号属性不是身份，糊掉之后这块面板就没有
+  // 展示价值了。打码时统一显示成 ***，连原值长度都不泄露。
+  const mask = (text) => (accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(text));
+  const plain = (text) => escapeHtml(text);
   const rows = [];
-  if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: v(info.displayName) });
-  if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: v(info.email) });
-  if (info.organizationName) rows.push({ label: t("home.anthropicAccount.profile.org"), value: v(info.organizationName) });
-  if (info.organizationRole) rows.push({ label: t("home.anthropicAccount.profile.role"), value: v(info.organizationRole) });
-  if (info.organizationType) rows.push({ label: t("home.anthropicAccount.profile.plan"), value: v(info.organizationType) });
-  if (info.organizationRateLimitTier) rows.push({ label: t("home.anthropicAccount.profile.rateLimitTier"), value: v(info.organizationRateLimitTier) });
-  if (info.billingType) rows.push({ label: t("home.anthropicAccount.profile.billing"), value: v(info.billingType) });
+  if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: mask(info.displayName) });
+  if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: mask(info.email) });
+  if (info.organizationName) rows.push({ label: t("home.anthropicAccount.profile.org"), value: mask(info.organizationName) });
+  if (info.organizationRole) rows.push({ label: t("home.anthropicAccount.profile.role"), value: plain(info.organizationRole) });
+  if (info.organizationType) rows.push({ label: t("home.anthropicAccount.profile.plan"), value: plain(info.organizationType) });
+  if (info.organizationRateLimitTier) rows.push({ label: t("home.anthropicAccount.profile.rateLimitTier"), value: plain(info.organizationRateLimitTier) });
+  if (info.billingType) rows.push({ label: t("home.anthropicAccount.profile.billing"), value: plain(info.billingType) });
   const createdAt = fmtAccountDate(info.accountCreatedAt);
-  if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: v(createdAt) });
+  if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: plain(createdAt) });
   const subCreatedAt = fmtAccountDate(info.subscriptionCreatedAt);
-  if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: v(subCreatedAt) });
+  if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: plain(subCreatedAt) });
   box.hidden = rows.length === 0;
   list.innerHTML = rows.map((r) => `<div class="bar-row"><span class="name">${r.label}</span><span>${r.value}</span></div>`).join("");
 }

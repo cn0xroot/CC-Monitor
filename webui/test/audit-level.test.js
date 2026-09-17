@@ -111,3 +111,36 @@ test("说明行元素存在，且渲染时会被填上", () => {
   assert.match(appJs, /audit-level-note/);
   assert.match(appJs, /home\.auditCtl\.levelNote\." \+ state/);
 });
+
+// ---------- 账号打码范围 ----------
+// "隐藏敏感信息"只该遮能指认到具体某个人的三项。曾经是九项全遮，遮完之后那块面板
+// 就没有展示价值了，而组织角色/套餐/额度档位/计费方式/创建时间属于账号属性不是身份。
+const ACCOUNT_JS = appJs.slice(
+  appJs.indexOf("function renderAccountProfileInto"),
+  appJs.indexOf("async function refreshAccountProfile")
+);
+
+test("只有姓名/邮箱/组织走打码", () => {
+  for (const f of ["info.displayName", "info.email", "info.organizationName"]) {
+    assert.ok(ACCOUNT_JS.includes(`mask(${f})`), `${f} 应当打码`);
+  }
+});
+
+test("其余账号字段一律明文", () => {
+  for (const f of [
+    "info.organizationRole",
+    "info.organizationType",
+    "info.organizationRateLimitTier",
+    "info.billingType",
+  ]) {
+    assert.ok(ACCOUNT_JS.includes(`plain(${f})`), `${f} 不该被打码`);
+    assert.ok(!ACCOUNT_JS.includes(`mask(${f})`), `${f} 不该被打码`);
+  }
+  // 两个日期字段走的是格式化后的变量名
+  assert.ok(ACCOUNT_JS.includes("plain(createdAt)"));
+  assert.ok(ACCOUNT_JS.includes("plain(subCreatedAt)"));
+});
+
+test("打码用的仍是定长 ***，不泄露原值长度", () => {
+  assert.match(appJs, /ACCOUNT_MASK_TEXT\s*=\s*"\*\*\*"/);
+});

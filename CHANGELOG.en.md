@@ -7,6 +7,18 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+### Changed
+- **The "hide sensitive info" button now covers three fields instead of nine**: it used to
+  replace every field in the account panel with `***`, which left the whole panel as a
+  column of asterisks and defeated its purpose. It now hides only what identifies a specific
+  person — name, email and organization name. Org role, plan, rate-limit tier, billing,
+  account-created and subscription-started are account attributes rather than identity, so
+  they stay visible. The single `v()` helper is split into `mask()` and `plain()`, with each
+  of the nine fields naming which one it uses, which is harder to get wrong when a field is
+  added later than a conditional would be. The masked value is still a fixed-length `***`,
+  so the original length isn't leaked, and quota percentages remain unmasked as before. The
+  button's hover text is rewritten in both languages.
+
 ### Added
 - **Intervention levels renamed, plus permissive mode**: the old "audit switch:
   start/pause/stop" is now "intervention level: Enforcing / Permissive / Off". The old name
