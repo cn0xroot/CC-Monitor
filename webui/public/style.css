@@ -515,6 +515,15 @@ html, body {
 
 .home-grid { display: grid; gap: 14px; }
 .home-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+/* 两个 box 内容量差很多的一行（文件操作 4 项 vs 软件安装 7 项）。默认 grid 会把同一行
+   的格子拉成等高，项少的那个底部就空出一大片。两件事一起解决：
+   1) align-items:start —— 不再强行等高，任何宽度下都不会出现大块空白；
+   2) 宽屏下按内容量分配宽度（约 35% / 65%），让两边各自一行放得下，高度自然就齐了。
+   窄屏 auto-fit 会塌成单列，那时按 1) 处理就够了。 */
+.home-grid.cols-2.split-by-content { align-items: start; }
+@media (min-width: 1360px) {
+  .home-grid.cols-2.split-by-content { grid-template-columns: 0.7fr 1.3fr; }
+}
 .home-grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 .home-grid.cols-6 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .home-grid.cols-7 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
@@ -533,9 +542,39 @@ html, body {
 .mini-stat.clickable { cursor: pointer; border-radius: 6px; }
 .mini-stat.clickable:hover .card-num { color: var(--accent); }
 
-.home-account { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
+/* 账号列和额度列并排。这里要的是等高（默认的 stretch），不是各按内容高：两列宽度
+   差很多、右列内容明显更长，如果各自按内容收，左列会比右列矮一截，并排看就是一个
+   台阶，像没渲染完。等高之后左列底部会空一点，但那是"留白"，不是"断掉"。
+   这跟下面文件操作那一行的取舍相反——那一行两个 box 等宽、内容量相近，拉等高反而会
+   在项少的那个里留出一大块洞，所以那边用 align-items:start。取舍看内容，不看规则。 */
+.home-account { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); gap: 14px; align-items: stretch; }
 @media (max-width: 1100px) { .home-account { grid-template-columns: 1fr; } }
 .home-account .home-box { flex: none; }
+/* 账号列等高之后，内容只占 235px 左右、盒子被拉到跟右边额度列一样高，底部会空出
+   一大片。解决办法不是把高度收回去（那就又变回台阶了），而是让内容自己铺满：
+   整列改成 flex 列，资料那张表撑开并把九行均匀分布，行距从 4px 长到十几 px，读起来
+   是"舒展"而不是"中间断了"；"额外使用额度"那一小节自然落到列底。
+   内容本来就比列高的场景下 space-between 不产生任何效果，所以不需要额外判断。 */
+.home-account .account-col { display: flex; flex-direction: column; }
+.home-account .account-col > #anthropic-profile-box { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.home-account .account-col #anthropic-profile-info { flex: 1 1 auto; justify-content: space-between; }
+/* 额度列同样要吃掉多余高度，否则等高之后空洞只是从左边搬到右边。这一列的最后一块是
+   一张 <table>，flex 分布不了表格行，但表格自身设了 height:100% 之后行会按比例撑开，
+   这是 table 的固有行为，正好拿来吸收余量：多出来的高度变成行距，而不是底部一个洞。
+   两列现在用的是同一个套路——最后一块 flex:1 吃掉余量，内部再把余量摊给各行。 */
+/* 账号资料的标签列加宽：默认 96px 装不下"Claude Code 版本"（实测需要 117px）和英文的
+   "Subscription started"，会折成两行。只放宽账号列这一处，别处的 kv-list 不动。 */
+.home-account .account-col .kv-list .bar-row .name { flex: 0 0 122px; }
+
+.home-account .account-main { display: flex; flex-direction: column; }
+.home-account .account-main > #anthropic-limits-box { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.home-account .account-main > #anthropic-limits-box > #anthropic-limits-list { flex: 1 1 auto; }
+.home-account .account-main > #anthropic-limits-box > #anthropic-limits-list > table { height: 100%; }
+
+/* 标识符是截断显示的（头 8…尾 4），用等宽字体对齐，悬停看完整值 */
+.ident-val { font-family: Menlo, Consolas, monospace; font-size: 0.9em; cursor: help; }
+/* 版本号旁边的"近似"小标——没能执行 claude --version 时的诚实标注，不假装是准确值 */
+.approx-tag { font-size: 0.78em; color: var(--text-dim); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; cursor: help; }
 .kv-list { display: flex; flex-direction: column; gap: 6px; }
 .kv-list .bar-row { font-size: 0.8929rem; }
 .kv-list .bar-row .name { flex: 0 0 96px; }

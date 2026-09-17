@@ -2919,6 +2919,15 @@ function renderAccountProfileInto(boxId, listId, info) {
   // 展示价值了。打码时统一显示成 ***，连原值长度都不泄露。
   const mask = (text) => (accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(text));
   const plain = (text) => escapeHtml(text);
+  // 标识符很长（UUID 36 位、machineID/userID 64 位十六进制），这一列只有 266px 放不下，
+  // 截成"头 8 … 尾 4"，完整值放进 title 供悬停查看。打码时 title 也必须一起打码，
+  // 否则遮了正文却能悬停看到原值，等于没遮。
+  const ident = (text) => {
+    if (accountMasked) return ACCOUNT_MASK_TEXT;
+    const v = String(text);
+    const short = v.length > 16 ? `${v.slice(0, 8)}…${v.slice(-4)}` : v;
+    return `<span title="${escapeHtml(v)}" class="ident-val">${escapeHtml(short)}</span>`;
+  };
   const rows = [];
   if (info.displayName) rows.push({ label: t("home.anthropicAccount.profile.name"), value: mask(info.displayName) });
   if (info.email) rows.push({ label: t("home.anthropicAccount.profile.email"), value: mask(info.email) });
@@ -2931,6 +2940,36 @@ function renderAccountProfileInto(boxId, listId, info) {
   if (createdAt) rows.push({ label: t("home.anthropicAccount.profile.createdAt"), value: plain(createdAt) });
   const subCreatedAt = fmtAccountDate(info.subscriptionCreatedAt);
   if (subCreatedAt) rows.push({ label: t("home.anthropicAccount.profile.subCreatedAt"), value: plain(subCreatedAt) });
+  // 标识符：默认显示，跟着"隐藏敏感信息"一起打码。
+  if (info.accountUuid) rows.push({ label: t("home.anthropicAccount.profile.accountUuid"), value: ident(info.accountUuid) });
+  if (info.organizationUuid) rows.push({ label: t("home.anthropicAccount.profile.orgUuid"), value: ident(info.organizationUuid) });
+  if (info.userID) rows.push({ label: t("home.anthropicAccount.profile.userId"), value: ident(info.userID) });
+  if (info.machineID) rows.push({ label: t("home.anthropicAccount.profile.machineId"), value: ident(info.machineID) });
+  // 本机的 Claude Code 状态，不是"账号是谁"。这几项一律明文——它们不是身份信息，
+  // 而且正是排查 hook 失灵时要看的东西，遮掉没有意义。
+  if (info.claudeCodeVersion) {
+    const v = info.claudeCodeVersion;
+    rows.push({
+      label: t("home.anthropicAccount.profile.ccVersion"),
+      value: plain(v.value) + (v.approx ? ` <span class="approx-tag" title="${t("home.anthropicAccount.profile.ccVersionApproxTip")}">${t("home.anthropicAccount.profile.approx")}</span>` : ""),
+    });
+  }
+  if (info.installMethod) rows.push({ label: t("home.anthropicAccount.profile.installMethod"), value: plain(info.installMethod) });
+  if (info.autoUpdates !== null && info.autoUpdates !== undefined) {
+    rows.push({
+      label: t("home.anthropicAccount.profile.autoUpdates"),
+      value: plain(t(info.autoUpdates ? "common.on" : "common.off")),
+    });
+  }
+  if (typeof info.mcpServerCount === "number") {
+    const names = (info.mcpServerNames || []).join(", ");
+    rows.push({
+      label: t("home.anthropicAccount.profile.mcpServers"),
+      value: names
+        ? `<span title="${escapeHtml(names)}">${t("home.anthropicAccount.profile.mcpCount", { n: info.mcpServerCount })}</span>`
+        : plain(t("home.anthropicAccount.profile.mcpCount", { n: info.mcpServerCount })),
+    });
+  }
   box.hidden = rows.length === 0;
   list.innerHTML = rows.map((r) => `<div class="bar-row"><span class="name">${r.label}</span><span>${r.value}</span></div>`).join("");
 }

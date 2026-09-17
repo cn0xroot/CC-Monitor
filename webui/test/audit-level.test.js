@@ -120,9 +120,34 @@ const ACCOUNT_JS = appJs.slice(
   appJs.indexOf("async function refreshAccountProfile")
 );
 
-test("只有姓名/邮箱/组织走打码", () => {
+test("姓名/邮箱/组织走打码，四个标识符走 ident（同样打码）", () => {
   for (const f of ["info.displayName", "info.email", "info.organizationName"]) {
     assert.ok(ACCOUNT_JS.includes(`mask(${f})`), `${f} 应当打码`);
+  }
+  // 标识符走 ident()：正常显示时截断成"头8…尾4"，打码时同样变成 ***
+  for (const f of ["info.accountUuid", "info.organizationUuid", "info.userID", "info.machineID"]) {
+    assert.ok(ACCOUNT_JS.includes(`ident(${f})`), `${f} 应当走 ident`);
+  }
+});
+
+test("ident 打码时连 title 一起遮，不能悬停看到原值", () => {
+  const fn = appJs.slice(appJs.indexOf("const ident = (text) =>"));
+  const body = fn.slice(0, fn.indexOf("\n  };"));
+  // 先判 accountMasked 并直接 return，title 分支根本走不到
+  assert.match(body, /if \(accountMasked\) return ACCOUNT_MASK_TEXT;/);
+  const maskedIdx = body.indexOf("accountMasked");
+  const titleIdx = body.indexOf("title=");
+  assert.ok(maskedIdx < titleIdx, "打码判断必须在拼 title 之前");
+});
+
+test("本机环境那几项一律明文，它们不是身份信息", () => {
+  for (const f of ["info.installMethod"]) {
+    assert.ok(ACCOUNT_JS.includes(`plain(${f})`), `${f} 不该被打码`);
+  }
+  // 版本 / 自动更新 / MCP 数量都不经过 mask 或 ident
+  for (const f of ["claudeCodeVersion", "autoUpdates", "mcpServerCount"]) {
+    assert.ok(!ACCOUNT_JS.includes(`mask(info.${f})`), `${f} 不该被打码`);
+    assert.ok(!ACCOUNT_JS.includes(`ident(info.${f})`), `${f} 不该走 ident`);
   }
 });
 
