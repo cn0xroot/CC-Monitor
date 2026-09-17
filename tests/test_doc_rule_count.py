@@ -28,8 +28,18 @@ def rule_count():
 DOC_PATTERNS = {
     "README.zh-CN.md": [r"\*\*(\d+) 条内置检测规则"],
     "README.md": [r"\*\*(\d+) built-in detection rules"],
-    "HTML/index.html": [r"<h2>(\d+) 条默认规则", r"(\d+) 条规则每条自带"],
-    "HTML/index.en.html": [r"<h2>(\d+) default rules", r"All (\d+) rules carry"],
+    # hero 区那个大数字也算——它最容易被漏掉：这一节改过两次条数，两次都只改了正文
+    # 里的"N 条默认规则"，hero 一直停在旧值。
+    "HTML/index.html": [
+        r"<h2>(\d+) 条默认规则",
+        r"(\d+) 条规则每条自带",
+        r"<div><b>(\d+)</b><span>条内置规则",
+    ],
+    "HTML/index.en.html": [
+        r"<h2>(\d+) default rules",
+        r"All (\d+) rules carry",
+        r"<div><b>(\d+)</b><span>built-in rules",
+    ],
 }
 
 
