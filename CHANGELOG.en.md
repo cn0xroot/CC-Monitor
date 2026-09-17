@@ -8,6 +8,41 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [Unreleased]
 
 ### Changed
+- **Account panel gains identifiers and local environment info**: from 9 rows to 17. Adds
+  account UUID / organization UUID / user ID / machine ID (truncated to "first 8…last 4" with
+  the full value in a tooltip; shown by default and hidden along with name/email/org by "hide
+  sensitive info", which now covers 7 fields instead of 3), plus Claude Code version / install
+  method / auto-updates / configured MCP count (always in the clear — they aren't identity, and
+  they're exactly what you check when hooks misbehave). The version comes from
+  `claude --version`, cached in-process, with two fallbacks that are labelled "approx" rather
+  than passed off as exact. Masking covers the tooltip too — otherwise the text is asterisks but
+  a hover reveals the original.
+- **Six distinct colors for the log-type breakdown**: all six rows used to share one
+  `var(--accent)`, so color carried no information. The hues come from a macaron family but the
+  depth is computed, not picked — the pure pastels measured outside the lightness band, below
+  the chroma floor, and at only 1.3–2.2:1 contrast. Separate light and dark sets, both passing
+  all five checks, with worst adjacent ΔE of 11.4 and 12.5 against a target of 8. Render order
+  is pinned via `SOURCE_ORDER` so the validated adjacency is an invariant, and color binds to
+  the source key rather than to rank.
+- **Hourglass redrawn**: 14×24 up to 30×46, with end caps, gradient sand, a peaked sand pile and
+  the falling stream (drawn only while it's actually draining, and honoring
+  `prefers-reduced-motion`), colored to match its card instead of always using the accent.
+  The Claude Code starburst goes 16→24px and the brand logo 24→30px.
+
+### Fixed
+- **Distribution bars never had any color**: `.fill` is a span, so `display:inline` by default,
+  and width/height simply don't apply to a non-replaced inline element — its measured size was
+  0×0, so the background color had no box to paint. The dot beside it is also a span but works,
+  because it's a direct child of a flex container and gets blockified.
+- **Two hollow card layouts**, resolved in opposite directions: in the file-ops row the two
+  boxes are equal width with similar content, and growing the install stats to 7 items wrapped
+  them onto two rows, leaving ~124px empty under the single-row box — fixed by not forcing equal
+  heights, plus a content-proportional split on wide viewports. The account and quota columns
+  differ a lot in width and length, so content-sized heights left a visible step — fixed by
+  matching heights and having each column absorb its own slack (the quota column's last block is
+  a table, so `height:100%` lets its rows expand proportionally).
+- **Wrapped labels in the account column**: the 96px label column couldn't fit "Claude Code
+  version" (117px measured) or "Subscription started"; widened to 122px, only there.
 - **Software-install detection filled in by ecosystem; rules 74 → 86**: install rules used to
   enumerate specific executables, recognizing only pip / npm / the apt family / gem / cargo / go /
   composer. Running 96 real install commands through the rule engine put coverage at 22%, with
