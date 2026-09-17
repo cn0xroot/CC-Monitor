@@ -268,7 +268,7 @@ html, body {
   flex: 0 0 auto;
 }
 .brand { font-weight: 700; font-size: 1.0714rem; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; color: var(--text); }
-.brand-logo { width: 24px; height: 24px; flex: 0 0 auto; color: var(--text); }
+.brand-logo { width: 30px; height: 30px; flex: 0 0 auto; color: var(--text); }
 
 #tabs { display: flex; gap: 4px; flex: 1 1 auto; flex-wrap: wrap; }
 .tab-btn {
@@ -464,7 +464,7 @@ html, body {
 .strip-title { font-weight: 600; font-size: 0.9286rem; line-height: 1.3; }
 /* "已监测的 Claude Code 会话"后面那个橙色星芒——标识这张卡统计的是谁的会话。
    跟顶栏品牌 logo 里那个 spark 用同一组橙色，视觉上是一家的。 */
-.claude-mark { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-left: 5px; }
+.claude-mark { display: inline-block; width: 24px; height: 24px; vertical-align: -6px; margin-left: 7px; }
 .strip-cap { color: var(--text-dim); font-size: 0.8571rem; margin-top: 2px; }
 .strip-cap .clickable { cursor: pointer; }
 .strip-cap .clickable:hover { color: var(--accent); }
@@ -1423,8 +1423,39 @@ html, body {
 /* 沙漏——重置倒计时的可视化，沙子从上格漏到下格的比例 = 这个窗口已经过去的时间占比
    （5 小时窗口 / 7 天周窗口，按 resetsAt 反推），跟百分比数字一起摆在卡片说明文字
    旁边，不需要额外看文字就能感觉到"这个窗口快满了没有"。 */
-.hourglass-wrap { display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; }
-.hourglass-svg .hg-glass { fill: none; stroke: var(--text-dim); stroke-width: 1.4; stroke-linejoin: round; }
-.hourglass-svg .hg-sand { fill: var(--accent); }
+/* 重置时间那一行：沙漏放大之后不能再内联在文字流里（会把行高撑歪、基线也对不齐），
+   改成 flex 一行，沙漏和文字各自垂直居中。 */
+.reset-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.reset-row > span { min-width: 0; }
+.hourglass-wrap { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.hourglass-svg { flex: 0 0 auto; }
+/* 玻璃轮廓比原来细一点、透一点——沙漏放大之后，原来那个 stroke-width 会显得笨重。 */
+.hourglass-svg .hg-glass {
+  fill: color-mix(in srgb, var(--text-dim) 8%, transparent);
+  stroke: color-mix(in srgb, var(--text-dim) 85%, transparent);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+/* 上下托板：实心、圆角，给沙漏一个"立在那儿"的重量感，原来只有一个光秃秃的轮廓。 */
+.hourglass-svg .hg-cap { fill: color-mix(in srgb, var(--text-dim) 75%, transparent); }
+/* 沙子的渐变：上浅下深，两个 stop 都从 --accent 算出来，换主题自动跟着走。 */
+.hourglass-svg .hg-stop-a { stop-color: color-mix(in srgb, var(--accent) 55%, white); }
+.hourglass-svg .hg-stop-b { stop-color: var(--accent); }
+/* 正在漏下去的那道细沙。虚线 + 循环位移做出"往下掉"的观感，只在真的还在漏的时候才
+   会被画出来（见 app.js 的 streaming 判断），漏完了就没有这个元素，不会空转动画。 */
+.hourglass-svg .hg-stream {
+  fill: var(--accent);
+  opacity: 0.85;
+  stroke-dasharray: 2 2;
+  animation: hg-fall 0.9s linear infinite;
+}
+@keyframes hg-fall {
+  from { transform: translateY(0); }
+  to   { transform: translateY(4px); }
+}
+/* 跟随系统"减少动态效果"偏好——这是个装饰性动画，不该强加给对动效敏感的人。 */
+@media (prefers-reduced-motion: reduce) {
+  .hourglass-svg .hg-stream { animation: none; }
+}
 
 .dd-open-hint { color: var(--accent); font-weight: 600; white-space: nowrap; }

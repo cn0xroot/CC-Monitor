@@ -2506,22 +2506,60 @@ const WEEKLY_WINDOW_MS = 7 * 24 * 3600 * 1000;
 const DEFAULT_CONTEXT_WINDOW = 200000;
 
 let hourglassUidCounter = 0;
-// 沙漏：上格剩余沙子 = 1-elapsed，下格已落下的沙子 = elapsed，各自用 clipPath 卡在
-// 对应的三角形里，纯 CSS/SVG 画的，不需要图片素材，颜色跟主题的 --accent 联动。
-function hourglassSvg(elapsedFraction) {
+// 沙漏：上格剩余沙子 = 1-elapsed，下格已落下的沙子 = elapsed。纯 SVG 画的，不需要图片
+// 素材，颜色跟主题的 --accent 联动（渐变的两个 stop 在 CSS 里用 color-mix 从 --accent
+// 算出来，换主题自动跟着走）。
+//
+// 几何：viewBox 28×44，上下各一块托板，中间是经典的沙漏轮廓，两格在 y=21.8 收口。
+// 上格的沙子贴着格底（沙子是从颈口漏下去的，所以剩下的堆在下面，液面是平的）；
+// 下格的沙子从底部堆起来，用一条二次贝塞尔把顶面拉成中间高的沙堆，比平顶的矩形
+// 像真沙子。两格都再 clip 一次，保证任何比例下都不会溢出玻璃轮廓。
+// color 传进来的话，沙子就跟着卡片自己的配色走（额度卡的颜色是按健康度算的，绿/黄/橙
+// 各不相同），不传就退回主题的 --accent。同一张卡里沙漏跟进度条同色，比一律用强调色整体。
+function hourglassSvg(elapsedFraction, color) {
   const e = Math.max(0, Math.min(1, elapsedFraction));
   const uid = `hg${hourglassUidCounter++}`;
-  const topSandH = (1 - e) * 15;
-  const botSandH = e * 15;
+  const NECK = 21.8;          // 两格收口处的 y
+  const TOP_Y = 6.2;          // 上格顶
+  const BOT_Y = 37.8;         // 下格底
+  const TOP_H = NECK - TOP_Y; // 上格可容纳的沙高
+  const BOT_H = BOT_Y - NECK;
+
+  const topH = (1 - e) * TOP_H;
+  const botH = e * BOT_H;
+  const topSandY = NECK - topH;
+  const botSandY = BOT_Y - botH;
+  // 沙堆顶面的隆起高度：沙子越多堆得越尖，但封顶 2.6，免得快满时戳破玻璃。
+  const mound = Math.min(3.4, botH * 0.55);
+
+  // 正在漏的时候才画那道落沙；漏完了或还没开始都不画。
+  const streaming = e > 0.02 && e < 0.995;
+  const sandLight = color ? rgbToHex(lerpRgb(hexToRgb(color), [255, 255, 255], 0.45)) : null;
+
   return `
-    <svg class="hourglass-svg" width="14" height="24" viewBox="0 0 24 40" aria-hidden="true">
+    <svg class="hourglass-svg" width="30" height="46" viewBox="0 0 28 44" aria-hidden="true">
       <defs>
-        <clipPath id="${uid}t"><polygon points="4,3 20,3 12,19"/></clipPath>
-        <clipPath id="${uid}b"><polygon points="12,21 20,37 4,37"/></clipPath>
+        <linearGradient id="${uid}g" x1="0" y1="0" x2="0" y2="44" gradientUnits="userSpaceOnUse">
+          <stop class="hg-stop-a" offset="0"${sandLight ? ` style="stop-color:${sandLight}"` : ""}/>
+          <stop class="hg-stop-b" offset="1"${color ? ` style="stop-color:${color}"` : ""}/>
+        </linearGradient>
+        <clipPath id="${uid}t"><path d="M6.4 ${TOP_Y} H21.6 L14 ${NECK} Z"/></clipPath>
+        <clipPath id="${uid}b"><path d="M14 ${NECK} L21.6 ${BOT_Y} H6.4 Z"/></clipPath>
       </defs>
-      <g clip-path="url(#${uid}t)"><rect class="hg-sand" x="0" y="${3 + (15 - topSandH)}" width="24" height="${topSandH}"/></g>
-      <g clip-path="url(#${uid}b)"><rect class="hg-sand" x="0" y="${37 - botSandH}" width="24" height="${botSandH}"/></g>
-      <polygon class="hg-glass" points="4,3 20,3 12,19 20,37 4,37 12,19"/>
+
+      <g clip-path="url(#${uid}t)">
+        <rect fill="url(#${uid}g)" x="0" y="${topSandY.toFixed(2)}" width="28" height="${(topH + 0.4).toFixed(2)}"/>
+      </g>
+
+      ${streaming ? `<rect class="hg-stream" x="13.5" y="${NECK.toFixed(2)}" width="1" height="${Math.max(0, botSandY - NECK).toFixed(2)}"${color ? ` style="fill:${color}"` : ""}/>` : ""}
+
+      <g clip-path="url(#${uid}b)">
+        <path fill="url(#${uid}g)" d="M6.4 ${BOT_Y} H21.6 V${botSandY.toFixed(2)} Q14 ${(botSandY - mound).toFixed(2)} 6.4 ${botSandY.toFixed(2)} Z"/>
+      </g>
+
+      <path class="hg-glass" d="M6.4 ${TOP_Y} H21.6 L14 ${NECK} L21.6 ${BOT_Y} H6.4 L14 ${NECK} Z"/>
+      <rect class="hg-cap" x="4.6" y="2.6" width="18.8" height="3.2" rx="1.6"/>
+      <rect class="hg-cap" x="4.6" y="38.2" width="18.8" height="3.2" rx="1.6"/>
     </svg>`;
 }
 
@@ -2711,7 +2749,7 @@ function usageCard(label, bucket, windowMs, optional = false) {
     const msLeft = new Date(bucket.resetsAt).getTime() - Date.now();
     if (!Number.isNaN(msLeft)) {
       const elapsed = 1 - Math.max(0, Math.min(1, msLeft / windowMs));
-      hourglass = `<span class="hourglass-wrap" title="${t("status.usage.windowElapsed", { pct: Math.round(elapsed * 100) })}">${hourglassSvg(elapsed)}</span> `;
+      hourglass = `<span class="hourglass-wrap" title="${t("status.usage.windowElapsed", { pct: Math.round(elapsed * 100) })}">${hourglassSvg(elapsed, barColor)}</span>`;
     }
   }
   return `
@@ -2720,7 +2758,10 @@ function usageCard(label, bucket, windowMs, optional = false) {
       <div class="neon-bar neon-bar-lg" style="border:1px solid ${barColor}; box-shadow:0 0 10px ${withAlpha(barColor, 0.55)};">
         <div class="neon-bar-fill" style="width:${displayPct}%; background:linear-gradient(90deg, ${barColorLight}, ${barColor});"></div>
       </div>
-      <div class="card-label">${t(isSession ? "status.usage.remainingLabel" : "status.usage.usedLabel")} · ${label}<br>${bucket.resetsAt ? hourglass + t("status.usage.resetLabel") + ": " + fmtResetAt(bucket.resetsAt) : ""}</div>
+      <div class="card-label">
+        <div>${t(isSession ? "status.usage.remainingLabel" : "status.usage.usedLabel")} · ${label}</div>
+        ${bucket.resetsAt ? `<div class="reset-row">${hourglass}<span>${t("status.usage.resetLabel")}: ${fmtResetAt(bucket.resetsAt)}</span></div>` : ""}
+      </div>
     </div>`;
 }
 
