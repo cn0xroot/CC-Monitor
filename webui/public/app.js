@@ -1040,10 +1040,18 @@ async function refreshOverview() {
     document.getElementById("stat-screenshot").textContent = s.screenshotOps.total;
   }
 
-  renderBarList("source-breakdown", s.bySource.map((r) => ({
+  // 日志类型是"身份"型分类，六项各一色而不是统一的强调色——原来六行全是同一个蓝，
+  // 颜色不承载任何信息。配色是 --cat-1..6（见 style.css 里那段说明，跑过可读性验证）。
+  //
+  // 两条约束：颜色按 source 这个键绑定，不按名次，所以筛选或数量变化不会让剩下的行换色；
+  // 渲染顺序用 SOURCE_ORDER 固定，因为配色的色盲分离度是按"相邻两项"验证的，顺序一变
+  // 相邻关系就变了，验证结论也就不作数了。不在表里的新 source 排在最后、用中性灰。
+  const ordered = SOURCE_ORDER.map((key) => s.bySource.find((r) => r.source === key)).filter(Boolean);
+  const rest = s.bySource.filter((r) => !SOURCE_COLOR[r.source]);
+  renderBarList("source-breakdown", [...ordered, ...rest].map((r) => ({
     name: sourceLabel2(r.source) || r.source || "-",
     count: r.n,
-    color: "var(--accent)",
+    color: SOURCE_COLOR[r.source] || "var(--text-dim)",
   })));
   renderBarList("risk-breakdown", s.byRisk.map((r) => ({
     name: riskLabel(r.risk) || r.risk || "-",
@@ -1056,6 +1064,18 @@ async function refreshOverview() {
     color: DECISION_COLOR[r.decision] || "var(--text-dim)",
   })));
 }
+
+// 日志类型的固定渲染顺序 + 配色。顺序和 style.css 里 --cat-1..6 的验证顺序一一对应，
+// 改任何一边都要同时改另一边，并重跑 dataviz 的 validate_palette.js。
+const SOURCE_ORDER = ["hook_lifecycle", "hook_post", "hook_pre", "hook_prompt", "os_exec", "os_net"];
+const SOURCE_COLOR = {
+  hook_lifecycle: "var(--cat-1)",
+  hook_post: "var(--cat-2)",
+  hook_pre: "var(--cat-3)",
+  hook_prompt: "var(--cat-4)",
+  os_exec: "var(--cat-5)",
+  os_net: "var(--cat-6)",
+};
 
 function renderBarList(containerId, rows) {
   const el = document.getElementById(containerId);
