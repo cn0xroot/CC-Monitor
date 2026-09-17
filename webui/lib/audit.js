@@ -857,8 +857,13 @@ function stats() {
     const bypassTotal = db
       .prepare(`SELECT COUNT(*) AS n FROM events WHERE matched_rule = 'hook_bypass_suspected'`)
       .get().n;
-    return { total, sessionCount, blockedTotal, bypassTotal, byRisk, byDecision, bySource };
-  }, { total: 0, sessionCount: 0, blockedTotal: 0, bypassTotal: 0, byRisk: [], byDecision: [], bySource: [] });
+    // 绕过检测靠的是内核层 execve 观测跟 hook 记录比对，只有 Linux 的 bpftrace 探针
+    // 产生这种观测；macOS 那份探针用 nettop，只覆盖网络，所以 bypassTotal 在 macOS 上
+    // 恒为 0。前端必须能区分"查过了，是 0"和"这项检查在本平台没跑过"——否则界面上
+    // 那个 0 读起来像是安全结论，实际是能力缺失。
+    const bypassSupported = process.platform !== "darwin";
+    return { total, sessionCount, blockedTotal, bypassTotal, bypassSupported, byRisk, byDecision, bySource };
+  }, { total: 0, sessionCount: 0, blockedTotal: 0, bypassTotal: 0, bypassSupported: process.platform !== "darwin", byRisk: [], byDecision: [], bySource: [] });
 }
 
 // 文件读/写/编辑/删除次数——删除没有专门的工具（Claude Code 没有内置"删文件"工具），

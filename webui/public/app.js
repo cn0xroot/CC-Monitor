@@ -982,7 +982,17 @@ async function refreshOverview() {
   document.getElementById("stat-total-sessions").textContent = s.sessionCount;
   document.getElementById("stat-total-events").textContent = s.total;
   document.getElementById("stat-blocked").textContent = s.blockedTotal;
-  document.getElementById("stat-bypass").textContent = s.bypassTotal;
+  // macOS 上执行层交叉验证根本没有运行（探针用 nettop，看不到 execve），这时显示 "0"
+  // 会被读成"查过了，没问题"。显示 n/a 并在 tooltip 里说明，是能力缺失不是安全结论。
+  const bypassEl = document.getElementById("stat-bypass");
+  const bypassCard = bypassEl.closest(".strip-card");
+  if (s.bypassSupported === false) {
+    bypassEl.textContent = t("home.strip.bypassNA");
+    if (bypassCard) bypassCard.title = t("home.strip.bypassNATip");
+  } else {
+    bypassEl.textContent = s.bypassTotal;
+    if (bypassCard) bypassCard.removeAttribute("title");
+  }
   document.getElementById("stat-tool-calls").textContent = s.toolCalls;
   document.getElementById("stat-mcp-calls").textContent = s.mcpCalls;
   document.getElementById("stat-skill-calls").textContent = s.skillCalls;
@@ -1066,10 +1076,15 @@ function renderBarList(containerId, rows) {
     .join("");
 }
 
-// ---------- 审计开关：开始/暂停合并成一个切换按钮 + 单独的停止按钮 ----------
-// 开始和暂停是同一件事的两个方向（"现在要不要拦截"），做成一个按钮来回切换；
-// 停止是完全不同性质的动作（连记录都不留了），单独放一个按钮，不跟前面那个混在一起。
-const auditToggleBtn = document.getElementById("audit-toggle-btn");
+// ---------- 介入级别：三档分段控件 ----------
+// 三档互斥，做成并排的 radiogroup：三档同时可见、点哪档去哪档、任意两档一步可达，
+// 控件本身就是状态显示。旧版是"切换按钮 + 单独的停止按钮"，按钮上写的是动作不是状态，
+// 任何时刻只看得到一个选项；而且从"已关闭"出发时切换按钮指向"拦截中"，导致关闭态
+// 没法一步切到观察模式，必须先开回拦截再切一次，中间那一下是真的在拦截的。
+// 注意别再把 paused 叫成"暂停审计"——那一档审计照常在跑，停的只是拦截，所以对外叫
+// "观察模式 / permissive"（取名参考 SELinux permissive）。磁盘和接口上的值仍是 paused。
+const auditSeg = document.getElementById("audit-level-seg");
+const auditSegOpts = auditSeg ? Array.from(auditSeg.querySelectorAll(".seg-opt")) : [];
 function applyAuditState(state) {
   document.getElementById("audit-state-pill").className = "pill audit-state-" + state;
   document.getElementById("audit-state-text").textContent = t("auditState." + state);
@@ -1081,16 +1096,17 @@ function applyAuditState(state) {
     document.getElementById("strip-audit-text").textContent = key ? t(key) : state;
   }
 
-  if (state === "running") {
-    auditToggleBtn.textContent = t("home.auditCtl.pause");
-    auditToggleBtn.className = "btn-secondary audit-btn-pause active";
-    auditToggleBtn.dataset.nextState = "paused";
-  } else {
-    auditToggleBtn.textContent = t("home.auditCtl.start");
-    auditToggleBtn.className = "btn-secondary audit-btn-start active";
-    auditToggleBtn.dataset.nextState = "running";
+  // 分段控件：当前档 aria-checked=true（CSS 的选中态也挂在这个属性上，样式和可访问性
+  // 用同一个事实来源，不会出现"看着选中了但读屏器说没选"）。
+  for (const opt of auditSegOpts) {
+    const on = opt.dataset.level === state;
+    opt.setAttribute("aria-checked", on ? "true" : "false");
+    // 只有当前档从 tab 序列里可达，方向键在组内移动——这是 radiogroup 的标准交互，
+    // 免得三个段各占一次 tab。
+    opt.tabIndex = on ? 0 : -1;
   }
-  document.getElementById("audit-stop-btn").classList.toggle("active", state === "stopped");
+  const note = document.getElementById("audit-level-note");
+  if (note) note.textContent = t("home.auditCtl.levelNote." + state);
 }
 async function refreshAuditState() {
   const info = await api("/api/audit-state");
@@ -1106,12 +1122,46 @@ async function setAuditState(state) {
   if (!info) return;
   applyAuditState(info.state);
 }
-auditToggleBtn.addEventListener("click", () => setAuditState(auditToggleBtn.dataset.nextState));
-document.getElementById("audit-stop-btn").addEventListener("click", async () => {
-  const ok = await confirmDialog(t("modal.stopAudit.title"), t("modal.stopAudit.body"));
-  if (!ok) return;
-  setAuditState("stopped");
-});
+// 点任意一段直接切到那一档——三档两两之间都是一步可达，包括以前到不了的
+// "已关闭 → 观察模式"。只有切到"已关闭"要二次确认：那一档会真的停掉记录，
+// 跟另外两档性质不同，误点的代价是一段时间内什么都没留下。
+async function chooseAuditLevel(level) {
+  if (!level) return;
+  const current = auditSegOpts.find((o) => o.getAttribute("aria-checked") === "true");
+  if (current && current.dataset.level === level) return; // 点的就是当前档，什么都不做
+  if (level === "stopped") {
+    const ok = await confirmDialog(t("modal.stopAudit.title"), t("modal.stopAudit.body"));
+    if (!ok) return;
+  }
+  setAuditState(level);
+}
+
+if (auditSeg) {
+  auditSeg.addEventListener("click", (e) => {
+    const opt = e.target.closest(".seg-opt");
+    if (opt) chooseAuditLevel(opt.dataset.level);
+  });
+  // 方向键在组内移动并直接选中，Home/End 跳到首尾——radiogroup 的常规键盘行为。
+  auditSeg.addEventListener("keydown", (e) => {
+    const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const i = auditSegOpts.findIndex((o) => o.getAttribute("aria-checked") === "true");
+    const last = auditSegOpts.length - 1;
+    let next;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+    else {
+      const step = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1;
+      next = Math.min(last, Math.max(0, (i < 0 ? 0 : i) + step));
+    }
+    const target = auditSegOpts[next];
+    if (target) {
+      target.focus();
+      chooseAuditLevel(target.dataset.level);
+    }
+  });
+}
 
 // ---------- 是否允许其它设备访问这个 Web UI ----------
 // 这个开关只是把意图写进一个标志位；进程实际监听的地址是启动时就定死的，标志位改了

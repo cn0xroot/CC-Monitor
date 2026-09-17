@@ -101,13 +101,15 @@ const I18N = {
     "home.strip.pendingNone": "审批台没有等待处理的操作",
     "home.strip.pendingSome": "AI 审批台有操作等你确认 · 点击处理 ›",
     "home.strip.bypass": "条疑似绕过监测",
+    "home.strip.bypassNA": "不适用",
+    "home.strip.bypassNATip": "macOS 上的系统层探针用 nettop，只看得到网络连接、看不到命令执行，所以执行层交叉验证在本平台没有运行。这里不是“检查通过”，而是这项检查不可用。hook 层的审计记录和网络观测不受影响。",
     "home.strip.sessionQuota": "单次额度剩余",
     "home.strip.quotaReset": "{when}重置",
     "home.strip.quotaUnavailable": "额度信息不可用",
-    "home.strip.auditRunning": "审计运行中",
-    "home.strip.auditPaused": "审计已暂停",
-    "home.strip.auditStopped": "审计已停止",
-    "home.toolbar.audit": "审计",
+    "home.strip.auditRunning": "拦截中",
+    "home.strip.auditPaused": "观察模式：只记录不拦截",
+    "home.strip.auditStopped": "已关闭：不判定也不记录",
+    "home.toolbar.audit": "介入级别",
     "home.toolbar.data": "数据",
     "home.sec.account": "Anthropic 账号 & 额度",
     "home.sec.security": "安全",
@@ -237,14 +239,17 @@ const I18N = {
     "home.sourceBreakdown": "日志类型分布",
     "home.riskBreakdown": "风险等级分布",
     "home.decisionBreakdown": "处置结果分布",
-    "home.auditCtl.hint": "控制 hooks 这次要不要真的判定/拦截——暂停/停止期间 Claude Code 的操作仍会正常执行，只是 CC-Monitor 不再介入",
-    "home.auditCtl.start": "▶ 开始审计",
-    "home.auditCtl.pause": "⏸ 暂停审计",
-    "home.auditCtl.stop": "⏹ 停止审计",
-    "auditState.running": "运行中",
-    "auditState.paused": "已暂停",
-    "auditState.stopped": "已停止",
-    "topbar.auditState.title": "审计状态",
+    "home.auditCtl.hint": "控制 CC-Monitor 的介入级别。观察模式下判定和记录照常跑，只是不拦截、不弹确认框，适合先摸清楚 AI 在干什么；只有“关闭”才真的连记录都不留",
+    "home.auditCtl.start": "▶ 开启拦截",
+    "home.auditCtl.pause": "👁 转为观察模式",
+    "home.auditCtl.stop": "⏹ 完全关闭",
+    "home.auditCtl.levelNote.running": "拦截中：命中规则的高危操作会被直接拦下，中危的弹确认框问你，其余记录在案。",
+    "home.auditCtl.levelNote.paused": "观察模式：判定和记录照常跑，但从不拦截、不弹确认框。适合先摸清楚 AI 在干什么，事后再回看。",
+    "home.auditCtl.levelNote.stopped": "已关闭：不判定也不记录，等价于没装这个工具。只有这一档会真的停掉审计。",
+    "auditState.running": "拦截中",
+    "auditState.paused": "观察模式",
+    "auditState.stopped": "已关闭",
+    "topbar.auditState.title": "介入级别",
     "home.dataMgmt.hint": "当前展示的是实时事件数据；可以把它存档留存，或者清空重新开始统计",
     "home.dataMgmt.archive": "📦 持久化归档",
     "home.dataMgmt.clear": "🗑 清空当前数据",
@@ -348,8 +353,8 @@ const I18N = {
     "modal.syncUpdate.body": "会在项目源码目录里执行 git pull，从 GitHub 拉取最新代码和规则。如果本地有未提交的改动跟远程冲突，git 会如实报错、不会自动丢弃你的改动，但建议先自行确认工作区是干净的。",
     "modal.deleteArchive.title": "删除这份历史归档？",
     "modal.deleteArchive.body": "删除后无法恢复。",
-    "modal.stopAudit.title": "停止审计？",
-    "modal.stopAudit.body": "停止之后 Claude Code 的操作既不会被判定/拦截，也不会再被记录到审计日志——跟没装这个工具一样。真正想要的通常是“暂停”（继续记录，只是不拦截），确定要完全停止吗？",
+    "modal.stopAudit.title": "完全关闭 CC-Monitor？",
+    "modal.stopAudit.body": "关闭之后 Claude Code 的操作既不会被判定/拦截，也不会再被记录到审计日志——跟没装这个工具一样。如果只是不想被拦截打断，选“观察模式”即可，记录会照常保留。确定要完全关闭吗？",
     "modal.remoteAccess.title": "允许其它设备访问？",
     "modal.remoteAccess.body": "这个工具没有身份验证，能直接开终端 spawn shell。如果服务当前绑定的不是 127.0.0.1，打开这个开关之后，局域网/其它设备上的任何人都能连上这个工具、直接操作你的终端。确定要打开吗？",
 
@@ -696,13 +701,15 @@ const I18N = {
     "home.strip.pendingNone": "Nothing waiting on the approval desk",
     "home.strip.pendingSome": "Operations waiting for your confirmation · click to handle ›",
     "home.strip.bypass": "suspected bypass attempt(s)",
+    "home.strip.bypassNA": "n/a",
+    "home.strip.bypassNATip": "On macOS the system-layer probe uses nettop, which sees network connections but not command execution, so execution-layer cross-verification never runs here. This is not a clean bill of health, it means the check is unavailable. Hook-layer auditing and network observation are unaffected.",
     "home.strip.sessionQuota": "Session quota remaining",
     "home.strip.quotaReset": "resets {when}",
     "home.strip.quotaUnavailable": "Quota info unavailable",
-    "home.strip.auditRunning": "Audit running",
-    "home.strip.auditPaused": "Audit paused",
-    "home.strip.auditStopped": "Audit stopped",
-    "home.toolbar.audit": "Audit",
+    "home.strip.auditRunning": "Enforcing",
+    "home.strip.auditPaused": "Permissive: logging only, never blocks",
+    "home.strip.auditStopped": "Off: not evaluating or recording",
+    "home.toolbar.audit": "Intervention",
     "home.toolbar.data": "Data",
     "home.sec.account": "Anthropic account & quota",
     "home.sec.security": "Security",
@@ -832,14 +839,17 @@ const I18N = {
     "home.sourceBreakdown": "Event type breakdown",
     "home.riskBreakdown": "Risk level breakdown",
     "home.decisionBreakdown": "Decision breakdown",
-    "home.auditCtl.hint": "Controls whether hooks actually enforce/block right now — while paused or stopped, Claude Code's operations still run normally, CC-Monitor just stops intervening",
-    "home.auditCtl.start": "▶ Start audit",
-    "home.auditCtl.pause": "⏸ Pause audit",
-    "home.auditCtl.stop": "⏹ Stop audit",
-    "auditState.running": "Running",
-    "auditState.paused": "Paused",
-    "auditState.stopped": "Stopped",
-    "topbar.auditState.title": "Audit state",
+    "home.auditCtl.hint": "Controls how far CC-Monitor intervenes. Permissive keeps evaluating and logging everything, it just never blocks or prompts — good for learning what the agent actually does. Only Off stops recording too",
+    "home.auditCtl.start": "▶ Enforce",
+    "home.auditCtl.pause": "👁 Permissive",
+    "home.auditCtl.stop": "⏹ Turn off",
+    "home.auditCtl.levelNote.running": "Enforcing: high-risk matches are blocked outright, medium-risk ones prompt for confirmation, the rest are logged.",
+    "home.auditCtl.levelNote.paused": "Permissive: everything is still evaluated and logged, but nothing is ever blocked and no prompt appears. Good for learning what the agent actually does.",
+    "home.auditCtl.levelNote.stopped": "Off: nothing is evaluated or recorded, same as not having the tool installed. This is the only level that actually stops auditing.",
+    "auditState.running": "Enforcing",
+    "auditState.paused": "Permissive",
+    "auditState.stopped": "Off",
+    "topbar.auditState.title": "Intervention level",
     "home.dataMgmt.hint": "You're viewing live event data; archive it to keep a copy, or clear it to start counting from zero",
     "home.dataMgmt.archive": "📦 Archive current data",
     "home.dataMgmt.clear": "🗑 Clear current data",
@@ -943,8 +953,8 @@ const I18N = {
     "modal.syncUpdate.body": "Runs git pull in the project's source directory to fetch the latest code and rules from GitHub. If a local uncommitted change conflicts with upstream, git will report it honestly and won't discard your change automatically — but it's best to confirm your working tree is clean first.",
     "modal.deleteArchive.title": "Delete this archive?",
     "modal.deleteArchive.body": "This cannot be undone.",
-    "modal.stopAudit.title": "Stop audit?",
-    "modal.stopAudit.body": "Once stopped, Claude Code's operations won't be evaluated/blocked, and won't be logged either — same as if this tool wasn't installed. What you usually want is “Pause” (keeps logging, just stops blocking) — are you sure you want to fully stop it?",
+    "modal.stopAudit.title": "Turn CC-Monitor off?",
+    "modal.stopAudit.body": "Once off, Claude Code's operations won't be evaluated or blocked, and won't be logged either — same as if this tool wasn't installed. If you only want to stop being interrupted, pick Permissive instead and the audit trail keeps filling. Turn it fully off?",
     "modal.remoteAccess.title": "Allow access from other devices?",
     "modal.remoteAccess.body": "This tool has no authentication and can spawn a shell directly. If the service is currently bound to something other than 127.0.0.1, turning this on lets anyone on your LAN (or elsewhere, depending on your network) connect and operate your terminal directly. Are you sure?",
 
@@ -1214,7 +1224,8 @@ function setLang(lang) {
   applyStaticI18n();
 }
 
-// 处理静态 HTML 里带 data-i18n / data-i18n-html / data-i18n-placeholder / data-i18n-title 的元素。
+// 处理静态 HTML 里带 data-i18n / data-i18n-html / data-i18n-placeholder / data-i18n-title /
+// data-i18n-aria-label / data-i18n-tip 的元素。
 // data-i18n 用 textContent（安全，字典里的普通文案都走这个）；
 // data-i18n-html 用 innerHTML（只用于字典里明确需要行内标签的几条，比如 modal hint 里的 <code>）。
 function applyStaticI18n() {
@@ -1230,6 +1241,11 @@ function applyStaticI18n() {
   });
   document.querySelectorAll("[data-i18n-title]").forEach((el) => {
     el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
+  });
+  // 纯给读屏器的标签（比如介入级别那个 radiogroup），页面上不显示文字，所以不能用
+  // data-i18n（那个会写 textContent），得单独设 aria-label。
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
   });
   // 首页 ⓘ 说明气泡：文案放进 data-tip，CSS 用 attr(data-tip) 画出来（见 style.css 的 .info-tip）
   document.querySelectorAll("[data-i18n-tip]").forEach((el) => {

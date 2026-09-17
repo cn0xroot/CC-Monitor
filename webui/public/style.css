@@ -1,5 +1,20 @@
 /* 多主题：都用同一套变量名，只是取值不同，其它 CSS 完全不用改。
    通过 <html data-theme="..."> 切换，JS 里存 localStorage，见 app.js 的 applyTheme()。 */
+
+/* ---------- 介入级别的三档专用色 ----------
+   刻意不复用 --green/--yellow/--red：那三个是"好/注意/坏"的语义色，会随主题变，而档位
+   要的是三个互相区分得开的身份色，跟好坏无关（观察模式不是"警告"，关闭也不是"错误"）。
+   所以固定取值、不随主题走，三个主题下看到的档位颜色都一样。
+   每个档位配一个 on-* 前景色，都是拿背景色算过对比度挑的，最低 5.38:1，全部达到
+   WCAG AA 对正文字号的 4.5:1 要求——填色块上的文字不能只挑好看的。 */
+:root {
+  --lv-enforce: #9333ea;      /* 拦截：紫 */
+  --lv-enforce-on: #ffffff;   /* 5.38:1 */
+  --lv-observe: #22c55e;      /* 观察模式：绿 */
+  --lv-observe-on: #052e16;   /* 6.54:1 */
+  --lv-off: #facc15;          /* 已关闭：黄 */
+  --lv-off-on: #422006;       /* 9.52:1 */
+}
 :root,
 :root[data-theme="dark"] {
   --bg: #0f1115;
@@ -308,9 +323,12 @@ html, body {
 .pill.cpu { color: var(--yellow); border-color: var(--yellow); }
 
 /* ---------- 顶栏审计状态指示灯 ---------- */
-.audit-state-running { color: var(--green); border-color: var(--green); }
-.audit-state-paused { color: var(--yellow); border-color: var(--yellow); }
-.audit-state-stopped { color: var(--red); border-color: var(--red); font-weight: 700; }
+.audit-state-running,
+.audit-state-paused,
+.audit-state-stopped { font-weight: 700; }
+.audit-state-running { background: var(--lv-enforce); color: var(--lv-enforce-on); border-color: var(--lv-enforce); }
+.audit-state-paused  { background: var(--lv-observe); color: var(--lv-observe-on); border-color: var(--lv-observe); }
+.audit-state-stopped { background: var(--lv-off);     color: var(--lv-off-on);     border-color: var(--lv-off); }
 
 .pill-select {
   font-size: 0.8571rem;
@@ -352,9 +370,56 @@ html, body {
 }
 .data-mgmt-bar .hint { color: var(--text-dim); font-size: 0.8571rem; flex: 1 1 240px; }
 .data-mgmt-bar button { flex: 0 0 auto; width: auto; margin-bottom: 0; }
-.audit-btn-start.active { background: var(--green); color: #06281a; border-color: var(--green); font-weight: 700; }
-.audit-btn-pause.active { background: var(--yellow); color: #4a3900; border-color: var(--yellow); font-weight: 700; }
-.audit-btn-stop.active { background: var(--red); color: #fff; border-color: var(--red); font-weight: 700; }
+/* ---------- 介入级别：三档分段控件 ----------
+   三个互斥档位并排，选中那段填色。配色沿用原来三个按钮各自的绿/黄/红——那套色本来就
+   是按档位分的，只是以前挂在一个标签会变的按钮上，现在还给档位本身。
+   未选中的段保持低对比，避免三段都在抢注意力；只有当前档是彩色的。 */
+.seg-ctl {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.seg-ctl .seg-opt {
+  width: auto;
+  margin: 0;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8571rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg-ctl .seg-opt:hover { color: var(--text); background: var(--bg-panel); }
+.seg-ctl .seg-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 小圆点：未选中时是空心的轮廓，选中后填成该档的颜色。即使在只看得见明暗的显示环境下，
+   实心/空心也能把当前档区分出来，不是只靠颜色传达状态。 */
+.seg-ctl .seg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.seg-ctl .seg-opt[aria-checked="true"] { font-weight: 700; }
+.seg-ctl .seg-opt[aria-checked="true"] .seg-dot { background: currentColor; }
+.seg-ctl .lv-running[aria-checked="true"] { background: var(--lv-enforce); color: var(--lv-enforce-on); border-color: var(--lv-enforce); }
+.seg-ctl .lv-paused[aria-checked="true"]  { background: var(--lv-observe); color: var(--lv-observe-on); border-color: var(--lv-observe); }
+.seg-ctl .lv-stopped[aria-checked="true"] { background: var(--lv-off);     color: var(--lv-off-on);     border-color: var(--lv-off); }
+
+/* 当前档位的一行说明，紧跟控件下方——"观察模式和已关闭有什么区别"是这组选项最容易
+   混淆的点，答案就放在控件旁边，不要求用户先去悬停 ⓘ 或者点开确认框才看得到。 */
+#audit-level-note { color: var(--text-dim); }
 /* 允许远程访问打开的时候要显眼——这个开关关系到有没有人能不经身份验证直接连上
    这台机器的 shell，不能跟旁边其它普通开关一个存在感。 */
 #remote-access-row.active { color: var(--red); font-weight: 700; }
@@ -376,9 +441,9 @@ html, body {
 .strip-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: var(--text-dim); }
 /* 心跳徽章在摘要卡里不悬浮在右上角（会压住标题），改成行尾的一个普通 flex 项 */
 .strip-card .card-vital-badge { position: static; margin-left: auto; flex: 0 0 auto; align-self: flex-start; }
-.strip-dot.running { background: var(--green); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--green); }
-.strip-dot.paused { background: var(--yellow); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--yellow); }
-.strip-dot.stopped { background: var(--red); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--red); }
+.strip-dot.running { background: var(--lv-enforce); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--lv-enforce); }
+.strip-dot.paused  { background: var(--lv-observe); box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--lv-observe); }
+.strip-dot.stopped { background: var(--lv-off);     box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--lv-off); }
 .strip-users { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 0.7857rem; color: var(--text-dim); margin-top: 2px; }
 .strip-users .bar-row { font-size: inherit; gap: 4px; }
 .strip-users .bar-row .name { flex: 0 0 auto; }

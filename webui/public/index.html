@@ -50,7 +50,7 @@
     </select>
     <button id="settings-btn" class="pill" type="button" data-i18n-title="settings.btnTitle" title="外观设置：主题/字体/字号">⚙</button>
     <button id="lang-toggle-btn" class="pill" title="切换语言 / Switch language">EN</button>
-    <div id="audit-state-pill" class="pill audit-state-running" data-i18n-title="topbar.auditState.title" title="审计状态">● <span id="audit-state-text">运行中</span></div>
+    <div id="audit-state-pill" class="pill audit-state-running" data-i18n-title="topbar.auditState.title" title="介入级别">● <span id="audit-state-text">拦截中</span></div>
     <div id="gpu-status" class="pill" data-i18n-title="" title="终端渲染方式">检测渲染方式中…</div>
     <div class="home-credit">Build with ❤️❤️❤️ By 0xroot</div>
   </header>
@@ -105,9 +105,17 @@
       <!-- 工具栏：原来四条各带一段说明文字的控制条收成一行，说明进 ⓘ（悬停展开）。
            按钮/开关的 id 一个没动，app.js 那边的绑定原样生效。 -->
       <div class="home-toolbar">
-        <span class="sec-title" data-i18n="home.toolbar.audit">审计</span>
-        <button id="audit-toggle-btn" class="btn-secondary audit-btn-pause">⏸ 暂停审计</button>
-        <button id="audit-stop-btn" class="btn-secondary audit-btn-stop" data-i18n="home.auditCtl.stop">⏹ 停止审计</button>
+        <span class="sec-title" data-i18n="home.toolbar.audit">介入级别</span>
+        <!-- 三档互斥，用分段控件而不是按钮：三个选项同时可见，当前档就是高亮那段，
+             控件本身即状态显示。从左到右是介入强度递减，这三档本来就是有序的。
+             旧版是"切换按钮 + 单独的停止按钮"，标签写的是动作不是状态，任何时刻只看得到
+             一个选项；而且从"已关闭"出发时切换按钮指向"拦截中"，导致关闭态没法一步切到
+             观察模式，必须先开回拦截再切一次——中间那一下是真的在拦截的。 -->
+        <div id="audit-level-seg" class="seg-ctl" role="radiogroup" data-i18n-aria-label="home.toolbar.audit" aria-label="介入级别">
+          <button type="button" class="seg-opt lv-running" data-level="running" role="radio" aria-checked="true"><span class="seg-dot"></span><span data-i18n="auditState.running">拦截中</span></button>
+          <button type="button" class="seg-opt lv-paused" data-level="paused" role="radio" aria-checked="false"><span class="seg-dot"></span><span data-i18n="auditState.paused">观察模式</span></button>
+          <button type="button" class="seg-opt lv-stopped" data-level="stopped" role="radio" aria-checked="false"><span class="seg-dot"></span><span data-i18n="auditState.stopped">已关闭</span></button>
+        </div>
         <span class="info-tip" data-i18n-tip="home.auditCtl.hint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
         <span class="tb-divider"></span>
         <span class="sec-title" data-i18n="home.toolbar.data">数据</span>
@@ -125,6 +133,7 @@
         </label>
         <span class="info-tip tip-left" data-i18n-tip="home.remoteAccess.hint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
       </div>
+      <div id="audit-level-note" class="hint home-toolbar-note"></div>
       <div id="remote-access-note" class="hint home-toolbar-note"></div>
 
       <!-- 账号 & 额度：左边账号信息，右边三块额度 + 限额明细，一行放完 -->
