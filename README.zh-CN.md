@@ -44,8 +44,8 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 在记录的 `native_tool` 里。每家 agent 的进程特征、hook 协议、工具映射、会话目录都在
 `cc_monitor/agents/<id>.json`，用户可在 `~/.cc-monitor/agents/` 放同名文件覆盖。Web UI 顶栏
 多一个 agent 过滤器，首页多一张"被监测的 AI agent"卡，审计日志/会话/审批卡带 agent 徽标——
-只装了 Claude Code 时这些全部隐藏，界面跟以前一样。设计与取舍见
-[DESIGN-multi-agent.md](./DESIGN-multi-agent.md)。
+只装了 Claude Code 时这些全部隐藏，界面跟以前一样。使用指南、各家适配细节、如何新增 agent 见
+[MULTI-AGENT.md](./MULTI-AGENT.md)；设计与取舍见 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md)。
 
 > 各家 hook 协议以官方文档为准实现，实施时本机只有 Claude Code 可实测；Codex 的
 > `[features] hooks` 开关默认值、Gemini `{"decision":"allow"}` 是否跳过其原生确认、Cursor CLI

@@ -71,8 +71,9 @@ name is kept in the record's `native_tool`. Each agent's process signature, hook
 mapping and session directory live in `cc_monitor/agents/<id>.json`; drop a same-named file in
 `~/.cc-monitor/agents/` to override. The Web UI gains an agent filter in the top bar, a
 "Monitored AI agents" card on the home page and agent badges on log / session / approval rows —
-all hidden when only Claude Code is present, so the UI looks exactly as before. Design and
-trade-offs: [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) (Chinese).
+all hidden when only Claude Code is present, so the UI looks exactly as before. Usage guide, per-agent
+details and how to add an agent: [MULTI-AGENT.md](./MULTI-AGENT.md); design and trade-offs:
+[DESIGN-multi-agent.md](./DESIGN-multi-agent.md) (both Chinese).
 
 > Each hook protocol is implemented from its official documentation; only Claude Code could be
 > tested on the development machine. Still to verify on a machine with the agent installed: the
