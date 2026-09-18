@@ -139,7 +139,7 @@ bin/CC-Monitor stats                  # 总量 / 按风险 / 按决策 / 按 age
 bin/CC-Monitor tail [-v]              # 实时事件流（各家混在一起，按时间）
 bin/CC-Monitor verify                 # 疑似绕过监测的记录，每条带 agent=
 bin/CC-Monitor workdir                # 跨工作目录操作
-bin/CC-Monitor tap                    # 仍只解析 Claude Code 的会话文件（其它家是未做项）
+bin/CC-Monitor tap                    # 会话文件解析认 Claude Code / Antigravity CLI / Codex 三种 JSONL（按行形状自动识别）
 bin/CC-Monitor rules                  # 当前生效规则（@registry: 占位符已展开成真正的正则）
 ```
 
@@ -457,6 +457,10 @@ hook 进程是 agent 派生的，`hook.record_session()` 从 `os.getppid()` 沿 
 `storage.session_for_root()`（10 秒缓存）得到 `session_id`；Web UI 判断会话生死改成"根 pid（+启动
 时刻）还在不在"，比按 cwd 猜准。macOS 没有 `/proc`，父链用一次 `ps -axo` 快照走，没有启动时刻。
 
+`sessions.evidence` 记 `root_pid` 的来源：`hook_parent`（hook 父链，精确）> `run`（显式登记）>
+`cwd_recent`（探针启动时按同 agent、同 cwd、6 小时内活跃且还没根 pid 的最新会话反推）。
+`touch_session` 的覆盖规则：强证据可以覆盖弱证据，反之不行。
+
 `events` 表加了索引（`session_id,id` / `agent,id` / `source,tool_name,id` / `matched_rule`），
 `pending_approvals(status,id)` 也加了——以前一个索引都没有，几万条之后每次轮询都是全表扫。新增两种 `source`：`os_file`（`detail`：`op`
 write/unlink/rename/mkdir/storm、`path`、`path2`、`flags`、`by_agent_process`、`agent_state`、
@@ -700,10 +704,13 @@ cd webui && npm test                # 30 个用例
 - **Phase B 后半（已完成）**：文件级探点、监听端口、`CC-Monitor run --` 显式绑定、系统层事件的
   会话归属（`sessions` 表）都已实现。剩余：文件事件的 Web UI 专属卡片/下钻（现在只在 Log 审计和
   事件类型分布里）——已补：首页"系统层文件 / 端口观测"卡 + 下钻。
-- **Phase C**：其它 agent 的会话文件解析（Codex `rollout-*.jsonl`、Gemini `chats/session-*.json`、
-  Cursor `agent-transcripts`），Tap 页目前仍只解析 Claude Code；`processes` 表；会话↔进程匹配目前
-  只有 hook 父链这一种证据（最准的一种），探针启动前就结束了 hook 活动的老会话没有 `root_pid`，
-  退回按 cwd 猜；`staleSessions.js` 仍只扫 `~/.claude/projects`。
+- **Phase C（部分完成）**：Tap 的会话文件解析已认三种 JSONL——Claude Code、Antigravity CLI（真机
+  格式：`{step_index, source, type, content, thinking, tool_calls}`）、Codex `rollout-*.jsonl`（按公开
+  资料，未验证）——Python 和 JS 两份 `describe_entry` 同步维护；Tap 页助手消息按 agent 显示名而不是
+  一律"Claude"；`staleSessions.js` 按注册表 `sessions.glob` 扫所有 agent 的会话文件。会话↔进程匹配
+  有两级证据：hook 父链（`hook_parent`，精确）和探针启动时按 agent+cwd+最近活跃 反推（`cwd_recent`，
+  可能错，hook 一来就被覆盖）。未做：Gemini `chats/session-*.json`（整块 JSON 不是 JSONL）、Cursor
+  `agent-transcripts`、OpenCode/Grok 的 SQLite 会话库；`processes` 表。
 - **Phase D**：TLS 元数据可选层、OpenTelemetry 导出、`docker://` 绑定、探针后端换 BCC/libbpf
   消除重启窗口。
 - **小项**：`install.py --uninstall`；首页统计卡随 agent 过滤器变化；额度卡对非 Claude agent

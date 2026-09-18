@@ -964,9 +964,13 @@ function renderTapEntry(entry) {
   const sessionTag = entry.sessionId
     ? `<span class="tap-session-tag">📁 ${escapeHtml(folderName(entry.cwd))}${entry.model ? " · " + escapeHtml(modelShort(entry.model)) : ""} · ${escapeHtml(entry.sessionId.slice(0, 8))}…</span>`
     : "";
+  // "Claude" 这个角色名只对 Claude Code 成立；其它 agent 的助手消息用它的显示名
+  const roleLabel = entry.kind === "assistant" && entry.agent && entry.agent !== "claude-code"
+    ? agentDisplay(entry.agent)
+    : t("tap.kind." + entry.kind);
   el.innerHTML = `
     <div class="tap-header">
-      <span class="tap-role tap-role-${entry.kind}">${escapeHtml(t("tap.kind." + entry.kind))}</span>
+      <span class="tap-role tap-role-${entry.kind}">${escapeHtml(roleLabel)}</span>${entry.agent && multiAgent ? " " + agentBadge(entry.agent) : ""}
       <span class="tap-ts">${ts}</span>
       ${sessionTag}
       ${entry.usageHtml || ""}

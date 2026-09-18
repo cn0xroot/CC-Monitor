@@ -16,7 +16,106 @@ function normalizeContent(content) {
   return [];
 }
 
+// ---- 多格式：跟 cc_monitor/transcript.py 的 describe_entry 一一对应，改一边要同步另一边 ----
+const USER_REQUEST_RE = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/;
+
+function unquoteArg(v) {
+  // Antigravity 把工具入参每个值都再 JSON 编码了一层（"\"/home/x\""），拆掉那一层
+  if (typeof v === "string" && v.length >= 2 && v[0] === '"' && v[v.length - 1] === '"') {
+    try {
+      return JSON.parse(v);
+    } catch (e) {
+      return v;
+    }
+  }
+  return v;
+}
+
+function describeAntigravity(obj) {
+  const ts = obj.created_at;
+  const uuid = `step-${obj.step_index}`;
+  if (obj.type === "USER_INPUT") {
+    const content = obj.content || "";
+    const m = USER_REQUEST_RE.exec(content);
+    return { kind: "user", ts, uuid, blocks: [{ type: "text", text: m ? m[1] : content }], usage: null, model: null };
+  }
+  if (obj.type === "PLANNER_RESPONSE") {
+    const blocks = [];
+    if (obj.thinking) blocks.push({ type: "thinking", thinking: obj.thinking });
+    if (obj.content) blocks.push({ type: "text", text: obj.content });
+    for (const tc of obj.tool_calls || []) {
+      if (!tc || typeof tc !== "object") continue;
+      const args = tc.args && typeof tc.args === "object" ? Object.fromEntries(Object.entries(tc.args).map(([k, v]) => [k, unquoteArg(v)])) : tc.args || {};
+      blocks.push({ type: "tool_use", name: tc.name || "", input: args });
+    }
+    return { kind: "assistant", ts, uuid, blocks, usage: null, model: obj.model || null };
+  }
+  if (obj.type === "GENERIC" && obj.source === "MODEL") {
+    return { kind: "user", ts, uuid, blocks: [{ type: "tool_result", content: obj.content || "" }], usage: null, model: null };
+  }
+  return null;
+}
+
+function describeCodex(obj) {
+  const ts = obj.timestamp;
+  const payload = obj.payload || {};
+  const ptype = payload.type;
+  const uuid = payload.id || payload.call_id;
+  if (obj.type === "response_item") {
+    if (ptype === "message") {
+      const texts = [];
+      for (const c of payload.content || []) {
+        if (c && typeof c === "object" && typeof c.text === "string") texts.push(c.text);
+        else if (typeof c === "string") texts.push(c);
+      }
+      return { kind: payload.role === "assistant" ? "assistant" : "user", ts, uuid, blocks: [{ type: "text", text: texts.join("\n") }], usage: null, model: null };
+    }
+    if (ptype === "reasoning") {
+      const text = (payload.summary || []).map((x) => (x && x.text) || "").join("\n");
+      return { kind: "assistant", ts, uuid, blocks: [{ type: "thinking", thinking: text }], usage: null, model: null };
+    }
+    if (ptype === "function_call" || ptype === "custom_tool_call") {
+      let args = ptype === "function_call" ? payload.arguments : payload.input;
+      if (typeof args === "string") {
+        try {
+          args = JSON.parse(args);
+        } catch (e) {
+          args = { input: args };
+        }
+      }
+      return { kind: "assistant", ts, uuid, blocks: [{ type: "tool_use", name: payload.name || "", input: args || {} }], usage: null, model: null };
+    }
+    if (ptype === "function_call_output" || ptype === "custom_tool_call_output") {
+      return { kind: "user", ts, uuid, blocks: [{ type: "tool_result", content: payload.output || "" }], usage: null, model: null };
+    }
+    return null;
+  }
+  if (obj.type === "event_msg" && ptype === "token_count") {
+    const info = payload.info || {};
+    const last = info.last_token_usage || info.total_token_usage;
+    if (!last) return null;
+    return {
+      kind: "assistant", ts, uuid, blocks: [],
+      usage: { input_tokens: last.input_tokens || 0, output_tokens: last.output_tokens || 0, cache_read_input_tokens: last.cached_input_tokens || 0 },
+      model: null,
+    };
+  }
+  if (obj.type === "turn_context" && payload.model) {
+    return { kind: "system", ts, uuid, blocks: [], usage: null, model: payload.model };
+  }
+  return null;
+}
+
+function detectFormat(obj) {
+  if (obj && "step_index" in obj && "source" in obj) return "antigravity";
+  if (obj && "payload" in obj && ["response_item", "event_msg", "session_meta", "turn_context"].includes(obj.type)) return "codex";
+  return "claude";
+}
+
 function describeEntry(obj) {
+  const format = detectFormat(obj);
+  if (format === "antigravity") return describeAntigravity(obj);
+  if (format === "codex") return describeCodex(obj);
   const etype = obj.type;
   const ts = obj.timestamp;
   const uuid = obj.uuid;
@@ -289,6 +388,14 @@ function getModel(path) {
       if (obj.type === "assistant" && obj.message && obj.message.model) {
         model = obj.message.model;
         break;
+      }
+      // 其它格式：交给 describeEntry，带 model 的行就是
+      if (detectFormat(obj) !== "claude") {
+        const e = describeEntry(obj);
+        if (e && e.model) {
+          model = e.model;
+          break;
+        }
       }
     }
   } catch (e) {

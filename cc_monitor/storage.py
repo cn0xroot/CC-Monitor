@@ -132,9 +132,11 @@ def _connect():
         transcript_path TEXT,
         first_seen TEXT NOT NULL,
         last_seen TEXT NOT NULL,
+        evidence TEXT,
         PRIMARY KEY (agent, session_id)
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_root ON sessions(root_pid, last_seen);
+    CREATE INDEX IF NOT EXISTS idx_sessions_agent_cwd ON sessions(agent, cwd, last_seen);
     -- events 表以前一个索引都没有：按会话/agent/来源过滤、按时间排序全是全表扫，
     -- 几万条之后 Web UI 每次轮询都要几十毫秒起步。
     CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, id);
@@ -143,6 +145,13 @@ def _connect():
     CREATE INDEX IF NOT EXISTS idx_events_rule ON events(matched_rule);
     CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_approvals(status, id);
     """)
+    try:
+        # evidence：root_pid 是怎么来的——hook_parent（hook 进程沿父链找到的，精确）/ cwd_recent
+        # （探针启动时按 agent+cwd+最近活跃 反推的，可能错）/ run（CC-Monitor run 显式登记）。
+        # 这张表是 dev 分支新建的，早几天建的库还没这一列。
+        conn.execute("ALTER TABLE sessions ADD COLUMN evidence TEXT")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 
@@ -286,26 +295,61 @@ def fetch_last(limit=200):
         conn.close()
 
 
-def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, transcript_path=None):
-    """hook 每次调用顺手 UPSERT 一行：会话第一次出现就插入，之后只更新 last_seen 和拿到了的字段
-    （root_pid 第一次没找到、后来找到了也能补上）。"""
+def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, transcript_path=None, evidence="hook_parent"):
+    """hook 每次调用顺手 UPSERT 一行：会话第一次出现就插入，之后只更新 last_seen 和拿到了的字段。
+    root_pid 的覆盖规则：精确证据（hook_parent / run）可以覆盖猜的（cwd_recent），反过来不行。"""
     if not session_id:
         return
+    strong = evidence in ("hook_parent", "run")
     conn = _connect()
     try:
         now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         with conn:
             conn.execute(
-                "INSERT INTO sessions (agent, session_id, root_pid, root_start, cwd, transcript_path, first_seen, last_seen) "
-                "VALUES (?,?,?,?,?,?,?,?) "
+                "INSERT INTO sessions (agent, session_id, root_pid, root_start, cwd, transcript_path, first_seen, last_seen, evidence) "
+                "VALUES (?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(agent, session_id) DO UPDATE SET "
-                "root_pid = COALESCE(excluded.root_pid, sessions.root_pid), "
-                "root_start = COALESCE(excluded.root_start, sessions.root_start), "
+                "root_pid = CASE WHEN excluded.root_pid IS NULL THEN sessions.root_pid "
+                "                WHEN ? OR sessions.root_pid IS NULL OR sessions.evidence = 'cwd_recent' THEN excluded.root_pid "
+                "                ELSE sessions.root_pid END, "
+                "root_start = CASE WHEN excluded.root_pid IS NULL THEN sessions.root_start "
+                "                  WHEN ? OR sessions.root_pid IS NULL OR sessions.evidence = 'cwd_recent' THEN excluded.root_start "
+                "                  ELSE sessions.root_start END, "
+                "evidence = CASE WHEN excluded.root_pid IS NULL THEN sessions.evidence "
+                "                WHEN ? OR sessions.root_pid IS NULL OR sessions.evidence = 'cwd_recent' THEN excluded.evidence "
+                "                ELSE sessions.evidence END, "
                 "cwd = COALESCE(excluded.cwd, sessions.cwd), "
                 "transcript_path = COALESCE(excluded.transcript_path, sessions.transcript_path), "
-                "last_seen = excluded.last_seen",
-                (agent or DEFAULT_AGENT, session_id, root_pid, root_start, cwd or None, transcript_path or None, now, now),
+                "last_seen = MAX(excluded.last_seen, sessions.last_seen)",
+                (agent or DEFAULT_AGENT, session_id, root_pid, root_start, cwd or None, transcript_path or None, now, now,
+                 evidence if root_pid is not None else None, strong, strong, strong),
             )
+    finally:
+        conn.close()
+
+
+def backfill_session_root(agent, cwd, root_pid, root_start, max_age_sec=6 * 3600):
+    """探针启动时：这个 agent 根进程（cwd 已知）还没有任何会话指向它，就把同 agent、同 cwd、最近
+    max_age_sec 内活跃、且还没有根 pid 的最新会话猜成它的（evidence=cwd_recent）。之后 hook 一来
+    会用精确证据覆盖。返回猜中的 session_id 或 None。"""
+    if not cwd:
+        return None
+    conn = _connect()
+    try:
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(time.time() - max_age_sec))
+        row = conn.execute(
+            "SELECT session_id FROM sessions WHERE agent = ? AND cwd = ? AND last_seen >= ? "
+            "AND (root_pid IS NULL OR evidence = 'cwd_recent') "
+            "AND NOT EXISTS (SELECT 1 FROM sessions s2 WHERE s2.root_pid = ? AND s2.evidence != 'cwd_recent') "
+            "ORDER BY last_seen DESC LIMIT 1",
+            (agent or DEFAULT_AGENT, cwd, cutoff, int(root_pid)),
+        ).fetchone()
+        if not row:
+            return None
+        with conn:
+            conn.execute("UPDATE sessions SET root_pid = ?, root_start = ?, evidence = 'cwd_recent' WHERE agent = ? AND session_id = ?",
+                         (int(root_pid), root_start, agent or DEFAULT_AGENT, row[0]))
+        return row[0]
     finally:
         conn.close()
 
@@ -336,7 +380,7 @@ def list_sessions_with_roots(limit=500):
     conn = _connect()
     try:
         return conn.execute(
-            "SELECT agent, session_id, root_pid, root_start, cwd, last_seen FROM sessions ORDER BY last_seen DESC LIMIT ?",
+            "SELECT agent, session_id, root_pid, root_start, cwd, last_seen, evidence FROM sessions ORDER BY last_seen DESC LIMIT ?",
             (limit,)).fetchall()
     finally:
         conn.close()

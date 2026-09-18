@@ -47,6 +47,8 @@ function list() {
     launchCommand: spec.launch_command || null,
     envStripPrefixes: spec.env_strip_prefixes || [],
     exeBasenames: (spec.process && spec.process.exe_basename) || [],
+    sessionsGlob: (spec.sessions && spec.sessions.glob) || null,
+    sessionsFormat: (spec.sessions && spec.sessions.format) || null,
     argvPatterns: ((spec.process && spec.process.argv_patterns) || [])
       .map((p) => {
         try {
@@ -80,4 +82,59 @@ function classifyArgs(args) {
   return null;
 }
 
-module.exports = { list, get, classifyArgs };
+// 极简 glob 展开：支持路径段里的 `*`（整段通配或前后缀）和 `**`（任意层目录），返回存在的文件路径。
+// 只给会话文件发现用，深度和数量都有上限，别拿去扫大目录。
+function expandGlob(pattern, { maxDepth = 6, maxResults = 2000 } = {}) {
+  const expanded = pattern.replace(/^~(?=\/|$)/, os.homedir());
+  const segs = expanded.split("/").filter((x, i) => x !== "" || i === 0);
+  const out = [];
+  const walk = (base, idx) => {
+    if (out.length >= maxResults) return;
+    if (idx >= segs.length) {
+      try {
+        if (fs.statSync(base).isFile()) out.push(base);
+      } catch (e) {
+        // 不存在
+      }
+      return;
+    }
+    const seg = segs[idx];
+    if (seg === "**") {
+      walk(base, idx + 1);
+      const depthLeft = maxDepth;
+      const rec = (dir, depth) => {
+        if (depth > depthLeft) return;
+        let names = [];
+        try {
+          names = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (e) {
+          return;
+        }
+        for (const d of names) {
+          if (!d.isDirectory()) continue;
+          const sub = path.join(dir, d.name);
+          walk(sub, idx + 1);
+          rec(sub, depth + 1);
+        }
+      };
+      rec(base, 1);
+      return;
+    }
+    if (!seg.includes("*")) {
+      walk(idx === 0 ? seg || "/" : path.join(base, seg), idx + 1);
+      return;
+    }
+    const re = new RegExp("^" + seg.split("*").map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+    let names = [];
+    try {
+      names = fs.readdirSync(base);
+    } catch (e) {
+      return;
+    }
+    for (const n of names) if (re.test(n)) walk(path.join(base, n), idx + 1);
+  };
+  walk(segs[0] === "" ? "/" : segs[0], segs[0] === "" ? 1 : 1);
+  return out;
+}
+
+module.exports = { list, get, classifyArgs, expandGlob };

@@ -360,10 +360,12 @@ app.get("/api/transcript", (req, res) => {
     !sinceLineRaw || sinceLineRaw === "0"
       ? transcript.readTailEntries(transcriptPath, limit)
       : transcript.readEntries(transcriptPath, parseInt(sinceLineRaw, 10), limit);
+  const agent = (audit.sessionRoots().get(sessionId) || {}).agent || null;
   res.json({
-    entries: entries.map(transcript.renderEntryHtml),
+    entries: entries.map((e) => ({ ...transcript.renderEntryHtml(e), agent })),
     nextLine,
     transcriptPath,
+    agent,
     totalLines: transcript.countLines(transcriptPath),
   });
 });
@@ -376,7 +378,7 @@ app.get("/api/transcript/all", (req, res) => {
   const perSessionLimit = Math.min(parseInt(req.query.per_session_limit || "30", 10), 200);
   const overallLimit = Math.min(parseInt(req.query.limit || "200", 10), 1000);
 
-  const sessions = audit.listSessions().filter((r) => r.transcript_path);
+  const sessions = audit.listSessions(200, { agent: req.query.agent || null }).filter((r) => r.transcript_path);
   let merged = [];
   for (const s of sessions) {
     if (!fs.existsSync(s.transcript_path)) continue;
@@ -388,6 +390,7 @@ app.get("/api/transcript/all", (req, res) => {
         sessionId: s.session_id,
         cwd: s.cwd,
         model,
+        agent: s.agent || null,
       });
     }
   }

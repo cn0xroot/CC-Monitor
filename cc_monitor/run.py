@@ -101,7 +101,7 @@ def main(argv=None):
     register(os.getpid(), agent, session, argv, exe)
     try:
         from . import procscan
-        storage.touch_session(agent, session, root_pid=os.getpid(), root_start=procscan.proc_start(os.getpid()), cwd=os.getcwd())
+        storage.touch_session(agent, session, root_pid=os.getpid(), root_start=procscan.proc_start(os.getpid()), cwd=os.getcwd(), evidence="run")
     except Exception:
         pass
     env = dict(os.environ)

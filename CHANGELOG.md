@@ -54,6 +54,12 @@
   进去；探针按根 pid 反查，`os_exec` / `os_net` / `os_file` / `os_listen` 都带上 `session_id`，
   Web UI 按会话过滤能看到内核层观测，会话生死改按"根 pid（+启动时刻）在不在"判断而不是按 cwd 猜。
   `CC-Monitor run --` 登记的会话同样进这张表。
+- **Claude Tap 认多种会话格式**：`describe_entry`（Python 与 JS 两份同步）按行形状自动识别 Claude Code /
+  Antigravity CLI（真机 agy 1.2.6 的 `step_index/source/type` 格式，`<USER_REQUEST>` 剥壳、工具入参拆掉
+  多套的一层 JSON 引号）/ Codex `rollout-*.jsonl`（按公开资料）；Tap 页助手消息按 agent 显示名；
+  `/api/transcript` 带 `agent`；`staleSessions.js` 按注册表 `sessions.glob` 扫所有 agent 的会话文件。
+- **会话根进程反推**：探针启动时，已在跑的 agent 根进程若还没有会话指向它，按 agent+cwd+6 小时内活跃
+  反推一个（`sessions.evidence = cwd_recent`），hook 事件到来后用精确证据覆盖。
 - **首页"系统层文件 / 端口观测"卡**：探针的 `os_file` / `os_listen` 按写入/删除/重命名/建目录/监听（本机/对外）/
   疑似绕过分类，带下钻明细；修一家 agent 时"被监测的 AI agent"卡没隐藏（`.strip-card` 的 `display:flex`
   压过 `[hidden]`）。

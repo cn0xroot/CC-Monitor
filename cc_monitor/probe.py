@@ -627,10 +627,27 @@ def render_script(seed=None, template_text=None):
             .replace("__CC_SEED__", procscan.seed_block(seed or {})))
 
 
+def _backfill_sessions(seed):
+    """探针启动时已经在跑的 agent 根进程：它的会话可能早就有 hook 记录（sessions 表里有行）但
+    没有 root_pid（那时探针还没起来，hook 登记的是父链，其实一直有……除非是老库升级）。按
+    agent + cwd + 最近活跃 反推一个，标 evidence=cwd_recent，之后 hook 一来就会被精确证据覆盖。"""
+    for root, agent in sorted({(r, a) for (r, a) in seed.values()}):
+        try:
+            if storage.session_for_root(root, root_start=procscan.proc_start(root)):
+                continue
+            sid = storage.backfill_session_root(agent, _pid_cwd(root), root, procscan.proc_start(root))
+            if sid:
+                print(col.c("[CC-Monitor][probe] 会话反推: pid={} {} ← {}（按 cwd 猜的，hook 事件到来后会校正）".format(
+                    root, agent, sid[:12]), dim=True))
+        except Exception:
+            continue
+
+
 def _write_script(seed):
     for pid, (root, agent) in seed.items():
         ROOTS.set(root, agent)
         _pid_cwd(pid)  # 播种的进程还活着，现在就把 cwd 读进缓存
+    _backfill_sessions(seed)
     fd, path = tempfile.mkstemp(prefix="cc-monitor-probe-", suffix=".bt")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(render_script(seed))

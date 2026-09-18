@@ -65,6 +65,14 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `os_exec` / `os_net` / `os_file` / `os_listen` now carry `session_id`, the Web UI session filter
   shows kernel-observed events, and session liveness is decided by "is the root pid (+ start time)
   still alive" instead of guessing by cwd. Sessions started via `CC-Monitor run --` land in the same table.
+- **Claude Tap understands more transcript formats**: `describe_entry` (Python and JS kept in sync)
+  detects by line shape — Claude Code / Antigravity CLI (the real agy 1.2.6 `step_index/source/type`
+  format, `<USER_REQUEST>` unwrapped, the extra JSON-quoting layer on tool args removed) / Codex
+  `rollout-*.jsonl` (from public docs); the Tap page labels assistant turns with the agent name;
+  `/api/transcript` carries `agent`; `staleSessions.js` scans every agent's `sessions.glob`.
+- **Session root backfill**: at probe start, a running agent root with no session pointing at it is
+  matched to the most recent session with the same agent + cwd active in the last 6 h
+  (`sessions.evidence = cwd_recent`), overridden by exact evidence once a hook fires.
 - **Home card "Kernel-level file / port observation"**: the probe's `os_file` / `os_listen` events
   grouped as write / delete / rename / mkdir / listen (local / exposed) / suspected bypass, with a
   drilldown; fixed the "Monitored AI agents" card not hiding with a single agent (`.strip-card`'s
