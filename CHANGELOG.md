@@ -54,6 +54,9 @@
   进去；探针按根 pid 反查，`os_exec` / `os_net` / `os_file` / `os_listen` 都带上 `session_id`，
   Web UI 按会话过滤能看到内核层观测，会话生死改按"根 pid（+启动时刻）在不在"判断而不是按 cwd 猜。
   `CC-Monitor run --` 登记的会话同样进这张表。
+- **首页"系统层文件 / 端口观测"卡**：探针的 `os_file` / `os_listen` 按写入/删除/重命名/建目录/监听（本机/对外）/
+  疑似绕过分类，带下钻明细；修一家 agent 时"被监测的 AI agent"卡没隐藏（`.strip-card` 的 `display:flex`
+  压过 `[hidden]`）。
 - **探针噪音与索引**：agent 自己的基础设施命令（hook 调用本身、状态栏的 `ps`/`stty`/`jj root`/
   `git rev-parse`）整条不落库，真机库里 68% 的 `os_exec` 是这些；`events` / `pending_approvals`
   加索引（以前一个都没有）。

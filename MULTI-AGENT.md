@@ -165,6 +165,9 @@ sqlite3 ~/.cc-monitor/events.db "select ts, tool_name, native_tool, decision, ma
 - **终端会话 → 新建会话**：弹窗里多一个"启动哪个 agent"下拉（只列本机装了的；只有一家时隐藏），
   选 Codex 就在 PTY 里自动敲 `codex`，并按注册表剥掉 `CODEX_*` 之类会让它误以为自己是子会话的环境变量。
 - **"AI agent 进程"卡**（原"claude 进程"）：进程扫描认所有注册 agent，下钻表每行带徽标。
+- **"系统层文件 / 端口观测"卡**（安全区）：探针看到的文件写入 / 删除 / 重命名 / 建目录 / 监听端口
+  总数，副标题点名"N 条 agent 直写文件无 hook 记录"和"N 个对外监听端口"；点开按类别小计 +
+  逐条明细（带 agent 徽标、hook 交叉验证结果）。只有探针在跑时才有数据。
 
 ### 2.7 系统层探针
 
@@ -696,7 +699,7 @@ cd webui && npm test                # 30 个用例
 
 - **Phase B 后半（已完成）**：文件级探点、监听端口、`CC-Monitor run --` 显式绑定、系统层事件的
   会话归属（`sessions` 表）都已实现。剩余：文件事件的 Web UI 专属卡片/下钻（现在只在 Log 审计和
-  事件类型分布里）。
+  事件类型分布里）——已补：首页"系统层文件 / 端口观测"卡 + 下钻。
 - **Phase C**：其它 agent 的会话文件解析（Codex `rollout-*.jsonl`、Gemini `chats/session-*.json`、
   Cursor `agent-transcripts`），Tap 页目前仍只解析 Claude Code；`processes` 表；会话↔进程匹配目前
   只有 hook 父链这一种证据（最准的一种），探针启动前就结束了 hook 活动的老会话没有 `root_pid`，

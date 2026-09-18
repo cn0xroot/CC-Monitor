@@ -65,6 +65,10 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `os_exec` / `os_net` / `os_file` / `os_listen` now carry `session_id`, the Web UI session filter
   shows kernel-observed events, and session liveness is decided by "is the root pid (+ start time)
   still alive" instead of guessing by cwd. Sessions started via `CC-Monitor run --` land in the same table.
+- **Home card "Kernel-level file / port observation"**: the probe's `os_file` / `os_listen` events
+  grouped as write / delete / rename / mkdir / listen (local / exposed) / suspected bypass, with a
+  drilldown; fixed the "Monitored AI agents" card not hiding with a single agent (`.strip-card`'s
+  `display:flex` beat `[hidden]`).
 - **Probe noise and indexes**: the agent's own infrastructure commands (the hook invocation itself,
   the status line's `ps`/`stty`/`jj root`/`git rev-parse`) are no longer logged at all — 68 % of
   `os_exec` rows in a real database were these; `events` / `pending_approvals` gain indexes (there
