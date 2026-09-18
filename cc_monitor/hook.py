@@ -260,7 +260,13 @@ def handle_lifecycle(ev, adapter):
     sys.exit(0)
 
 
+def handle_noop(ev, adapter):
+    """适配器说这个事件不值得记（比如 Antigravity 每一步都触发的 PreInvocation）。"""
+    sys.exit(0)
+
+
 HANDLERS = {
+    "noop": handle_noop,
     "pre": handle_pre, "post": handle_post, "permission": handle_permission, "prompt": handle_prompt,
     "session_start": handle_lifecycle, "session_end": handle_lifecycle, "precompact": handle_lifecycle,
     "stop": handle_lifecycle, "subagent_stop": handle_lifecycle,

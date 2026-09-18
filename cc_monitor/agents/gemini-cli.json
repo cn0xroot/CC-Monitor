@@ -1,6 +1,7 @@
 {
   "id": "gemini-cli",
   "display": "Gemini CLI",
+  "status": "experimental",
   "process": {
     "comm": [
       "gemini"

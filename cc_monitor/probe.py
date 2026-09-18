@@ -14,6 +14,7 @@ hooks 是"自证清白"，这里是不依赖 agent 配合的独立观察，因�
 用法: sudo python3 -m cc_monitor.probe   (或 sudo bin/CC-Monitor-probe)
       python3 -m cc_monitor.probe --print-script   # 只打印渲染后的 bpftrace 脚本（不需要 root）
 """
+import fnmatch
 import json
 import os
 import re
@@ -356,12 +357,19 @@ def _ignored_roots_cached(cache={}):
     return cache["roots"]
 
 
+def _under_root(path, root):
+    """root 以 * 结尾是前缀匹配（~/.claude.json* 盖住 .claude.json、.claude.json.tmp.<pid>.<hash>、
+    .claude.json.backup……），否则是目录/文件精确匹配。"""
+    if root.endswith("*"):
+        return path.startswith(root[:-1])
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
 def _is_agent_state_path(path, agent):
     """agent 进程自己写自己的状态目录（~/.claude/…、~/.codex/…）——正常维护，不是绕过 hook。"""
     for home in ("/root",) + tuple(os.path.join(p, n) for p in ("/home", "/Users") if os.path.isdir(p) for n in os.listdir(p)):
         for rel in registry.state_dirs(agent) or registry.state_dirs():
-            full = os.path.join(home, rel)
-            if path == full or path.startswith(full + "/"):
+            if _under_root(path, os.path.join(home, rel)):
                 return True
     return False
 
@@ -370,7 +378,10 @@ def _file_ignored(path):
     if not path:
         return True
     for root in _ignored_roots_cached():
-        if path == root or path.startswith(root.rstrip("/") + "/"):
+        if _under_root(path, root):
+            return True
+    for g in registry.file_ignore_globs():
+        if fnmatch.fnmatch(path, g):
             return True
     parts = path.split("/")
     if any(seg in FILE_IGNORE_SEGMENTS for seg in parts[:-1]):

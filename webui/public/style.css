@@ -1516,6 +1516,9 @@ html, body {
 .agent-badge.agent-opencode { background: #0e9aa7; }
 .agent-badge.agent-aider { background: #b5179e; }
 .agent-badge.agent-zcode { background: #2f4bd8; }
+.agent-badge.agent-antigravity-cli { background: #d81b60; }
+.agent-badge.agent-grok-cli { background: #333333; }
+.agent-badge sup { font-size: 0.6em; margin-left: 2px; opacity: .85; }
 /* 整行一张卡：每家 agent 一个"徽标 + 计数"块横排，装得下就一行，装不下换行 */
 #strip-agents { grid-column: 1 / -1; }
 #strip-agents .strip-users { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 6px; }

@@ -1,6 +1,7 @@
 {
   "id": "cursor",
   "display": "Cursor",
+  "status": "experimental",
   "process": {
     "comm": [
       "cursor-agent"

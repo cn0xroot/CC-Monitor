@@ -1,0 +1,36 @@
+{
+  "id": "grok-cli",
+  "display": "Grok CLI",
+  "status": "experimental",
+  "process": {
+    "comm": ["grok"],
+    "comm_prefix": [],
+    "exe_basename": ["grok"],
+    "argv_patterns": ["(^|/)grok( |$)", "grok-dev", "grok-cli/dist"],
+    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
+    "infra_noise": ["CC-Monitor-hook", "^git (rev-parse|status|diff|log|ls-files)"]
+  },
+  "hooks": {
+    "protocol": "grok",
+    "config": {"kind": "grok-user-settings", "user_path": "~/.grok/user-settings.json", "project_path": ".grok/settings.json"},
+    "events": {
+      "PreToolUse": "pre", "PostToolUse": "post", "PostToolUseFailure": "post", "UserPromptSubmit": "prompt",
+      "SessionStart": "session_start", "SessionEnd": "session_end", "PreCompact": "precompact",
+      "Stop": "stop", "SubagentStop": "subagent_stop"
+    }
+  },
+  "tools": {
+    "bash": "Bash", "read_file": "Read", "write_file": "Write", "edit_file": "Edit", "grep": "Grep",
+    "search_web": "WebSearch", "search_x": "WebSearch", "task": "Task", "delegate": "Task", "lsp": "Read",
+    "telegram_send_file": "Read", "process_logs": "BashOutput", "process_stop": "KillShell"
+  },
+  "field_aliases": {"path": "file_path", "filePath": "file_path"},
+  "sessions": {"glob": "~/.grok/grok.db", "format": "grok_sqlite"},
+  "home_ignore": [".grok"],
+  "state_dirs": [".grok", ".agents"],
+  "project_markers": [".grok", "AGENTS.md"],
+  "config_tamper_paths": ["(^|/)\\.grok/(user-)?settings\\.json$", "(^|/)AGENTS(\\.override)?\\.md$", "(^|/)\\.agents/skills/"],
+  "history_paths": ["\\.grok/grok\\.db", "\\.grok/"],
+  "launch_command": "grok",
+  "env_strip_prefixes": ["GROK_"]
+}

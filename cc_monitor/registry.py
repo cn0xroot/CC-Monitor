@@ -81,6 +81,12 @@ def hook_capable_ids():
     return [aid for aid, spec in load_all().items() if spec.get("hooks")]
 
 
+def status(agent_id):
+    """"verified"（真机验证过）或 "experimental"（按文档/源码实现、未验证）。缺省按实验性算。"""
+    spec = get(agent_id)
+    return (spec or {}).get("status") or "experimental"
+
+
 def display_name(agent_id):
     spec = get(agent_id)
     return spec["display"] if spec else (agent_id or DEFAULT_AGENT)
@@ -161,6 +167,16 @@ def shell_comms(agent_id=None):
 
 
 # ---- 越界检测 / 规则用 ----
+
+def file_ignore_globs():
+    """探针文件级观测要忽略的路径 glob（各 agent 自己的自更新探测文件之类），fnmatch 语法。"""
+    out = []
+    for spec in load_all().values():
+        for g in (spec.get("process") or {}).get("file_ignore_globs") or []:
+            if g not in out:
+                out.append(g)
+    return tuple(out)
+
 
 def home_ignore():
     out = []

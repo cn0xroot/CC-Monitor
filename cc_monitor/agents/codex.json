@@ -1,6 +1,7 @@
 {
   "id": "codex",
   "display": "Codex CLI",
+  "status": "experimental",
   "process": {
     "comm": [
       "codex"

@@ -7,6 +7,10 @@
     python3 install.py --agent cursor         # Cursor：~/.cursor/hooks.json
     python3 install.py --agent opencode       # OpenCode：~/.config/opencode/plugins/cc-monitor.js
     python3 install.py --agent zcode          # ZCode：~/.zcode/cli/config.json 的 hooks.events 块
+    python3 install.py --agent antigravity-cli # Antigravity CLI：~/.gemini/config/hooks.json 的 "cc-monitor" 组
+    python3 install.py --agent grok-cli       # Grok CLI：~/.grok/user-settings.json 的 hooks 块
+
+除 Claude Code 外的接入都是实验性的（按官方文档/源码实现，尚未真机验证），--list 里有标注。
     python3 install.py --agent all            # 上面全部（只装本机检测到已安装的那些，--force-all 不做检测）
     python3 install.py --list                 # 列出认识的 agent 和各自的配置文件路径
     python3 install.py --project DIR          # 装到项目级配置（各家 agent 的项目级路径见 --list）
@@ -137,12 +141,15 @@ def resolve_target(spec, args):
 
 
 def agent_installed(spec):
-    """这家 agent 本机装了吗——launch_command 在 PATH 里，或者它的用户级配置目录已经存在。"""
+    """这家 agent 本机装了吗——launch_command 在 PATH 里，或者它自己的状态目录已经存在
+    （state_dirs 的第一项，比如 ~/.codex、~/.grok；不看配置文件的父目录，~/.gemini 下面住着
+    Gemini CLI 和 Antigravity 两家，光看它存在说明不了谁装了）。"""
     if shutil.which(spec.get("launch_command") or ""):
         return True
-    cfg = (spec.get("hooks") or {}).get("config") or {}
-    user_path = cfg.get("user_path")
-    return bool(user_path) and Path(os.path.expanduser(user_path)).parent.exists()
+    for rel in (spec.get("state_dirs") or [])[:1]:
+        if Path(os.path.expanduser("~")).joinpath(rel).exists():
+            return True
+    return False
 
 
 # ---- 各种配置文件形状 ----
@@ -170,7 +177,13 @@ def install_agent(agent_id, args):
     settings = _read_json(target)
     if kind == "cursor-hooks":
         settings.setdefault("version", 1)
-    if kind == "zcode-config":
+    if kind == "antigravity-hooks":
+        # Antigravity：hooks.json 按 "hook 名" 分组，我们独占 "cc-monitor" 这一组，别的组不动。
+        # 组内内容由适配器整体生成，重跑就是原样覆盖（幂等），别人的组原样保留。
+        before = settings.get("cc-monitor")
+        settings["cc-monitor"] = new_hooks
+        added = 0 if before == new_hooks else len([k for k in new_hooks if k != "enabled"])
+    elif kind == "zcode-config":
         # ZCode：hooks 是 {"enabled": true, "events": {...}}，事件挂在 events 下；enabled 不为 true
         # 一个 hook 都不会跑。用户可能已经有别的插件 hook，同样只追加不覆盖。
         hooks_block = settings.setdefault("hooks", {})
@@ -206,6 +219,12 @@ def install_agent(agent_id, args):
         print("Cursor 会自动重新加载 hooks.json；Cursor CLI（cursor-agent）是否本地执行 hook 以实测为准。")
     elif kind == "zcode-config":
         print("重启 ZCode（桌面版或 zcode CLI）后生效。注意 ZCode 当前版本忽略项目级 .zcode/config.json 里的 hooks，只认用户级。")
+    elif kind == "antigravity-hooks":
+        print("重启 agy 后生效。hooks.json 里我们独占 \"cc-monitor\" 这一组，其它组不动。")
+    elif kind == "grok-user-settings":
+        print("重启 grok 后生效。注意 grok-cli 只读用户级 ~/.grok/user-settings.json 的 hooks，项目级 .grok/settings.json 的 hooks 被它忽略。")
+    if spec.get("status") == "experimental":
+        print(col_warn("注意：{} 的接入是实验性的——按官方文档/源码实现，尚未在真机上验证。装完请按 MULTI-AGENT.md §2.3 做一次验证。".format(spec["display"])))
 
 
 def _check_codex_feature_flag(config_toml):
@@ -221,14 +240,21 @@ def _check_codex_feature_flag(config_toml):
         print("提示: 如果 hook 没触发，在 {} 加上:\n  [features]\n  hooks = true".format(config_toml))
 
 
+def col_warn(text):
+    return "\033[33m{}\033[0m".format(text) if sys.stdout.isatty() else text
+
+
 def list_agents():
+    print("{:<16} {:<16} {:<10} {:<8} {}".format("id", "名称", "状态", "已安装", "配置文件"))
     for aid in registry.ids():
         spec = registry.get(aid)
         hooks = spec.get("hooks") or {}
         cfg = hooks.get("config") or {}
-        print("{:<12} {:<12} {:<10} {}".format(
-            aid, spec["display"], "已安装" if agent_installed(spec) else "-",
+        print("{:<16} {:<16} {:<10} {:<8} {}".format(
+            aid, spec["display"], "已验证" if spec.get("status") == "verified" else "实验性",
+            "是" if agent_installed(spec) else "-",
             cfg.get("user_path") or "（无应用层 hook，仅系统层探针）"))
+    print("实验性 = 按官方文档/源码实现、尚未在真机验证；接入后请按 MULTI-AGENT.md §2.3 自行验证。")
 
 
 def main():

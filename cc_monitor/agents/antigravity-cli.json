@@ -1,0 +1,110 @@
+{
+  "id": "antigravity-cli",
+  "display": "Antigravity CLI",
+  "status": "experimental",
+  "process": {
+    "comm": [
+      "agy"
+    ],
+    "comm_prefix": [],
+    "exe_basename": [
+      "agy",
+      "antigravity-cli"
+    ],
+    "argv_patterns": [
+      "(^|/)agy( |$)",
+      "antigravity-cli"
+    ],
+    "shell_comms": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh"
+    ],
+    "infra_noise": [
+      "CC-Monitor-hook",
+      "^git (rev-parse|status|diff|log|ls-files)"
+    ],
+    "file_ignore_globs": [
+      "*/.local/bin/.update_test*"
+    ]
+  },
+  "hooks": {
+    "protocol": "antigravity",
+    "config": {
+      "kind": "antigravity-hooks",
+      "user_path": "~/.gemini/config/hooks.json",
+      "project_path": ".agents/hooks.json"
+    },
+    "events": {
+      "PreToolUse": "pre",
+      "PostToolUse": "post",
+      "PreInvocation": "prompt",
+      "Stop": "stop"
+    }
+  },
+  "tools": {
+    "run_command": "Bash",
+    "write_to_file": "Write",
+    "replace_file_content": "Edit",
+    "multi_replace_file_content": "MultiEdit",
+    "view_file": "Read",
+    "list_dir": "LS",
+    "find_by_name": "Glob",
+    "grep_search": "Grep",
+    "search_web": "WebSearch",
+    "read_url_content": "WebFetch",
+    "invoke_subagent": "Task",
+    "ask_question": "AskUserQuestion",
+    "manage_task": "TodoWrite"
+  },
+  "field_aliases": {
+    "CommandLine": "command",
+    "Cwd": "cwd",
+    "TargetFile": "file_path",
+    "AbsolutePath": "file_path",
+    "CodeContent": "content",
+    "ReplacementContent": "new_string",
+    "TargetContent": "old_string",
+    "DirectoryPath": "path",
+    "SearchDirectory": "path",
+    "SearchPath": "path",
+    "Pattern": "pattern",
+    "Query": "pattern",
+    "Url": "url",
+    "query": "query"
+  },
+  "sessions": {
+    "glob": "~/.gemini/antigravity-cli/**/transcript.jsonl",
+    "format": "antigravity_transcript"
+  },
+  "home_ignore": [
+    ".gemini/antigravity-cli",
+    ".gemini/antigravity"
+  ],
+  "state_dirs": [
+    ".gemini/antigravity-cli",
+    ".gemini/antigravity",
+    ".gemini/config"
+  ],
+  "project_markers": [
+    ".agents",
+    "AGENTS.md"
+  ],
+  "config_tamper_paths": [
+    "(^|/)\\.agents/hooks\\.json$",
+    "(^|/)\\.gemini/config/hooks\\.json$",
+    "(^|/)\\.gemini/antigravity-cli/(settings|mcp_config)\\.json$",
+    "(^|/)\\.agents/(rules|skills|workflows)/",
+    "(^|/)\\.gemini/config/(skills|rules)/"
+  ],
+  "history_paths": [
+    "\\.gemini/antigravity-cli/",
+    "\\.system_generated/logs/"
+  ],
+  "launch_command": "agy",
+  "env_strip_prefixes": [
+    "ANTIGRAVITY_"
+  ]
+}

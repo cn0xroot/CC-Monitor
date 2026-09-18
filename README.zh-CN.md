@@ -23,24 +23,33 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 - **网络层可视化**：eBPF 直抓 `connect()` 目标 IP:port，不解密 TLS、不装 CA 证书，Web UI 有连接明细表 + GeoIP 归属地 + WebGL2 世界地图。
 - **Web UI 全景仪表盘**：首页统计卡片、AI 审批台（网页/终端/桌面通知三处同步确认）、Claude Tap（还原完整对话，不抓包）、账号额度实时展示，一个网页看全部。
 - **跨平台**：Linux 和 macOS（含 Apple Silicon M4 实机验证）都能用，核心功能两边一致。
-- **多 agent**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode、ZCode 通过各自的 hook /
-  插件接入同一套规则、审批台和审计日志；系统层探针按 Agent 注册表认所有 agent 的进程树，
-  Aider 这类没有 hook 的 agent 也能在系统层观测到。见下面["支持的 AI agent"](#支持的-ai-agent)。
+- **多 agent（实验性）**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode、ZCode、
+  Antigravity CLI、Grok CLI 可以通过各自的 hook / 插件接入同一套规则、审批台和审计日志；系统层
+  探针按 Agent 注册表认所有 agent 的进程树，Aider 这类没有 hook 的 agent 也能在系统层观测到。
+  **除 Claude Code 外全部处于实验测试阶段**——按各家官方文档/源码实现，尚未在真实安装上完整验证，
+  见下面["AI agent 接入状态"](#ai-agent-接入状态)。
 
-## 支持的 AI agent
+## AI agent 接入状态
 
-| Agent | 应用层（规则拦截 / 审批 / 审计） | 系统层探针（exec / connect） | 接入命令 |
-|---|---|---|---|
-| Claude Code | ✅ hooks（默认，跟以前完全一样） | ✅ 按 `comm` 认 | `python3 install.py` |
-| Codex CLI | ✅ `~/.codex/hooks.json`（协议与 Claude Code 同构；`apply_patch` 拆成逐文件判定） | ✅ 按 `comm` 认 | `python3 install.py --agent codex` |
-| Gemini CLI | ✅ `~/.gemini/settings.json` 的 `hooks` 块（`run_shell_command` 等工具名映射成 Claude Code 词汇） | ✅ 扫 `/proc` 按 argv 认（node 托管） | `python3 install.py --agent gemini-cli` |
-| Cursor | ✅ `~/.cursor/hooks.json`（`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` 可拦，`afterFileEdit` 只记不拦） | ➖ Electron IDE 不适用 | `python3 install.py --agent cursor` |
-| OpenCode | ✅ 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | ✅ 按 `comm` 认 | `python3 install.py --agent opencode` |
-| ZCode（Z.ai / GLM） | ✅ `~/.zcode/cli/config.json` 的 `hooks.events`（协议与 Claude Code 同构，`type: process`） | ✅ 桌面版按 argv 认内置运行时，`zcode` CLI 按 `comm` 认 | `python3 install.py --agent zcode` |
-| Aider / 自研脚本 | ➖ 没有 hook | ✅ 扫 `/proc` 按 argv 认 | 无需配置 |
+只有 **Claude Code** 是经过完整验证的。下面其它各家都是**实验性接入**：按官方文档或源码实现了
+hook 协议适配和进程识别，并有单元测试覆盖，但**没有在真实安装上完整验证过**（本机能装的只有
+少数几家）。装了之后请按 [MULTI-AGENT.md §2.3](./MULTI-AGENT.md) 自行验证一次，发现对不上的地方欢迎提 issue。
 
-`python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents`
-查看每家的安装/接入状态和记录数。工作原理：其它 agent 的工具名和入参字段在进入规则引擎之前
+| Agent | 状态 | 应用层（规则拦截 / 审批 / 审计） | 系统层探针（exec / connect / 文件） | 接入命令 |
+|---|---|---|---|---|
+| Claude Code | ✅ 已验证 | hooks（默认，跟以前完全一样） | 按 `comm` 认 | `python3 install.py` |
+| Antigravity CLI（`agy`） | 🧪 实验性（本机 1.2.6 做过一轮端到端：拦截、审批台放行、探针归属与交叉验证均通过） | `~/.gemini/config/hooks.json` 的 `cc-monitor` 组（`run_command` / `write_to_file` 等 PascalCase 入参映射成 Claude Code 词汇） | 按 `comm` 认 | `python3 install.py --agent antigravity-cli` |
+| Codex CLI | 🧪 实验性 | `~/.codex/hooks.json`（协议与 Claude Code 同构；`apply_patch` 拆成逐文件判定） | 按 `comm` 认 | `python3 install.py --agent codex` |
+| Gemini CLI | 🧪 实验性（本机因账号不再支持该客户端，未能实测） | `~/.gemini/settings.json` 的 `hooks` 块 | 扫 `/proc` 按 argv 认（node 托管） | `python3 install.py --agent gemini-cli` |
+| Cursor | 🧪 实验性 | `~/.cursor/hooks.json`（`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` 可拦，`afterFileEdit` 只记不拦） | ➖ Electron IDE 不适用 | `python3 install.py --agent cursor` |
+| OpenCode | 🧪 实验性 | 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | 按 `comm` 认 | `python3 install.py --agent opencode` |
+| ZCode（Z.ai / GLM） | 🧪 实验性 | `~/.zcode/cli/config.json` 的 `hooks.events`（协议与 Claude Code 同构，`type: process`） | 桌面版按 argv 认内置运行时，`zcode` CLI 按 `comm` 认 | `python3 install.py --agent zcode` |
+| Grok CLI（superagent-ai） | 🧪 实验性 | `~/.grok/user-settings.json` 的 `hooks` 块（按其源码 `src/hooks/` 实现；退出码 2 阻断） | 按 `comm` 认 | `python3 install.py --agent grok-cli` |
+| Aider / 自研脚本 | 🧪 实验性 | ➖ 没有 hook | 扫 `/proc` 按 argv 认，或 `CC-Monitor run -- <命令>` 显式绑定 | 无需配置 |
+
+`python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents` 和
+`python3 install.py --list` 查看每家的状态（已验证 / 实验性）、安装和接入情况。Web UI 里实验性 agent
+的徽标带 β 角标。工作原理：其它 agent 的工具名和入参字段在进入规则引擎之前
 先翻译成 Claude Code 的词汇（`run_shell_command` → `Bash`、`filePath` → `file_path`……），
 所以 87 条规则、跨工作目录检测、审批台、Web UI 统计一份代码服务所有 agent；原始工具名保留
 在记录的 `native_tool` 里。每家 agent 的进程特征、hook 协议、工具映射、会话目录都在
@@ -49,10 +58,10 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 只装了 Claude Code 时这些全部隐藏，界面跟以前一样。使用指南、各家适配细节、如何新增 agent 见
 [MULTI-AGENT.md](./MULTI-AGENT.md)；设计与取舍见 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md)。
 
-> 各家 hook 协议以官方文档为准实现，实施时本机只有 Claude Code 可实测；Codex 的
-> `[features] hooks` 开关默认值、Gemini `{"decision":"allow"}` 是否跳过其原生确认、Cursor CLI
-> 是否本地执行 hook、OpenCode 的会话目录、ZCode 桌面版内置运行时的进程名，都还需要在装了
-> 对应 agent 的机器上验证。
+> 仍需在装了对应 agent 的机器上验证的点：Codex 的 `[features] hooks` 开关默认值与
+> `PermissionRequest` 格式、Gemini `{"decision":"allow"}` 是否跳过其原生确认、Cursor CLI 是否本地
+> 执行 hook、OpenCode 的会话目录与插件超时、ZCode 桌面版内置运行时的进程名、Grok CLI 的实际
+> stdin 字段（按源码实现，未跑过）。
 
 ## 截图
 
@@ -87,8 +96,7 @@ python3 install.py
 ```
 
 这一步只做一件事——把 hooks 注册进 Claude Code 的 `~/.claude/settings.json`，不装
-任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。要同时接入 Codex / Gemini CLI /
-Cursor / OpenCode / ZCode，加 `--agent <id>` 或 `--agent all`（见["支持的 AI agent"](#支持的-ai-agent)）。装完 `CC-Monitor tail`
+任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。要同时接入其它 agent（实验性），加 `--agent <id>` 或 `--agent all`（见["AI agent 接入状态"](#ai-agent-接入状态)）。装完 `CC-Monitor tail`
 /`rules`/`stats`/`verify` 这些 CLI 命令已经能直接用，Web UI 是完全独立的可选项，
 随时可以后补装。两种装法的详细参数、`install.sh` 具体做了哪 5 步、以及装到系统路径
 （`make install`）的方式，见下面["安装"](#安装)一节。

@@ -42,6 +42,7 @@ function list() {
   cache = [...into.values()].map((spec) => ({
     id: spec.id,
     display: spec.display || spec.id,
+    status: spec.status || "experimental",
     hasHooks: !!spec.hooks,
     launchCommand: spec.launch_command || null,
     envStripPrefixes: spec.env_strip_prefixes || [],

@@ -1,6 +1,7 @@
 {
   "id": "zcode",
   "display": "ZCode",
+  "status": "experimental",
   "process": {
     "comm": [
       "zcode",

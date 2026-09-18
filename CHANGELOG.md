@@ -49,6 +49,16 @@
     探针渲染与嵌套 agent 归属），`test_platform_caps.py` 改为检查渲染后的脚本并在有 bpftrace 时
     真的 `-d` dry-run 一遍。
   - 技术方案 `DESIGN-multi-agent.md`（含对 agentsight 的分析与借鉴清单）。
+- **Antigravity CLI（`agy`）与 Grok CLI 接入（实验性）**：Antigravity 的 hooks.json 按 hook 名分组、
+  stdin 是 `toolCall {name, args}` 加 PascalCase 入参、输出 `{"decision": "deny"}`——本机 1.2.6 做过
+  一轮端到端（拦截 / 审批台放行 / 探针归属与交叉验证）；Grok CLI 按其 `src/hooks/` 源码实现（退出码 2
+  阻断），未运行过。所有非 Claude Code 的 agent 在注册表里标 `status: experimental`，`install.py --list`、
+  `CC-Monitor agents`、install 输出和 Web UI 徽标（β 角标）都会标明"实验性、未真机验证"。
+- **嵌套 agent 归属改为"内层是自己的根"**：在 Claude Code 终端里启动 agy，agy 及其子进程的系统层
+  事件归 antigravity-cli 而不是 claude-code——它的 hook 事件按自己的 `--agent` 记，交叉验证才对得上
+  （旧口径下真机实测每条命令都被误报为绕过）。注册表新增 `process.file_ignore_globs`（agy 的
+  `~/.local/bin/.update_test*`）；`state_dirs` 支持 `*` 前缀匹配（`.claude.json*` 盖住 Claude Code 写
+  配置时的临时文件，不再误报绕过）。
 - **探针文件级观测与监听端口**（借 agentsight `process_ext` 探点集）：写打开（`openat` 带写标志）、
   删除（`unlinkat`/`unlink`/`rmdir`）、重命名、建目录 → `os_file`；`bind`+`listen` → `os_listen`
   （`0.0.0.0`/`::` 标 `listen_exposed`）。unlink/rename/mkdir 用 enter→exit 配对只报成功的。

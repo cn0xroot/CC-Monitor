@@ -173,6 +173,7 @@ try {
 }
 // id → 显示名，来自 /api/agents；拿到之前用 id 本身
 const agentNames = new Map();
+const agentStatus = new Map(); // id → "verified" | "experimental"
 let multiAgent = false; // 库里有不止一家 agent 的记录时才在各处显示徽标
 let lastAgentRows = []; // /api/agents 最近一次的结果
 
@@ -183,7 +184,9 @@ function agentDisplay(id) {
 function agentBadge(id, force) {
   if (!id || (!multiAgent && !force)) return "";
   const safe = String(id).replace(/[^a-z0-9_-]/gi, "");
-  return `<span class="agent-badge agent-${safe}" title="${escapeHtml(id)}">${escapeHtml(agentDisplay(id))}</span>`;
+  const exp = agentStatus.get(id) === "experimental";
+  const title = exp ? `${id} · ${t("agents.experimental.title")}` : id;
+  return `<span class="agent-badge agent-${safe}${exp ? " agent-experimental" : ""}" title="${escapeHtml(title)}">${escapeHtml(agentDisplay(id))}${exp ? "<sup>β</sup>" : ""}</span>`;
 }
 
 function withAgentParam(path) {
@@ -1035,7 +1038,10 @@ async function refreshAgents() {
   const rows = await fetch("/api/agents").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (!rows) return;
   lastAgentRows = rows;
-  for (const a of rows) agentNames.set(a.id, a.display);
+  for (const a of rows) {
+    agentNames.set(a.id, a.display);
+    agentStatus.set(a.id, a.status || "experimental");
+  }
   const active = rows.filter((a) => a.events > 0);
   multiAgent = active.length > 1;
 
@@ -1068,7 +1074,8 @@ async function refreshAgents() {
           t("home.strip.agentRow", { sessions: a.sessions, blocked: a.blocked, bypass: a.bypass })
         )}</span></div>`
       )
-      .join("");
+      .join("") + (active.some((a) => a.status === "experimental")
+        ? `<div class="agent-row cap">${escapeHtml(t("agents.experimental.note"))}</div>` : "");
   }
 }
 

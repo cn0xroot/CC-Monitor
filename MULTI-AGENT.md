@@ -1,8 +1,10 @@
 # CC-Monitor 多 agent 支持（`dev` 分支）使用与实现文档
 
 > 适用分支：`dev`（自 `master` 的 3be0768 分出，首个提交 f490923，2026-09-18）。
-> 本文档只讲这个分支新增的东西：怎么把 Codex CLI / Gemini CLI / Cursor / OpenCode 接进
-> CC-Monitor、内部是怎么做的、怎么再接一家新的、哪些还没做。CC-Monitor 本身的用法见
+> 本文档只讲这个分支新增的东西：怎么把 Codex CLI / Gemini CLI / Cursor / OpenCode / ZCode /
+> Antigravity CLI / Grok CLI 接进 CC-Monitor、内部是怎么做的、怎么再接一家新的、哪些还没做。
+> **除 Claude Code 外的每一家都是实验性接入**：按官方文档或源码实现，有单元测试，但没有在真实
+> 安装上完整验证（本机只装得了 Antigravity CLI 和 Gemini CLI，后者因账号不再支持该客户端跑不起来）。CC-Monitor 本身的用法见
 > [README](./README.zh-CN.md)，为什么这么设计见 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md)。
 
 ## 目录
@@ -27,7 +29,7 @@
 
 | 层 | master | dev |
 |---|---|---|
-| 应用层 hook | 只有 Claude Code 协议 | 六种协议适配器：Claude Code、Codex、Gemini CLI、Cursor、OpenCode（插件桥）、ZCode |
+| 应用层 hook | 只有 Claude Code 协议 | 八种协议适配器：Claude Code、Codex、Gemini CLI、Cursor、OpenCode（插件桥）、ZCode、Antigravity CLI、Grok CLI |
 | 规则 / 越界检测 / 审批台 | 只认 Claude Code 工具名 | 不变。其它 agent 的工具名进引擎前翻译成 Claude Code 词汇 |
 | 系统层探针 | `comm == "claude"` 写死在 bpftrace 脚本里 | 脚本改模板，所有 agent 的 comm 渲染进去；node/python 托管的 agent 靠 `/proc` 扫描按 argv 认 |
 | 存储 | 事件不区分来源 | `events.agent` / `events.native_tool` / `pending_approvals.agent` |
@@ -37,17 +39,20 @@
 **对 Claude Code 用户完全透明**：不带 `--agent` 的安装命令、hook 命令行、数据库、界面都和
 `master` 一样；只有当库里出现第二家 agent 的记录时，界面上的过滤器和徽标才会出现。
 
-各 agent 支持到什么程度：
+各 agent 接到什么程度（"状态"列就是注册表里的 `status`，`CC-Monitor agents` 和 Web UI 徽标的 β 角标
+都从它来）：
 
-| Agent | 应用层（拦截 / 审批 / 审计） | 系统层探针 | 本机实测 |
-|---|---|---|---|
-| Claude Code | ✅ | ✅ | ✅ |
-| Codex CLI | ✅ hooks.json | ✅ | ❌ 按官方文档实现 |
-| Gemini CLI | ✅ settings.json hooks | ✅（`/proc` 扫描） | ❌ 按官方文档实现 |
-| Cursor（IDE） | ✅ hooks.json，改文件只能事后记录 | ➖ Electron 不适用 | ❌ 按官方文档实现 |
-| OpenCode | ✅ JS 插件桥 | ✅ | ❌ 按官方文档实现 |
-| ZCode（Z.ai，GLM 模型） | ✅ config.json hooks.events | ✅（桌面版按 argv，CLI 按 comm） | ❌ 按官方文档实现 |
-| Aider / 自研脚本 | ➖ 无 hook | ✅（`/proc` 扫描） | 部分（进程识别逻辑有单测） |
+| Agent | 状态 | 应用层（拦截 / 审批 / 审计） | 系统层探针 | 真机验证情况 |
+|---|---|---|---|---|
+| Claude Code | 已验证 | hooks | ✅ | ✅ 长期使用 |
+| Antigravity CLI（`agy`，Go） | 实验性 | hooks.json `cc-monitor` 组 | ✅ | 本机 1.2.6 做过一轮端到端：`sudo pip install` 被拦（agy 回显"tool call denied by pre-tool hook"）、`crontab -l` 走审批台从网页放行后执行、探针把 `bash -c …` 归到 antigravity-cli 且与 hook 记录交叉验证吻合。未测：`multi_replace_file_content`、PostToolUse 的 `error` |
+| Codex CLI | 实验性 | hooks.json | ✅ | ❌ 未装 |
+| Gemini CLI | 实验性 | settings.json hooks | ✅（`/proc` 扫描） | ❌ 已装但账号不再支持该客户端（提示迁移到 Antigravity），跑不起来 |
+| Cursor（IDE） | 实验性 | hooks.json，改文件只能事后记录 | ➖ Electron 不适用 | ❌ 未装 |
+| OpenCode | 实验性 | JS 插件桥 | ✅ | ❌ 未装 |
+| ZCode（Z.ai，GLM 模型） | 实验性 | config.json hooks.events | ✅（桌面版按 argv，CLI 按 comm） | ❌ 未装 |
+| Grok CLI（superagent-ai，Bun） | 实验性 | user-settings.json hooks（按源码实现） | ✅ | ❌ 未装 |
+| Aider / 自研脚本 | 实验性 | ➖ 无 hook | ✅（`/proc` 扫描 / `run --`） | 进程识别与 `run --` 有单测 |
 
 ---
 
@@ -70,6 +75,8 @@ python3 install.py --agent gemini-cli     # 写 ~/.gemini/settings.json 的 hook
 python3 install.py --agent cursor         # 写 ~/.cursor/hooks.json
 python3 install.py --agent opencode       # 复制插件到 ~/.config/opencode/plugins/cc-monitor.js
 python3 install.py --agent zcode          # 写 ~/.zcode/cli/config.json 的 hooks.events 块并置 hooks.enabled=true
+python3 install.py --agent antigravity-cli # 写 ~/.gemini/config/hooks.json 的 "cc-monitor" 组
+python3 install.py --agent grok-cli       # 写 ~/.grok/user-settings.json 的 hooks 块
 python3 install.py --agent all            # 本机检测到已安装的全部；--force-all 跳过检测全写
 ./install.sh --agent all                  # install.sh 把参数原样透传给 install.py
 ```
@@ -150,7 +157,8 @@ sqlite3 ~/.cc-monitor/events.db "select ts, tool_name, native_tool, decision, ma
   选择记在 localStorage，刷新不丢。首页那些统计卡（文件操作、GitHub 操作……）目前仍是全局数字。
 - **首页"被监测的 AI agent"卡**：每家一行，会话数 / 拦截数 / 疑似绕过数。
 - **徽标**：Log 审计每行、会话下拉的前缀、审批台每张卡、进程下钻表的 pid 旁边都标明来自哪家，
-  七家各一色（Claude Code 紫、Codex 绿、Gemini 蓝、Cursor 橙、OpenCode 青、ZCode 靛蓝、Aider 品红）。
+  九家各一色（Claude Code 紫、Codex 绿、Gemini 蓝、Cursor 橙、OpenCode 青、ZCode 靛蓝、Antigravity 玫红、
+  Grok 黑、Aider 品红），实验性的带 β 角标，鼠标悬停有说明。
   鼠标放在 Log 审计的工具名上能看到该 agent 的原始工具名（`run_shell_command` 之类）。
 - **AI 审批台**：其它 agent 的确认请求与 Claude Code 的排在同一列，卡片顶部带 agent 徽标，
   按钮语义相同（允许一次 / 拒绝 / 10 分钟 / 30 分钟 / 一直允许）。
@@ -171,8 +179,7 @@ agent（Gemini CLI、Aider）会打印"发现新的 agent 根进程 …，重启
 事件会丢；编译型 agent（Claude Code、Codex、OpenCode）在内核里直接认，不重启。
 
 探针写的 `os_exec` / `os_net` 事件带 `agent`，`verify` 的绕过判定只拿同一家的 hook 记录比对。
-在 Claude Code 里再跑一个 codex 这种嵌套情况，内层归到外层的 agent 名下（与 hook 层"子代理归
-父会话"的口径一致）。
+
 
 探针现在还看**文件级**系统调用和**监听端口**（借 agentsight `process_ext` 的探点集，见 3.5）：
 
@@ -282,10 +289,10 @@ flowchart LR
 | `cc_monitor/registry.py` | 读注册表（内置 + `~/.cc-monitor/agents/` 覆盖）；`classify_process()`、`map_tool()`、`map_fields()`、给探针/规则/越界检测用的汇总函数 |
 | `cc_monitor/adapters/__init__.py` | 按 agent 的 `hooks.protocol` 选适配器模块；不认识的退回 Claude 协议 |
 | `cc_monitor/adapters/base.py` | 规范事件/规范调用的构造器；`apply_patch` 解析与拆分 |
-| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode,zcode}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
+| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode,zcode,antigravity,grok}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
 | `cc_monitor/adapters/opencode_plugin.js` | OpenCode 插件模板，install 时替换 hook 路径后复制过去 |
 | `cc_monitor/hook.py` | 重写：`parse_args` → 适配器 parse → `handle_*` → 适配器 emit；判定逻辑 `decide_call()` 与 master 的 `handle_pre` 中段等价 |
-| `cc_monitor/procscan.py` | `/proc` 扫描：`find_roots()`（嵌套 agent 归外层）、`seed_map()`、`comm_predicate()`、`seed_block()` |
+| `cc_monitor/procscan.py` | `/proc` 扫描：`find_roots()`（每个认得出的 agent 进程都是根）、`seed_map()`（后代归最近的 agent 祖先）、`comm_predicate()`、`seed_block()` |
 | `cc_monitor/probe_linux.bt.tmpl` | 探针模板（原 `probe_linux.bt`），两个占位符：comm 条件、BEGIN 播种块 |
 | `cc_monitor/probe.py` | 渲染模板、启动/重启 bpftrace、`ROOT`/`EXEC`/`CONNECT` 事件解析、root pid → agent 归属 |
 | `cc_monitor/probe_darwin.py` | macOS 进程树按注册表认，事件带 agent |
@@ -446,7 +453,7 @@ write/unlink/rename/mkdir/storm、`path`、`path2`、`flags`、`by_agent_process
 - `POST /api/sessions` 接受 `agent`，PTY 里自动敲注册表的 `launch_command`。
 - 前端：选了过滤器后所有 GET `/api/*` 自动带 `agent=` 参数（不认的接口忽略）；`multiAgent` 为真
   （库里 ≥2 家有记录）时才显示过滤器、首页卡和徽标。徽标颜色按 `agent-<id>` CSS 类，
-  七家各一色，新加的 agent 默认灰色。
+  九家各一色，新加的 agent 默认灰色；`status` 不是 `verified` 的带 β 角标。
 - 首页其它统计卡（文件操作、GitHub 操作……二十来张）**仍是全局数字**，不随过滤器变。
 
 ---
@@ -534,7 +541,55 @@ write/unlink/rename/mkdir/storm、`path`、`path2`、`flags`、`by_agent_process
 - **待实测**：桌面版内置运行时的真实进程名和 argv；`hooks.events` 里 `"matcher": ".*"` 对
   `SessionStart`（按 source 过滤）是否被接受；`command` 类型与 `process` 类型的超时字段名。
 
-### 4.7 Aider（无适配器）
+### 4.7 Antigravity CLI（`adapters/antigravity.py`）
+
+- Google 的终端 agent `agy`（Go 二进制，取代 Gemini CLI，跑 Gemini 模型；与 Antigravity IDE 共用
+  agent 引擎和设置）。**本文只接 CLI**，IDE 是 Electron，探针不适用。
+- 配置：`~/.gemini/config/hooks.json`（全局，CLI/IDE 共用）或工作区 `.agents/hooks.json`。形状按
+  "hook 名"分组，我们独占 `"cc-monitor"` 这一组，重跑 install 原样覆盖这一组、别的组不动：
+  `{"cc-monitor": {"enabled": true, "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": …, "timeout": 100}]}],
+  "PostToolUse": […], "PreInvocation": [{"type": "command", …}], "Stop": [{…}]}}`。
+- 事件只有五个：`PreToolUse` / `PostToolUse` / `PreInvocation` / `PostInvocation` / `Stop`。
+  `PreInvocation` 在**每次模型调用前**都触发（一轮里工具每跑一步一次）且没有 prompt 文本——真机实测
+  按 prompt 记会刷出一堆空"提交"行，所以只把 `invocationNum == 0` 记成 `SessionStart`，其余丢弃。
+- stdin（真机抓到）：`conversationId`、`workspacePaths[]`、`transcriptPath`、`artifactDirectoryPath`、
+  `modelName`、`stepIdx`、`toolCall: {name, args}`；工具名 snake_case、入参 PascalCase：
+  `run_command {CommandLine, Cwd, WaitMsBeforeAsync}`、`write_to_file {TargetFile, CodeContent, Overwrite}`、
+  `replace_file_content {TargetFile, TargetContent, ReplacementContent}`、`multi_replace_file_content
+  {TargetFile, ReplacementChunks[]}`、`view_file {AbsolutePath}`、`list_dir {DirectoryPath}`、
+  `find_by_name {SearchDirectory, Pattern}`、`grep_search {SearchPath, Query}`、`read_url_content {Url}`、
+  `search_web {query}`、`invoke_subagent`、`ask_question`。注册表 `field_aliases` 把它们翻译成
+  `command` / `cwd` / `file_path` / `content` / `new_string` / `old_string` / `path` / `pattern` / `url`。
+  `run_command` 自带的 `Cwd` 优先于 `workspacePaths[0]` 当事件 cwd（实测 agy 默认在
+  `~/.gemini/antigravity-cli/scratch` 下跑命令）。
+- 拒绝：`{"decision": "deny", "reason": …}` + exit 0（退出码语义文档没写）。真机实测 agy 把 reason 回给
+  模型："tool call denied by pre-tool hook: [CC-Monitor] 操作被拦截 (规则: sudo_pip_install)…"。
+  我们问过并允许：`{"decision": "allow"}`，实测审批台点"允许"后命令正常执行。
+- 探针：`comm == "agy"` 直接认；agy 会往 `~/.local/bin/.update_test*` 写自更新探测文件，注册表
+  `process.file_ignore_globs` 把它排除。
+- **待实测**：`multi_replace_file_content`、`PostToolUse` 的 `error` 字段、`ask` 类决策、
+  `.agents/hooks.json` 工作区级是否与全局合并。
+
+### 4.8 Grok CLI（`adapters/grok.py`）
+
+- superagent-ai/grok-cli，Bun 运行时，命令 `grok`，npm 包 `grok-dev`。**按源码实现，从未运行过。**
+- 配置：只读 `~/.grok/user-settings.json` 的 `hooks` 键（源码注释明确说项目级 `.grok/settings.json`
+  的 hooks 被有意忽略），形状与 Claude Code 相同（`{"PreToolUse": [{"matcher", "hooks": [{"type": "command",
+  "command", "timeout": 秒}]}]}`）。
+- 事件 17 个（`src/hooks/types.ts`）：`PreToolUse` / `PostToolUse` / `PostToolUseFailure` / `UserPromptSubmit` /
+  `SessionStart` / `SessionEnd` / `Stop` / `StopFailure` / `SubagentStart` / `SubagentStop` / `TaskCreated` /
+  `TaskCompleted` / `PreCompact` / `PostCompact` / `Notification` / `InstructionsLoaded` / `CwdChanged`；
+  我们注册其中 9 个。stdin：`hook_event_name`、`session_id`、`cwd`、`tool_name`、`tool_input`（post 多
+  `tool_output`，失败多 `error`），prompt 事件的字段叫 `user_prompt`。
+- 拒绝：退出码 2 = 阻断（`src/hooks/executor.ts`：`BLOCKING_EXIT_CODE`，stderr 反馈给模型），同时
+  stdout 给 `{"decision": "block", "reason"}`。没有"跳过原生确认"语义。
+- 工具：`bash {command}`、`read_file {path}`、`write_file {path, content}`、`edit_file {path, old_string,
+  new_string}`、`grep {pattern}`、`search_web` / `search_x {query}`、`task` / `delegate`、`lsp {filePath}`、
+  `computer_*`、`generate_image/video`、`process_*`。`path` → `file_path` 由注册表翻译。
+- 会话：`~/.grok/grok.db`（SQLite）。配置篡改路径：`.grok/settings.json`、`~/.grok/user-settings.json`、
+  `AGENTS.md`、`.agents/skills/`。
+
+### 4.9 Aider（无适配器）
 
 只有注册表（`argv_patterns` 认 `aider`、`aider/main.py`、`-m aider`），系统层探针能观测它派生的命令和网络连接，规则只对探针看到的 `Bash`（exec）生效，没有审批，没有文件级可见性。
 

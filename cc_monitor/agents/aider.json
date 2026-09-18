@@ -1,6 +1,7 @@
 {
   "id": "aider",
   "display": "Aider",
+  "status": "experimental",
   "process": {
     "comm": [],
     "comm_prefix": [],

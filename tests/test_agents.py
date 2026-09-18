@@ -18,7 +18,7 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
 from cc_monitor import adapters, audit_state, policy, procscan, registry  # noqa: E402
-from cc_monitor.adapters import codex, cursor, gemini, opencode, zcode  # noqa: E402
+from cc_monitor.adapters import antigravity, codex, cursor, gemini, grok, opencode, zcode  # noqa: E402
 
 # 同 test_audit_state.py：子进程要用进程内模块实际在用的 CONFIG_DIR。
 _TMP = str(audit_state.CONFIG_DIR)
@@ -51,9 +51,10 @@ class TestRegistry(unittest.TestCase):
             self.assertTrue(spec.get("display"))
             self.assertIn("process", spec)
             if spec.get("hooks"):
-                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode", "zcode"))
+                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode", "zcode", "antigravity", "grok"))
                 self.assertTrue(spec["hooks"]["events"])
                 self.assertTrue(spec["hooks"]["config"]["user_path"])
+            self.assertIn(spec.get("status"), ("verified", "experimental"))
 
     def test_unknown_agent_falls_back_to_claude(self):
         self.assertIsNone(registry.get("nope"))
@@ -169,6 +170,44 @@ class TestAdapterParsing(unittest.TestCase):
         cfg = zcode.hook_config_entries("/bin/h", "zcode", {"PreToolUse": "pre"})
         self.assertEqual(cfg["PreToolUse"][0]["hooks"][0]["args"], ["pre", "--agent", "zcode"])
         self.assertEqual(cfg["PreToolUse"][0]["hooks"][0]["type"], "process")
+
+    def test_antigravity_maps_pascal_case_args_and_decision_output(self):
+        # 真机抓到的 stdin 形状（agy 1.2.6）
+        ev = antigravity.parse("pre", {"conversationId": "c1", "workspacePaths": ["/w"], "modelName": "gemini-3.8-flash-high",
+                                       "transcriptPath": "/w/.system_generated/logs/transcript.jsonl", "stepIdx": 3,
+                                       "toolCall": {"name": "run_command", "args": {"CommandLine": "ls -la", "Cwd": "/w/sub", "WaitMsBeforeAsync": 5000}}})
+        c = ev["calls"][0]
+        self.assertEqual((c["tool_name"], c["tool_input"]["command"], ev["cwd"], ev["session_id"]), ("Bash", "ls -la", "/w/sub", "c1"))
+        self.assertEqual(ev["extra"]["model"], "gemini-3.8-flash-high")
+        ev = antigravity.parse("pre", {"conversationId": "c1", "workspacePaths": ["/w"],
+                                       "toolCall": {"name": "write_to_file", "args": {"TargetFile": "/w/a.py", "CodeContent": "x", "Overwrite": True}}})
+        self.assertEqual((ev["calls"][0]["tool_name"], ev["calls"][0]["tool_input"]["file_path"], ev["calls"][0]["tool_input"]["content"]), ("Write", "/w/a.py", "x"))
+        ev = antigravity.parse("pre", {"conversationId": "c1", "toolCall": {"name": "multi_replace_file_content", "args": {
+            "TargetFile": "/w/a.py", "ReplacementChunks": [{"ReplacementContent": "eval(x)"}, {"ReplacementContent": "y"}]}}})
+        self.assertEqual(ev["calls"][0]["tool_input"]["new_string"], "eval(x)\ny")
+        blocked = {"decision": "blocked", "handled_via_confirm": False, "reason": "no", "rule_id": "r"}
+        out, code = antigravity.emit_pre(blocked)
+        self.assertEqual((json.loads(out), code), ({"decision": "deny", "reason": "no"}, 0))
+        self.assertEqual(json.loads(antigravity.emit_pre({"decision": "allowed", "handled_via_confirm": True, "reason": None, "rule_id": "r"})[0]), {"decision": "allow"})
+        # PreInvocation：第 0 次当会话开始，之后不记
+        self.assertEqual(antigravity.parse("prompt", {"conversationId": "c1", "invocationNum": 0})["mode"], "session_start")
+        self.assertEqual(antigravity.parse("prompt", {"conversationId": "c1", "invocationNum": 3})["mode"], "noop")
+        cfg = antigravity.hook_config_entries("/bin/h", "antigravity-cli", {"PreToolUse": "pre", "Stop": "stop"})
+        self.assertTrue(cfg["enabled"])
+        self.assertIn("matcher", cfg["PreToolUse"][0])
+        self.assertEqual(cfg["Stop"][0]["type"], "command")
+
+    def test_grok_protocol(self):
+        ev = grok.parse("pre", {"hook_event_name": "PreToolUse", "session_id": "g", "cwd": "/w", "tool_name": "edit_file",
+                                "tool_input": {"path": "/w/a", "old_string": "x", "new_string": "y"}})
+        self.assertEqual((ev["calls"][0]["tool_name"], ev["calls"][0]["tool_input"]["file_path"]), ("Edit", "/w/a"))
+        ev = grok.parse("post", {"hook_event_name": "PostToolUseFailure", "session_id": "g", "cwd": "/w", "tool_name": "bash",
+                                 "tool_input": {"command": "ls"}, "error": "boom"})
+        self.assertEqual(ev["calls"][0]["tool_response"], {"error": "boom"})
+        self.assertEqual(grok.parse("prompt", {"hook_event_name": "UserPromptSubmit", "cwd": "/w", "user_prompt": "hi"})["prompt"], "hi")
+        out, code = grok.emit_pre({"decision": "blocked", "handled_via_confirm": False, "reason": "no", "rule_id": "r"})
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out)["decision"], "block")
 
     def test_opencode_maps_camel_case(self):
         ev = opencode.parse("pre", {"session_id": "s", "cwd": "/p", "tool_name": "edit",
@@ -329,7 +368,7 @@ class TestProbeRendering(unittest.TestCase):
             self.assertIn('comm == "{}"'.format(comm), pred)
         self.assertIn('strncmp(comm, "codex-x86_64", 12) == 0', pred)
 
-    def test_find_roots_collapses_nested_agents(self):
+    def test_nested_agent_is_its_own_root(self):
         procs = {
             1: {"ppid": 0, "comm": "init", "argv": "", "exe": ""},
             10: {"ppid": 1, "comm": "zsh", "argv": "zsh", "exe": ""},
@@ -340,9 +379,10 @@ class TestProbeRendering(unittest.TestCase):
             31: {"ppid": 30, "comm": "bash", "argv": "bash -c ls", "exe": ""},
         }
         roots = procscan.find_roots(procs)
-        self.assertEqual(roots, {20: "claude-code", 30: "gemini-cli"})
+        self.assertEqual(roots, {20: "claude-code", 22: "codex", 30: "gemini-cli"})
         seed = procscan.seed_map(procs)
-        self.assertEqual(seed[22], (20, "claude-code"))  # 嵌套的 codex 归外层 claude
+        self.assertEqual(seed[22], (22, "codex"))  # 嵌套的 codex 是自己的根（hook 事件按 --agent codex 记）
+        self.assertEqual(seed[21], (20, "claude-code"))  # codex 的父 shell 仍归 claude
         self.assertEqual(seed[31], (30, "gemini-cli"))
         block = procscan.seed_block(seed)
         self.assertIn("@watch[31] = 1; @root[31] = 30;", block)

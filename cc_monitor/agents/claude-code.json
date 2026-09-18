@@ -1,6 +1,7 @@
 {
   "id": "claude-code",
   "display": "Claude Code",
+  "status": "verified",
   "process": {
     "comm": [
       "claude"
@@ -59,10 +60,7 @@
   ],
   "state_dirs": [
     ".claude",
-    ".claude.json",
-    ".claude.json.backup",
-    ".claude.json.lock",
-    ".claude.json.tmp"
+    ".claude.json*"
   ],
   "project_markers": [
     "CLAUDE.md",

@@ -47,25 +47,37 @@ Every release — what was added, changed and fixed — is recorded in
   in one page.
 - **Cross-platform**: works on both Linux and macOS (including real Apple Silicon M4 hardware
   verification), with the core feature set consistent across both.
-- **Multi-agent**: not just Claude Code. Codex CLI, Gemini CLI, Cursor, OpenCode and ZCode plug into the
-  same rules, approval desk and audit log through their own hooks / plugin; the system-layer probe
-  recognises every agent's process tree via an agent registry, so hook-less agents like Aider are
-  still observed at the OS level. See ["Supported AI agents"](#supported-ai-agents).
+- **Multi-agent (experimental)**: not just Claude Code. Codex CLI, Gemini CLI, Cursor, OpenCode,
+  ZCode, Antigravity CLI and Grok CLI can plug into the same rules, approval desk and audit log
+  through their own hooks / plugin; the system-layer probe recognises every agent's process tree
+  via an agent registry, so hook-less agents like Aider are still observed at the OS level.
+  **Everything except Claude Code is in an experimental / testing stage** — implemented from each
+  vendor's docs or source, not yet fully verified on real installs. See
+  ["AI agent integration status"](#ai-agent-integration-status).
 
-## Supported AI agents
+## AI agent integration status
 
-| Agent | Application layer (rule blocking / approvals / audit) | System-layer probe (exec / connect) | Enable |
-|---|---|---|---|
-| Claude Code | ✅ hooks (default, unchanged) | ✅ by `comm` | `python3 install.py` |
-| Codex CLI | ✅ `~/.codex/hooks.json` (protocol mirrors Claude Code's; `apply_patch` is split per file) | ✅ by `comm` | `python3 install.py --agent codex` |
-| Gemini CLI | ✅ `hooks` block in `~/.gemini/settings.json` (`run_shell_command` etc. mapped to Claude Code tool names) | ✅ `/proc` scan by argv (node-hosted) | `python3 install.py --agent gemini-cli` |
-| Cursor | ✅ `~/.cursor/hooks.json` (`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` can block; `afterFileEdit` is log-only) | ➖ not applicable to an Electron IDE | `python3 install.py --agent cursor` |
-| OpenCode | ✅ plugin bridge `~/.config/opencode/plugins/cc-monitor.js` (`tool.execute.before` calls the hook synchronously; exit 2 blocks) | ✅ by `comm` | `python3 install.py --agent opencode` |
-| ZCode (Z.ai / GLM) | ✅ `hooks.events` in `~/.zcode/cli/config.json` (protocol mirrors Claude Code's; `type: process`) | ✅ desktop runtime by argv, `zcode` CLI by `comm` | `python3 install.py --agent zcode` |
-| Aider / custom scripts | ➖ no hooks | ✅ `/proc` scan by argv | nothing to configure |
+Only **Claude Code** is fully verified. Every other agent below is an **experimental integration**:
+the hook-protocol adapter and process recognition are implemented from the vendor's official docs or
+source and covered by unit tests, but **have not been fully verified on a real install** (only a few
+could be installed on the development machine). After enabling one, run the check in
+[MULTI-AGENT.md §2.3](./MULTI-AGENT.md) (Chinese) yourself and open an issue for anything that does not line up.
+
+| Agent | Status | Application layer (rule blocking / approvals / audit) | System-layer probe (exec / connect / file) | Enable |
+|---|---|---|---|---|
+| Claude Code | ✅ verified | hooks (default, unchanged) | by `comm` | `python3 install.py` |
+| Antigravity CLI (`agy`) | 🧪 experimental (one end-to-end round on 1.2.6 here: block, approval-desk allow, probe attribution and cross-check all passed) | `cc-monitor` group in `~/.gemini/config/hooks.json` (`run_command` / `write_to_file` PascalCase args mapped to Claude Code vocabulary) | by `comm` | `python3 install.py --agent antigravity-cli` |
+| Codex CLI | 🧪 experimental | `~/.codex/hooks.json` (protocol mirrors Claude Code's; `apply_patch` is split per file) | by `comm` | `python3 install.py --agent codex` |
+| Gemini CLI | 🧪 experimental (could not be exercised here: the account is no longer eligible for this client) | `hooks` block in `~/.gemini/settings.json` | `/proc` scan by argv (node-hosted) | `python3 install.py --agent gemini-cli` |
+| Cursor | 🧪 experimental | `~/.cursor/hooks.json` (`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` can block; `afterFileEdit` is log-only) | ➖ not applicable to an Electron IDE | `python3 install.py --agent cursor` |
+| OpenCode | 🧪 experimental | plugin bridge `~/.config/opencode/plugins/cc-monitor.js` (`tool.execute.before` calls the hook synchronously; exit 2 blocks) | by `comm` | `python3 install.py --agent opencode` |
+| ZCode (Z.ai / GLM) | 🧪 experimental | `hooks.events` in `~/.zcode/cli/config.json` (protocol mirrors Claude Code's; `type: process`) | desktop runtime by argv, `zcode` CLI by `comm` | `python3 install.py --agent zcode` |
+| Grok CLI (superagent-ai) | 🧪 experimental | `hooks` block in `~/.grok/user-settings.json` (implemented from its `src/hooks/` source; exit 2 blocks) | by `comm` | `python3 install.py --agent grok-cli` |
+| Aider / custom scripts | 🧪 experimental | ➖ no hooks | `/proc` scan by argv, or explicit `CC-Monitor run -- <cmd>` | nothing to configure |
 
 `python3 install.py --agent all` enables every agent detected on this machine; `CC-Monitor agents`
-shows each agent's install / hook status and record count. How it works: other agents' tool names
+and `python3 install.py --list` show each agent's status (verified / experimental), install and hook
+state. Experimental agents carry a β mark on their badge in the Web UI. How it works: other agents' tool names
 and argument fields are translated into Claude Code's vocabulary before they reach the rule engine
 (`run_shell_command` → `Bash`, `filePath` → `file_path`, …), so the 87 rules, cross-workdir
 detection, approval desk and Web UI stats are one code path for every agent; the original tool
@@ -77,11 +89,11 @@ all hidden when only Claude Code is present, so the UI looks exactly as before. 
 details and how to add an agent: [MULTI-AGENT.md](./MULTI-AGENT.md); design and trade-offs:
 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) (both Chinese).
 
-> Each hook protocol is implemented from its official documentation; only Claude Code could be
-> tested on the development machine. Still to verify on a machine with the agent installed: the
-> default of Codex's `[features] hooks` flag, whether Gemini's `{"decision":"allow"}` skips its
-> native prompt, whether Cursor's CLI runs hooks locally, OpenCode's session directory, and the
-> process name of ZCode's bundled desktop runtime.
+> Still to verify on a machine with the agent installed: the default of Codex's `[features] hooks`
+> flag and its `PermissionRequest` format, whether Gemini's `{"decision":"allow"}` skips its native
+> prompt, whether Cursor's CLI runs hooks locally, OpenCode's session directory and plugin timeout,
+> the process name of ZCode's bundled desktop runtime, and Grok CLI's actual stdin fields
+> (implemented from source, never run).
 
 ## Screenshots
 
@@ -121,7 +133,7 @@ python3 install.py
 It does exactly one thing — registers the hooks into Claude Code's
 `~/.claude/settings.json`. No npm or Python dependencies get installed (`cc_monitor/`
 itself is standard-library-only Python). Add `--agent <id>` or `--agent all` to also enable
-Codex / Gemini CLI / Cursor / OpenCode / ZCode (see ["Supported AI agents"](#supported-ai-agents)).
+other agents (experimental; see ["AI agent integration status"](#ai-agent-integration-status)).
 Once that's done, the `CC-Monitor
 tail`/`rules`/`stats`/`verify` CLI commands already work; the Web UI is an entirely
 optional, separate add-on you can install later whenever you want it. For the exact

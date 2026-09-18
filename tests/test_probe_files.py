@@ -69,6 +69,9 @@ class TestFileFiltering(unittest.TestCase):
     def test_agent_state_dirs(self):
         self.assertTrue(probe._is_agent_state_path("/root/.claude/settings.json", "claude-code"))
         self.assertTrue(probe._is_agent_state_path("/root/.claude.json", "claude-code"))
+        self.assertTrue(probe._is_agent_state_path("/root/.claude.json.tmp.87740.1723e23e26bb", "claude-code"))
+        self.assertTrue(probe._file_ignored("/root/.claude.json.tmp.87740.1723e23e26bb"))
+        self.assertFalse(probe._file_ignored("/root/.claude-other/x"))
         self.assertFalse(probe._is_agent_state_path("/root/.ssh/id_rsa", "claude-code"))
 
 
@@ -187,6 +190,7 @@ class TestRunBinding(unittest.TestCase):
         }
         roots = procscan.find_roots(procs, registrations={21: "generic"})
         self.assertEqual(roots, {20: "claude-code", 21: "generic"})
+        self.assertTrue(probe._file_ignored("/root/.local/bin/.update_test123"))  # agy 自更新探测文件
         seed = procscan.seed_map(procs, registrations={21: "generic"})
         self.assertEqual(seed[22], (21, "generic"))
 

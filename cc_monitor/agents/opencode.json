@@ -1,6 +1,7 @@
 {
   "id": "opencode",
   "display": "OpenCode",
+  "status": "experimental",
   "process": {
     "comm": [
       "opencode"

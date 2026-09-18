@@ -130,7 +130,7 @@ def cmd_run(args):
 def cmd_agents(args):
     """列出认识的 agent、本机有没有装、hook 有没有接、库里有多少条它的记录。"""
     counts = dict(storage.count_by_agent())
-    print("{:<12} {:<12} {:<8} {:<8} {}".format("id", "名称", "已安装", "hook", "事件数"))
+    print("{:<16} {:<16} {:<8} {:<8} {:<8} {}".format("id", "名称", "状态", "已安装", "hook", "事件数"))
     for aid in registry.ids():
         spec = registry.get(aid)
         hooks = spec.get("hooks") or {}
@@ -146,9 +146,11 @@ def cmd_agents(args):
                     hooked = "?"
             else:
                 hooked = "未接"
-        print("{:<12} {:<12} {:<8} {:<8} {}".format(
-            aid, spec["display"], "是" if installed else "-", hooked, counts.get(aid, 0)))
+        print("{:<16} {:<16} {:<8} {:<8} {:<8} {}".format(
+            aid, spec["display"], "已验证" if spec.get("status") == "verified" else "实验性",
+            "是" if installed else "-", hooked, counts.get(aid, 0)))
     print(col.c("接入某家 agent 的 hook：python3 install.py --agent <id>（或 --agent all）", dim=True))
+    print(col.c("实验性 = 按官方文档/源码实现、尚未在真机验证；接入后请按 MULTI-AGENT.md §2.3 自行验证。", dim=True))
 
 
 def cmd_verify(args):

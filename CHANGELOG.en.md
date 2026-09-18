@@ -59,6 +59,19 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
     when bpftrace is available.
   - Design document `DESIGN-multi-agent.md` (Chinese; includes the agentsight analysis and the
     list of what was borrowed).
+- **Antigravity CLI (`agy`) and Grok CLI integrations (experimental)**: Antigravity's hooks.json is
+  grouped by hook name, its stdin is `toolCall {name, args}` with PascalCase args and it answers
+  with `{"decision": "deny"}` — exercised end-to-end once on 1.2.6 here (block / approval-desk allow /
+  probe attribution and cross-check); Grok CLI is implemented from its `src/hooks/` source (exit code
+  2 blocks) and has never been run. Every non-Claude-Code agent now carries `status: experimental`
+  in the registry; `install.py --list`, `CC-Monitor agents`, the install output and the Web UI badge
+  (β mark) all say "experimental, not verified on a real install".
+- **Nested agents are now their own roots**: launching agy from a Claude Code terminal attributes agy
+  and its children to antigravity-cli rather than claude-code — its hook events are recorded under
+  its own `--agent`, so cross-checking only lines up this way (under the old rule every command was
+  falsely flagged as a bypass in a real run). Registry gains `process.file_ignore_globs` (agy's
+  `~/.local/bin/.update_test*`); `state_dirs` entries may end in `*` for prefix matching
+  (`.claude.json*` covers Claude Code's config temp files, no more false bypass reports).
 - **Probe file-level observation and listening ports** (after agentsight's `process_ext` probe
   set): write-opens (`openat` with write flags), deletes (`unlinkat`/`unlink`/`rmdir`), renames and
   mkdirs → `os_file`; `bind`+`listen` → `os_listen` (`0.0.0.0`/`::` flagged `listen_exposed`).

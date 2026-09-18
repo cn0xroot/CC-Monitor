@@ -30,15 +30,15 @@ tracepoint:sched:sched_process_fork
 }
 
 // sched_process_exec 在 exec 完成之后触发，comm 已经是新程序名——一个 agent 从 shell 里
-// 被启动时，这里第一次认出它并把它自己登记为根。
+// 被启动时，这里认出它并把它自己登记为根。已经在别的 agent 树里（比如在 Claude Code 的终端
+// 里启动 agy）也重新登记成自己的根：它的 hook 事件是按自己的 --agent 记的，系统层事件归到它
+// 名下才对得上；没有这一步，交叉验证会拿外层 agent 的 hook 记录去解释它的命令，全是误报。
 tracepoint:sched:sched_process_exec
 {
     if (__CC_ROOT_COMM_PREDICATE__) {
-        if (@watch[pid] == 0) {
-            @root[pid] = pid;
-            @watch[pid] = 1;
-            printf("ROOT\t%d\t%d\t%s\n", pid, uid, comm);
-        }
+        @root[pid] = pid;
+        @watch[pid] = 1;
+        printf("ROOT\t%d\t%d\t%s\n", pid, uid, comm);
     }
 }
 
