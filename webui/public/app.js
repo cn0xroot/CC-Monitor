@@ -250,6 +250,8 @@ document.querySelectorAll(".tab-btn:not(.nav-external-link)").forEach((btn) => {
         for (const pane of gridPanes.values()) pane.fitAddon.fit();
       }, 30);
     }
+    // 深链接：地址栏 #logs / #approvals 这类 hash 跟着标签走，刷新或分享链接能直接落到那一页
+    if (history.replaceState) history.replaceState(null, "", "#" + btn.dataset.tab);
     if (btn.dataset.tab === "archives") refreshArchivesList();
     if (btn.dataset.tab === "approvals") {
       syncApprovalsNotifyBtn();
@@ -1051,6 +1053,9 @@ async function refreshAgents() {
     if (agentFilter && agentFilterSelect.value !== agentFilter) setAgentFilter("");
   }
   agentFilterSelect.hidden = !multiAgent;
+  // "已监测的 Claude Code 会话" → 多家时改成"已监测的 agent 会话"，Claude 星芒仍留着
+  const sessionsTitle = document.querySelector('[data-i18n="home.strip.sessions"]');
+  if (sessionsTitle) sessionsTitle.textContent = t(multiAgent ? "home.strip.sessionsMulti" : "home.strip.sessions");
 
   // 首页卡片
   const card = document.getElementById("strip-agents");
@@ -1744,7 +1749,7 @@ async function refreshApprovalHistory() {
             const answer = formatAnswerValue(r.resolved_value);
             return `<tr>
           <td class="dd-mono dd-nowrap">${escapeHtml((r.resolved_at || r.ts || "").slice(0, 19).replace("T", " "))}</td>
-          <td class="dd-mono">${sessionIdCell(r.session_id, r.cwd)}</td>
+          <td class="dd-mono">${agentBadge(r.agent)}${agentBadge(r.agent) ? " " : ""}${sessionIdCell(r.session_id, r.cwd)}</td>
           <td class="dd-nowrap">${escapeHtml(toolLabel(r.tool_name, r.tool_name))}${r.kind === "notify" ? " (notify)" : r.kind === "permission" ? " (native)" : ""}</td>
           <td title="${escapeHtml(r.matched_rule || "")}">${escapeHtml(r.kind === "permission" ? t("approvals.permission.rule") : ruleTitle(r.matched_rule) || r.matched_rule || "-")}</td>
           <td class="dd-mono dd-clip" title="${escapeHtml(r.matched_value || "")}">${escapeHtml((r.matched_value || "-").slice(0, 60))}</td>
@@ -3438,6 +3443,11 @@ async function bootstrap() {
     selectSession(lastId);
   }
   await refreshAgents();
+  {
+    const wanted = (location.hash || "").slice(1);
+    const btn = wanted && document.querySelector(`.tab-btn[data-tab="${CSS.escape(wanted)}"]`);
+    if (btn && !btn.classList.contains("active")) btn.click();
+  }
   await refreshLogSessionOptions();
   await pollLogs();
   await refreshOverview();
