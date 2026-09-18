@@ -139,9 +139,11 @@ class TestFileEvents(unittest.TestCase):
         self.assertEqual(agg["detail"]["count"], 4)
 
     def test_storm_breaker(self):
-        for i in range(probe.FILE_STORM_PER_SEC + 50):
-            self._file(101, "write", "/proj/out/f{}.txt".format(i))
-        self.assertLessEqual(len(self.cap.events), probe.FILE_STORM_PER_SEC)
+        # 熔断按"同一秒"计数，把时钟钉住，免得循环跨秒让计数器重置（真机上跨秒重置是对的）
+        with mock.patch.object(probe.time, "time", return_value=1_800_000_000.5):
+            for i in range(probe.FILE_STORM_PER_SEC + 50):
+                self._file(101, "write", "/proj/out/f{}.txt".format(i))
+        self.assertEqual(len(self.cap.events), probe.FILE_STORM_PER_SEC)
 
     def test_listen_exposed_vs_local(self):
         probe._handle_bind_line(["BIND", "101", "0", "python3", "100", "5", "0.0.0.0", "8080"])
