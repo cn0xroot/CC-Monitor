@@ -1143,6 +1143,16 @@ async function refreshOverview() {
   document.getElementById("stat-reverseeng-total").textContent = s.reverseEngOpsTotal;
   document.getElementById("stat-procbg-total").textContent = s.procbgOpsTotal;
   document.getElementById("stat-sensitive-total").textContent = s.sensitiveOpsTotal;
+  document.getElementById("stat-kernel-ops-total").textContent = s.kernelOpsTotal;
+  {
+    // 副标题按实际分布写：有疑似绕过/对外监听就点名，让红字有理由
+    const b = new Map((s.kernelOpsBreakdown || []).map((r) => [r.kind, r.n]));
+    const parts = [];
+    if (b.get("bypass")) parts.push(t("home.kernelOps.bypass", { n: b.get("bypass") }));
+    if (b.get("listenExposed")) parts.push(t("home.kernelOps.listenExposed", { n: b.get("listenExposed") }));
+    const sub = document.getElementById("stat-kernel-ops-sub");
+    sub.textContent = parts.length ? parts.join(" · ") : t("home.kernelOps.sub");
+  }
   document.getElementById("stat-sensitive-data-total").textContent = s.sensitiveDataTotal;
   document.getElementById("stat-advanced-threat-total").textContent = s.advancedThreatTotal;
   document.getElementById("stat-workdir-escape-total").textContent = s.workdirEscapeTotal;
@@ -2153,6 +2163,7 @@ async function openDrilldownInner(kind) {
     "sensitive-data": { titleKey: "home.sensitiveData.title", labels: { credential: "home.sensitiveData.credential", pii: "home.sensitiveData.pii", vpnConfig: "home.sensitiveData.vpnConfig", other: "home.sensitiveData.other" } },
     "advanced-threat": { titleKey: "home.advancedThreat.title", labels: { cryptoMining: "home.advancedThreat.cryptoMining", dbFileWrite: "home.advancedThreat.dbFileWrite", webshell: "home.advancedThreat.webshell", reverseEscapeShell: "home.advancedThreat.reverseEscapeShell", downloadExec: "home.advancedThreat.downloadExec", c2Framework: "home.advancedThreat.c2Framework", postExploitation: "home.advancedThreat.postExploitation", suspiciousMcp: "home.advancedThreat.suspiciousMcp", pentestRecon: "home.advancedThreat.pentestRecon", covertTunnel: "home.advancedThreat.covertTunnel" } },
     "workdir-escape": { titleKey: "home.workdirEscape.title", labels: { writeSensitive: "home.workdirEscape.writeSensitive", writeOther: "home.workdirEscape.writeOther", readSensitive: "home.workdirEscape.readSensitive", readOther: "home.workdirEscape.readOther" } },
+    "kernel-ops": { titleKey: "home.kernelOps.title", labels: { write: "home.kernelOps.write", unlink: "home.kernelOps.unlink", rename: "home.kernelOps.rename", mkdir: "home.kernelOps.mkdir", listen: "home.kernelOps.listen", listenExposed: "home.kernelOps.listenExposedKind", bypass: "home.kernelOps.bypassKind", storm: "home.kernelOps.storm", other: "home.kernelOps.other" } },
   };
   // 首页卡片用 accent-red-strong 标红的那几组，下钻详情里的分类徽章也跟着标红加粗。
   // 一开始只标红"敏感操作/敏感数据/高级威胁检测/逆向分析工具调用"这几组，后来陆续被
@@ -2194,10 +2205,12 @@ async function openDrilldownInner(kind) {
         <div class="row1">
           <span class="ts">${r.ts}</span>
           <span class="${badgeCls}">${escapeHtml(kindLabel(r.kind))}</span>
+          ${agentBadge(r.agent)}
           <span class="label dd-badge-danger">${escapeHtml(toolLabel(r.toolName, r.label))}</span>
         </div>
         <div class="cwd">${sessionCwdLine(r)}</div>
         <div class="summary">${r.summaryHtml || ""}</div>
+        ${(r.extra || []).map((e) => `<div class="extra ${escapeHtml(e.cls || "")}">${e.html}</div>`).join("")}
       </div>`
           )
           .join("") || `<div class="empty-state">${t("drilldown.empty")}</div>`

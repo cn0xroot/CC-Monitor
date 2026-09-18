@@ -1521,6 +1521,9 @@ html, body {
 .agent-badge sup { font-size: 0.6em; margin-left: 2px; opacity: .85; }
 /* 整行一张卡：每家 agent 一个"徽标 + 计数"块横排，装得下就一行，装不下换行 */
 #strip-agents { grid-column: 1 / -1; }
+/* .strip-card 自带 display:flex，会压过浏览器默认的 [hidden]{display:none}——只有一家 agent 时这张卡
+   要真的藏起来（同一类 bug 见下面那段注释） */
+#strip-agents[hidden] { display: none; }
 #strip-agents .strip-users { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 6px; }
 #strip-agents .agent-row { display: flex; gap: 8px; align-items: center; font-size: 0.8571rem; white-space: nowrap; }
 #strip-agents .agent-row .cap { color: var(--text-dim); }

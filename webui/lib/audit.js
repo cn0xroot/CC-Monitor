@@ -836,6 +836,40 @@ function listSessions(limit = 200, { agent = null } = {}) {
   }, []);
 }
 
+// 系统层探针的文件级观测与监听端口（os_file / os_listen）：按操作分类。只有探针在跑时才有数据。
+// kind：write / unlink / rename / mkdir / listen / listenExposed / bypass（agent 进程直写文件但 hook 层
+// 没有对应记录）。聚合汇总行（aggregated=true）只是计数补充，不单独算一类，归到对应 op 里。
+function kernelOpsKindSql() {
+  return `CASE
+    WHEN source = 'os_listen' AND json_extract(detail, '$.exposed') = 1 THEN 'listenExposed'
+    WHEN source = 'os_listen' THEN 'listen'
+    WHEN matched_rule = 'hook_bypass_suspected' THEN 'bypass'
+    WHEN json_extract(detail, '$.op') = 'storm' THEN 'storm'
+    ELSE COALESCE(json_extract(detail, '$.op'), 'other') END`;
+}
+
+function kernelOpsBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT ${kernelOpsKindSql()} AS kind, COUNT(*) AS n FROM events
+         WHERE source IN ('os_file', 'os_listen') GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+
+function kernelOpsEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, source, ${kernelOpsKindSql()} AS kind FROM events
+         WHERE source IN ('os_file', 'os_listen') ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
+}
+
 // sessions 表（hook 进程沿父进程链登记的"会话 ↔ agent 根进程"）：{session_id → {agent, rootPid, rootStart, cwd}}。
 // 老库没有这张表就返回空 Map，调用方退回按 cwd 猜的老办法。
 function sessionRoots() {
@@ -1572,6 +1606,8 @@ function blockedDetails(limit = 200) {
 
 module.exports = {
   agentStats,
+  kernelOpsBreakdown,
+  kernelOpsEvents,
   sessionRoots,
   hasAgentColumn,
   listSessions,

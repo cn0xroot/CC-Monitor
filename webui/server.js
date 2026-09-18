@@ -513,6 +513,8 @@ app.get("/api/overview", async (req, res) => {
     sensitiveDataTotal: sumN(audit.sensitiveDataBreakdown()),
     advancedThreatTotal: sumN(audit.advancedThreatBreakdown()),
     workdirEscapeTotal: sumN(audit.workdirEscapeBreakdown()),
+    kernelOpsTotal: sumN(audit.kernelOpsBreakdown()),
+    kernelOpsBreakdown: audit.kernelOpsBreakdown(),
     workdirEscapeBreakdown: audit.workdirEscapeBreakdown(),
     screenshotOps: audit.screenshotStats(),
     toolCalls: audit.toolCallStats().total,
@@ -626,7 +628,7 @@ function opsDrilldownHandler(breakdownFn, eventsFn) {
       } catch (e) {
         detail = {};
       }
-      const { label, summaryHtml } = fmt.describe(row.tool_name, "hook_pre", detail);
+      const { label, summaryHtml, extra } = fmt.describe(row.tool_name, row.source || "hook_pre", detail);
       return {
         id: row.id,
         ts: row.ts,
@@ -634,9 +636,11 @@ function opsDrilldownHandler(breakdownFn, eventsFn) {
         cwd: row.cwd,
         toolName: row.tool_name,
         matchedRule: row.matched_rule,
+        agent: detail.agent || row.agent || null,
         kind: row.kind,
         label,
         summaryHtml,
+        extra: extra || [],
       };
     });
     res.json({ breakdown, events });
@@ -644,6 +648,7 @@ function opsDrilldownHandler(breakdownFn, eventsFn) {
 }
 
 app.get("/api/drilldown/github-ops", opsDrilldownHandler(audit.githubOpsBreakdown, audit.githubOpsEvents));
+app.get("/api/drilldown/kernel-ops", opsDrilldownHandler(audit.kernelOpsBreakdown, audit.kernelOpsEvents));
 app.get("/api/drilldown/ssh-ops", opsDrilldownHandler(audit.sshOpsBreakdown, audit.sshOpsEvents));
 app.get("/api/drilldown/download-ops", opsDrilldownHandler(audit.downloadOpsBreakdown, audit.downloadOpsEvents));
 app.get("/api/drilldown/docker-ops", opsDrilldownHandler(audit.dockerOpsBreakdown, audit.dockerOpsEvents));
