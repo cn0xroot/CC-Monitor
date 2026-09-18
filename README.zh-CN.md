@@ -12,6 +12,20 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 每个版本新增了什么、改了什么、修了哪些 bug，都记在
 [CHANGELOG.md](./CHANGELOG.md)（[English](./CHANGELOG.en.md)）里；当前版本 **v2.0**。
 
+> **🧪 实验性功能（`dev` 分支）**：`master` 只监测 Claude Code。`dev` 分支正在把检测面扩到其它
+> AI coding agent——Codex CLI、Gemini CLI、Cursor、OpenCode、ZCode、Antigravity CLI、Grok CLI 通过
+> 各自的 hook / 插件接入同一套规则、审批台和审计日志；系统层 eBPF 探针按"Agent 注册表"认所有
+> agent 的进程树，并新增文件级系统调用（写入 / 删除 / 重命名 / 建目录）、监听端口观测、目录 fd
+> 跟踪（`rm -r` / `mkdir -p` 的相对路径解析成绝对路径）、系统层事件归到会话、`CC-Monitor run --`
+> 显式绑定；AI Tap 能解析 Claude Code / Antigravity CLI / Codex 三种会话文件。**除 Claude Code 外
+> 的接入都处于实验测试阶段**（按各家官方文档/源码实现，Antigravity CLI 做过一轮真机验证，其余
+> 尚未在真实安装上验证），不建议在生产环境使用。详见
+> [dev 分支 README](https://github.com/cn0xroot/CC-Monitor/blob/dev/README.zh-CN.md#ai-agent-接入状态)、
+> [MULTI-AGENT.md](https://github.com/cn0xroot/CC-Monitor/blob/dev/MULTI-AGENT.md)（使用与实现文档）、
+> [DESIGN-multi-agent.md](https://github.com/cn0xroot/CC-Monitor/blob/dev/DESIGN-multi-agent.md)（技术方案）。
+> 想试：`git checkout dev`，或 `git worktree add ../CC-Monitor-dev dev` 单独检出、用另一个
+> `CC_MONITOR_HOME` 和端口跑，不影响 master 的安装。
+
 ## 核心能力一览
 
 - **应用层 + 系统层双重监测**：Claude Code hooks 拿语义信息，Linux eBPF / macOS nettop 探针在内核/系统层独立交叉验证——hooks 被绕过或篡改也能兜底发现，不是只靠 Claude Code 自己诚实上报。

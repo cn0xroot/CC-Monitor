@@ -15,6 +15,23 @@ Every release — what was added, changed and fixed — is recorded in
 [CHANGELOG.md](./CHANGELOG.en.md) ([Chinese](./CHANGELOG.md)); the current release is
 **v2.0**.
 
+> **🧪 Experimental features (`dev` branch)**: `master` monitors Claude Code only. The `dev` branch
+> is extending the detection surface to other AI coding agents — Codex CLI, Gemini CLI, Cursor,
+> OpenCode, ZCode, Antigravity CLI and Grok CLI plug into the same rules, approval desk and audit
+> log through their own hooks / plugin; the system-layer eBPF probe recognises every agent's process
+> tree via an "agent registry" and gains file-level syscalls (write / delete / rename / mkdir),
+> listening-port observation, directory-fd tracking (relative paths from `rm -r` / `mkdir -p`
+> resolved to absolute ones), session attribution for kernel events and explicit
+> `CC-Monitor run --` binding; AI Tap parses Claude Code / Antigravity CLI / Codex session files.
+> **Everything except Claude Code is in an experimental / testing stage** (implemented from each
+> vendor's docs or source; Antigravity CLI has had one real-machine round, the rest have not been
+> verified on real installs) — not recommended for production. See the
+> [dev branch README](https://github.com/cn0xroot/CC-Monitor/blob/dev/README.md#ai-agent-integration-status),
+> [MULTI-AGENT.md](https://github.com/cn0xroot/CC-Monitor/blob/dev/MULTI-AGENT.md) (usage and
+> internals) and [DESIGN-multi-agent.md](https://github.com/cn0xroot/CC-Monitor/blob/dev/DESIGN-multi-agent.md)
+> (design), both in Chinese. To try it: `git checkout dev`, or `git worktree add ../CC-Monitor-dev dev`
+> and run it with a separate `CC_MONITOR_HOME` and port so the master install is untouched.
+
 ## Core capabilities at a glance
 
 - **Two independent layers of monitoring**: Claude Code hooks capture semantic detail; a
