@@ -24,6 +24,9 @@ tracepoint:sched:sched_process_fork
 {
     @watch[args.child_pid] = 1;
     @root[args.child_pid] = @root[args.parent_pid];
+    // 子进程继承父进程的当前目录——probe.py 靠这条把相对路径解析对（进程可能在我们去读
+    // /proc/<pid>/cwd 之前就退出了，事后读不到）
+    printf("FORK\t%d\t%d\n", args.parent_pid, args.child_pid);
 }
 
 // sched_process_exec 在 exec 完成之后触发，comm 已经是新程序名——一个 agent 从 shell 里
@@ -80,6 +83,230 @@ tracepoint:syscalls:sys_enter_connect
         $port6 = ($sin6->sin6_port >> 8) | (($sin6->sin6_port << 8) & 0xff00);
         printf("CONNECT\t%d\t%d\t%s\t%d\t%s\t%d\t%s\n", pid, uid, comm, @root[pid], ntop($sin6->sin6_addr.in6_u.u6_addr8), $port6, @dns_query[pid]);
     }
+}
+
+// ---- 文件级观测（借 agentsight bpf/process_ext 的探点集）----
+// 只看"改变了文件系统"的系统调用：带写标志的 openat、unlink、rename、mkdir、ftruncate。
+// 纯读（O_RDONLY）不上报——hook 层已有 Read 事件，内核层每秒上千次的 open 只会淹没一切。
+// 内核里先把 /proc /sys /dev 三个前缀丢掉（量最大、最没意义），其余路径过滤/去重/聚合在
+// probe.py 里做（排除表来自 workdir 的忽略目录 + 各 agent 自己的状态目录，60 秒滑动窗口聚合）。
+// 相对路径按 pid 的当前目录解析，也在 probe.py 里做（读 /proc/<pid>/cwd）。
+// O_WRONLY=1 O_RDWR=2 O_CREAT=0x40 O_TRUNC=0x200：任一命中就算"写打开"。
+tracepoint:syscalls:sys_enter_openat
+/@watch[pid] && ((args.flags & 3) != 0 || (args.flags & 0x40) != 0 || (args.flags & 0x200) != 0)/
+{
+    if (strncmp(str(args.filename), "/proc/", 6) != 0 && strncmp(str(args.filename), "/sys/", 5) != 0 && strncmp(str(args.filename), "/dev/", 5) != 0) {
+        printf("FILE\t%d\t%d\t%s\t%d\twrite\t%x\t%s\t\t%d\n", pid, uid, comm, @root[pid], args.flags, str(args.filename), args.dfd);
+    }
+}
+
+// 目录句柄跟踪：rm -r / mkdir -p / find / Python 的 os.walk、shutil.rmtree 这类工具拿着目录 fd
+// 逐级操作（unlinkat(dfd, "x")、fchdir(fd)），路径都是相对那个 fd 的。事后去读 /proc/<pid>/fd
+// 常常已经晚了（进程一毫秒就跑完），而且 fd 号被复用后还会读到错的目录。所以在目录被打开的
+// 那一刻就报：openat 成功返回后从当前任务的 fd 表里取出 struct file，看 inode 是不是目录
+// （不能只看 O_DIRECTORY 标志——Python 打开目录不带这个标志）。probe.py 据此维护
+// (pid, fd) → 绝对路径 的表，后面所有 dfd 相对路径在用户态查表解析，不碰 /proc。
+tracepoint:syscalls:sys_enter_openat
+/@watch[pid]/
+{
+    @dir_path[tid] = str(args.filename);
+    @dir_dfd[tid] = (int64)args.dfd;
+}
+
+tracepoint:syscalls:sys_exit_openat
+/@watch[pid] && @dir_path[tid] != ""/
+{
+    if (args.ret >= 0) {
+        $f = (struct file *)(*(curtask->files->fdt->fd + args.ret));
+        if (($f->f_inode->i_mode & 0xF000) == 0x4000) {
+            printf("OPENDIR\t%d\t%d\t%s\t%d\t%d\t%s\t%d\n", pid, uid, comm, @root[pid], args.ret, @dir_path[tid], @dir_dfd[tid]);
+        }
+    }
+    delete(@dir_path[tid]);
+    delete(@dir_dfd[tid]);
+}
+
+tracepoint:syscalls:sys_enter_fchdir
+/@watch[pid]/
+{
+    printf("FCHDIR\t%d\t%d\t%s\t%d\t%d\n", pid, uid, comm, @root[pid], args.fd);
+}
+
+// 目录 fd 会被 dup（rm -r 的 fts 把 openat 拿到的 fd 立刻 F_DUPFD_CLOEXEC 一份），
+// 复制关系也要报，不然 unlinkat(5, "f") 里的 5 查不到表。
+tracepoint:syscalls:sys_enter_dup
+/@watch[pid]/
+{
+    @dup_old[tid] = (int64)args.fildes;
+}
+
+tracepoint:syscalls:sys_enter_dup2,
+tracepoint:syscalls:sys_enter_dup3
+/@watch[pid]/
+{
+    @dup_old[tid] = (int64)args.oldfd;
+}
+
+// fcntl 只关心 F_DUPFD(0) / F_DUPFD_CLOEXEC(1030)
+tracepoint:syscalls:sys_enter_fcntl
+/@watch[pid] && (args.cmd == 0 || args.cmd == 1030)/
+{
+    @dup_old[tid] = (int64)args.fd;
+}
+
+tracepoint:syscalls:sys_exit_dup,
+tracepoint:syscalls:sys_exit_dup2,
+tracepoint:syscalls:sys_exit_dup3,
+tracepoint:syscalls:sys_exit_fcntl
+/@watch[pid] && @dup_old[tid] >= 0/
+{
+    if (args.ret >= 0) {
+        printf("DUP\t%d\t%d\t%s\t%d\t%d\t%d\n", pid, uid, comm, @root[pid], @dup_old[tid], args.ret);
+    }
+    delete(@dup_old[tid]);
+}
+
+// unlink / rename / mkdir 只报成功的：`mkdir -p a/b/c` 会对每一级祖先都试一次 mkdir（EEXIST），
+// `rm -f 不存在的文件` 是 ENOENT——这些失败调用没有改变任何东西，报出来只是噪音。做法是
+// enter 时把路径按线程存进 map，exit 时 ret == 0 才打印。openat 的写打开保留 enter 语义：
+// "试图写 ~/.ssh 但没权限"本身就值得记一笔。
+tracepoint:syscalls:sys_enter_unlinkat
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.pathname);
+    @fs_flag[tid] = (uint64)args.flag;
+    @fs_dfd[tid] = (int64)args.dfd;
+}
+
+tracepoint:syscalls:sys_enter_unlink
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.pathname);
+    @fs_flag[tid] = (uint64)0;
+    @fs_dfd[tid] = (int64)-100;
+}
+
+tracepoint:syscalls:sys_enter_rmdir
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.pathname);
+    @fs_flag[tid] = (uint64)0x200;  // AT_REMOVEDIR，跟 unlinkat 删目录的 flag 一致
+    @fs_dfd[tid] = (int64)-100;
+}
+
+tracepoint:syscalls:sys_exit_unlinkat,
+tracepoint:syscalls:sys_exit_unlink,
+tracepoint:syscalls:sys_exit_rmdir
+/@watch[pid] && @fs_path[tid] != ""/
+{
+    if (args.ret == 0) {
+        printf("FILE\t%d\t%d\t%s\t%d\tunlink\t%x\t%s\t\t%d\n", pid, uid, comm, @root[pid], @fs_flag[tid], @fs_path[tid], @fs_dfd[tid]);
+    }
+    delete(@fs_path[tid]);
+    delete(@fs_flag[tid]);
+    delete(@fs_dfd[tid]);
+}
+
+tracepoint:syscalls:sys_enter_renameat2
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.oldname);
+    @fs_path2[tid] = str(args.newname);
+    @fs_flag[tid] = (uint64)args.flags;
+    @fs_dfd[tid] = (int64)args.olddfd;
+}
+
+tracepoint:syscalls:sys_enter_renameat
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.oldname);
+    @fs_path2[tid] = str(args.newname);
+    @fs_flag[tid] = (uint64)0;
+    @fs_dfd[tid] = (int64)args.olddfd;
+}
+
+tracepoint:syscalls:sys_enter_rename
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.oldname);
+    @fs_path2[tid] = str(args.newname);
+    @fs_flag[tid] = (uint64)0;
+    @fs_dfd[tid] = (int64)-100;
+}
+
+tracepoint:syscalls:sys_exit_renameat2,
+tracepoint:syscalls:sys_exit_renameat,
+tracepoint:syscalls:sys_exit_rename
+/@watch[pid] && @fs_path[tid] != ""/
+{
+    if (args.ret == 0) {
+        printf("FILE\t%d\t%d\t%s\t%d\trename\t%x\t%s\t%s\t%d\n", pid, uid, comm, @root[pid], @fs_flag[tid], @fs_path[tid], @fs_path2[tid], @fs_dfd[tid]);
+    }
+    delete(@fs_path[tid]);
+    delete(@fs_path2[tid]);
+    delete(@fs_flag[tid]);
+    delete(@fs_dfd[tid]);
+}
+
+tracepoint:syscalls:sys_enter_mkdirat
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.pathname);
+    @fs_flag[tid] = (uint64)args.mode;
+    @fs_dfd[tid] = (int64)args.dfd;
+}
+
+tracepoint:syscalls:sys_enter_mkdir
+/@watch[pid]/
+{
+    @fs_path[tid] = str(args.pathname);
+    @fs_flag[tid] = (uint64)args.mode;
+    @fs_dfd[tid] = (int64)-100;
+}
+
+tracepoint:syscalls:sys_exit_mkdirat,
+tracepoint:syscalls:sys_exit_mkdir
+/@watch[pid] && @fs_path[tid] != ""/
+{
+    if (args.ret == 0) {
+        printf("FILE\t%d\t%d\t%s\t%d\tmkdir\t%x\t%s\t\t%d\n", pid, uid, comm, @root[pid], @fs_flag[tid], @fs_path[tid], @fs_dfd[tid]);
+    }
+    delete(@fs_path[tid]);
+    delete(@fs_flag[tid]);
+    delete(@fs_dfd[tid]);
+}
+
+// chdir 只用来维护 probe.py 侧的"pid 当前目录"缓存，让相对路径能解析（读 /proc 有竞态，这里是主路）。
+tracepoint:syscalls:sys_enter_chdir
+/@watch[pid]/
+{
+    printf("CHDIR\t%d\t%d\t%s\t%d\t%s\n", pid, uid, comm, @root[pid], str(args.filename));
+}
+
+// ---- 监听端口 ----
+// agent 起了一个本地监听（调试服务、反连中转、把本机端口暴露出去）是 CONNECT 看不到的另一半。
+// bind 拿得到端口，listen 只有 fd；两条都报，probe.py 把同一 pid 上"bind 之后紧接着 listen"合成
+// 一条"开始监听 :port"事件。AF_INET(2)/AF_INET6(10) 之外的（unix socket）不报。
+tracepoint:syscalls:sys_enter_bind
+/@watch[pid]/
+{
+    $sa = (struct sockaddr *) args.umyaddr;
+    if ($sa->sa_family == 2) {
+        $sin = (struct sockaddr_in *) $sa;
+        $port = ($sin->sin_port >> 8) | (($sin->sin_port << 8) & 0xff00);
+        printf("BIND\t%d\t%d\t%s\t%d\t%d\t%s\t%d\n", pid, uid, comm, @root[pid], args.fd, ntop($sin->sin_addr.s_addr), $port);
+    }
+    if ($sa->sa_family == 10) {
+        $sin6 = (struct sockaddr_in6 *) $sa;
+        $port6 = ($sin6->sin6_port >> 8) | (($sin6->sin6_port << 8) & 0xff00);
+        printf("BIND\t%d\t%d\t%s\t%d\t%d\t%s\t%d\n", pid, uid, comm, @root[pid], args.fd, ntop($sin6->sin6_addr.in6_u.u6_addr8), $port6);
+    }
+}
+
+tracepoint:syscalls:sys_enter_listen
+/@watch[pid]/
+{
+    printf("LISTEN\t%d\t%d\t%s\t%d\t%d\n", pid, uid, comm, @root[pid], args.fd);
 }
 
 // 流量字节数统计——上面的 CONNECT 只知道"连过哪个 IP:port"，不知道传了多少数据。

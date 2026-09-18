@@ -2,8 +2,8 @@
 
 > 状态：2026-09-18 起草；同日在 `dev` 分支实施了 Phase A（注册表 + 五个 hook 适配器 + installer +
 > 存储/规则/CLI/Web UI 的 agent 维度）和 Phase B 的前半段（探针模板化、`/proc` 播种、运行中发现
-> 新根后重启、macOS 探针按注册表认进程）。**未实施**：Phase B 的文件级探点（`openat`/`unlinkat`/
-> `bind`/`listen`）与 `CC-Monitor run --` 显式绑定、Phase C（其它 agent 的会话文件解析、
+> 新根后重启、macOS 探针按注册表认进程）。同日稍后又完成了 Phase B 后半（文件级探点、监听端口、
+> `CC-Monitor run --` 显式绑定，目录 fd 跟踪解决了相对路径解析，比 agentsight 更进一步）。**未实施**：Phase C（其它 agent 的会话文件解析、
 > `sessions`/`processes` 表、带置信度的会话↔进程匹配）、Phase D（TLS 元数据、OTel、BCC 后端）。
 > 各家 hook 协议按官方文档实现，本机只有 Claude Code 可实测，§8 的待验证事项仍然有效。配套阅读：[DESIGN.md](./DESIGN.md)（现有双层架构）、
 > [SECURITY.md](./SECURITY.md)。参考对象：[eunomia-bpf/agentsight](https://github.com/eunomia-bpf/agentsight)

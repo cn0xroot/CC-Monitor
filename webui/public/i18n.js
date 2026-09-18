@@ -578,6 +578,8 @@ const I18N = {
     "source.hook_lifecycle": "应用层 · 生命周期",
     "source.os_exec": "系统层 · 进程",
     "source.os_net": "系统层 · 网络",
+    "source.os_file": "系统层 · 文件",
+    "source.os_listen": "系统层 · 监听端口",
 
     "risk.high": "高危",
     "risk.medium": "中危",
@@ -589,6 +591,8 @@ const I18N = {
     "stage.hook_post": "执行完成",
     "stage.os_exec": "内核观测",
     "stage.os_net": "内核观测",
+    "stage.os_file": "内核观测",
+    "stage.os_listen": "内核观测",
 
     "tool.Bash": "执行 Shell 命令",
     "tool.Write": "写入文件",
@@ -1200,6 +1204,8 @@ const I18N = {
     "source.hook_lifecycle": "App layer · lifecycle",
     "source.os_exec": "Kernel layer · process",
     "source.os_net": "Kernel layer · network",
+    "source.os_file": "Kernel layer · file",
+    "source.os_listen": "Kernel layer · listening port",
 
     "risk.high": "High",
     "risk.medium": "Medium",
@@ -1211,6 +1217,8 @@ const I18N = {
     "stage.hook_post": "Post-exec",
     "stage.os_exec": "Kernel observed",
     "stage.os_net": "Kernel observed",
+    "stage.os_file": "Kernel observed",
+    "stage.os_listen": "Kernel observed",
 
     "tool.Bash": "Run shell command",
     "tool.Write": "Write file",

@@ -31,6 +31,8 @@ const STAGE_LABELS = {
   hook_lifecycle: "生命周期",
   os_exec: "内核观测",
   os_net: "内核观测",
+  os_file: "内核观测",
+  os_listen: "内核观测",
 };
 
 const MAX_SUMMARY_LEN = 240;
@@ -141,9 +143,42 @@ function describeOsNet(comm, detail) {
   return { label: `系统层观测: 网络连接 (${escapeHtml(comm)})`, summaryHtml: escapeHtml(summary), extra: [] };
 }
 
+const FILE_OP_LABELS = { write: "写入", unlink: "删除", rename: "重命名/移动", mkdir: "创建目录", storm: "事件过多" };
+
+function describeOsFile(comm, detail) {
+  detail = detail || {};
+  const op = detail.op || "";
+  const label = `系统层观测: 文件${FILE_OP_LABELS[op] || op} (${escapeHtml(comm)})`;
+  if (op === "storm") return { label, summaryHtml: escapeHtml(detail.note || ""), extra: [] };
+  let summary = detail.path || "";
+  if (detail.path2) summary += " → " + detail.path2;
+  if (detail.count > 1) summary += `  ×${detail.count} / ${detail.window_sec || 60}s`;
+  const extra = [];
+  if (detail.by_agent_process) {
+    if (detail.hook_matched === false) {
+      extra.push({ cls: "warn", label: null, html: "⚠ agent 进程直接写入，hook 层没有对应的 Write/Edit 记录，可能绕过了监测" });
+    } else if (detail.hook_matched === true) {
+      extra.push({ cls: "ok", label: null, html: "✓ 与 hook 层的 Write/Edit 记录吻合" });
+    } else if (detail.agent_state) {
+      extra.push({ cls: "", label: null, html: "agent 自身状态目录" });
+    }
+  } else {
+    extra.push({ cls: "", label: null, html: "由 agent 派生的子进程执行" });
+  }
+  return { label, summaryHtml: escapeHtml(summary), extra };
+}
+
+function describeOsListen(comm, detail) {
+  detail = detail || {};
+  const extra = detail.exposed ? [{ cls: "warn", label: null, html: "⚠ 监听在所有网卡上，局域网/公网可达" }] : [];
+  return { label: `系统层观测: 开始监听端口 (${escapeHtml(comm)})`, summaryHtml: escapeHtml(`${detail.ip || ""}:${detail.port || ""}`), extra };
+}
+
 function describe(toolName, source, detail) {
   if (source === "os_exec") return describeOsExec(toolName, detail);
   if (source === "os_net") return describeOsNet(toolName, detail);
+  if (source === "os_file") return describeOsFile(toolName, detail);
+  if (source === "os_listen") return describeOsListen(toolName, detail);
 
   const [toolInput, response] = splitDetail(source, detail);
   const label = TOOL_LABELS[toolName] || toolName || "未知操作";

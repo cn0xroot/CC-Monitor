@@ -2,29 +2,91 @@
   "id": "opencode",
   "display": "OpenCode",
   "process": {
-    "comm": ["opencode"],
+    "comm": [
+      "opencode"
+    ],
     "comm_prefix": [],
-    "exe_basename": ["opencode"],
-    "argv_patterns": ["(^|/)opencode( |$)", "opencode-ai"],
-    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
-    "infra_noise": ["CC-Monitor-hook", "^git (rev-parse|status|diff|log|ls-files)"]
+    "exe_basename": [
+      "opencode"
+    ],
+    "argv_patterns": [
+      "(^|/)opencode( |$)",
+      "opencode-ai"
+    ],
+    "shell_comms": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh"
+    ],
+    "infra_noise": [
+      "CC-Monitor-hook",
+      "^git (rev-parse|status|diff|log|ls-files)"
+    ]
   },
   "hooks": {
     "protocol": "opencode",
-    "config": {"kind": "opencode-plugin", "user_path": "~/.config/opencode/plugins/cc-monitor.js", "project_path": ".opencode/plugins/cc-monitor.js"},
-    "events": {"tool.execute.before": "pre", "tool.execute.after": "post"}
+    "config": {
+      "kind": "opencode-plugin",
+      "user_path": "~/.config/opencode/plugins/cc-monitor.js",
+      "project_path": ".opencode/plugins/cc-monitor.js"
+    },
+    "events": {
+      "tool.execute.before": "pre",
+      "tool.execute.after": "post"
+    }
   },
   "tools": {
-    "bash": "Bash", "read": "Read", "write": "Write", "edit": "Edit", "patch": "Edit", "multiedit": "MultiEdit",
-    "glob": "Glob", "grep": "Grep", "list": "LS", "webfetch": "WebFetch", "websearch": "WebSearch",
-    "task": "Task", "todowrite": "TodoWrite", "todoread": "TodoRead", "question": "AskUserQuestion"
+    "bash": "Bash",
+    "read": "Read",
+    "write": "Write",
+    "edit": "Edit",
+    "patch": "Edit",
+    "multiedit": "MultiEdit",
+    "glob": "Glob",
+    "grep": "Grep",
+    "list": "LS",
+    "webfetch": "WebFetch",
+    "websearch": "WebSearch",
+    "task": "Task",
+    "todowrite": "TodoWrite",
+    "todoread": "TodoRead",
+    "question": "AskUserQuestion"
   },
-  "field_aliases": {"filePath": "file_path", "oldString": "old_string", "newString": "new_string", "patchText": "content"},
-  "sessions": {"glob": "~/.local/share/opencode/storage/session/*/*.json", "format": "opencode_session"},
-  "home_ignore": [".local/share/opencode"],
-  "project_markers": ["AGENTS.md", ".opencode", "opencode.json"],
-  "config_tamper_paths": ["(^|/)opencode\\.jsonc?$", "(^|/)\\.opencode/", "(^|/)\\.config/opencode/"],
-  "history_paths": ["\\.local/share/opencode/"],
+  "field_aliases": {
+    "filePath": "file_path",
+    "oldString": "old_string",
+    "newString": "new_string",
+    "patchText": "content"
+  },
+  "sessions": {
+    "glob": "~/.local/share/opencode/storage/session/*/*.json",
+    "format": "opencode_session"
+  },
+  "home_ignore": [
+    ".local/share/opencode"
+  ],
+  "state_dirs": [
+    ".config/opencode",
+    ".local/share/opencode",
+    ".cache/opencode"
+  ],
+  "project_markers": [
+    "AGENTS.md",
+    ".opencode",
+    "opencode.json"
+  ],
+  "config_tamper_paths": [
+    "(^|/)opencode\\.jsonc?$",
+    "(^|/)\\.opencode/",
+    "(^|/)\\.config/opencode/"
+  ],
+  "history_paths": [
+    "\\.local/share/opencode/"
+  ],
   "launch_command": "opencode",
-  "env_strip_prefixes": ["OPENCODE_"]
+  "env_strip_prefixes": [
+    "OPENCODE_"
+  ]
 }

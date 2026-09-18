@@ -2,33 +2,89 @@
   "id": "gemini-cli",
   "display": "Gemini CLI",
   "process": {
-    "comm": ["gemini"],
+    "comm": [
+      "gemini"
+    ],
     "comm_prefix": [],
-    "exe_basename": ["gemini"],
-    "argv_patterns": ["@google/gemini-cli", "(^|/)gemini(\\.js)?( |$)"],
-    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
-    "infra_noise": ["CC-Monitor-hook", "^git (rev-parse|status|diff|log|ls-files)"]
+    "exe_basename": [
+      "gemini"
+    ],
+    "argv_patterns": [
+      "@google/gemini-cli",
+      "(^|/)gemini(\\.js)?( |$)"
+    ],
+    "shell_comms": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh"
+    ],
+    "infra_noise": [
+      "CC-Monitor-hook",
+      "^git (rev-parse|status|diff|log|ls-files)"
+    ]
   },
   "hooks": {
     "protocol": "gemini",
-    "config": {"kind": "gemini-settings", "user_path": "~/.gemini/settings.json", "project_path": ".gemini/settings.json"},
+    "config": {
+      "kind": "gemini-settings",
+      "user_path": "~/.gemini/settings.json",
+      "project_path": ".gemini/settings.json"
+    },
     "events": {
-      "BeforeTool": "pre", "AfterTool": "post", "BeforeAgent": "prompt",
-      "SessionStart": "session_start", "SessionEnd": "session_end",
-      "PreCompress": "precompact", "AfterAgent": "stop"
+      "BeforeTool": "pre",
+      "AfterTool": "post",
+      "BeforeAgent": "prompt",
+      "SessionStart": "session_start",
+      "SessionEnd": "session_end",
+      "PreCompress": "precompact",
+      "AfterAgent": "stop"
     }
   },
   "tools": {
-    "run_shell_command": "Bash", "read_file": "Read", "read_many_files": "Read", "list_directory": "LS",
-    "write_file": "Write", "replace": "Edit", "glob": "Glob", "search_file_content": "Grep", "grep_search": "Grep",
-    "web_fetch": "WebFetch", "google_web_search": "WebSearch", "save_memory": "Write"
+    "run_shell_command": "Bash",
+    "read_file": "Read",
+    "read_many_files": "Read",
+    "list_directory": "LS",
+    "write_file": "Write",
+    "replace": "Edit",
+    "glob": "Glob",
+    "search_file_content": "Grep",
+    "grep_search": "Grep",
+    "web_fetch": "WebFetch",
+    "google_web_search": "WebSearch",
+    "save_memory": "Write"
   },
-  "field_aliases": {"absolute_path": "file_path", "paths": "file_path", "dir_path": "path", "query": "query"},
-  "sessions": {"glob": "~/.gemini/tmp/*/chats/session-*.json", "format": "gemini_chats"},
-  "home_ignore": [".gemini/tmp"],
-  "project_markers": ["GEMINI.md", ".gemini"],
-  "config_tamper_paths": ["(^|/)\\.gemini/settings\\.json$", "(^|/)GEMINI\\.md$"],
-  "history_paths": ["\\.gemini/tmp/"],
+  "field_aliases": {
+    "absolute_path": "file_path",
+    "paths": "file_path",
+    "dir_path": "path",
+    "query": "query"
+  },
+  "sessions": {
+    "glob": "~/.gemini/tmp/*/chats/session-*.json",
+    "format": "gemini_chats"
+  },
+  "home_ignore": [
+    ".gemini/tmp"
+  ],
+  "state_dirs": [
+    ".gemini"
+  ],
+  "project_markers": [
+    "GEMINI.md",
+    ".gemini"
+  ],
+  "config_tamper_paths": [
+    "(^|/)\\.gemini/settings\\.json$",
+    "(^|/)GEMINI\\.md$"
+  ],
+  "history_paths": [
+    "\\.gemini/tmp/"
+  ],
   "launch_command": "gemini",
-  "env_strip_prefixes": ["GEMINI_CLI_"]
+  "env_strip_prefixes": [
+    "GEMINI_CLI_"
+  ]
 }

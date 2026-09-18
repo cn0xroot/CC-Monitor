@@ -295,6 +295,33 @@ def fetch_recent_shell_commands(agent=None, limit=300):
         conn.close()
 
 
+def fetch_recent_file_writes(agent=None, limit=300):
+    """最近的 hook_pre 文件写入记录 [(ts, agent, file_path)]（Write/Edit/MultiEdit/NotebookEdit），
+    探针文件级观测的绕过交叉验证用：agent 进程自己写了一个文件，hook 层应该有对应记录。"""
+    conn = _connect()
+    try:
+        sql = ("SELECT ts, agent, detail FROM events WHERE source = 'hook_pre' "
+               "AND tool_name IN ('Write', 'Edit', 'MultiEdit', 'NotebookEdit')")
+        params = []
+        if agent:
+            sql += " AND agent = ?"
+            params.append(agent)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        out = []
+        for ts, ag, detail_raw in conn.execute(sql, params).fetchall():
+            try:
+                d = json.loads(detail_raw)
+            except ValueError:
+                continue
+            path = d.get("file_path") or d.get("path") or d.get("notebook_path")
+            if isinstance(path, str) and path:
+                out.append((ts, ag, path))
+        return out
+    finally:
+        conn.close()
+
+
 def fetch_by_rule_prefix(prefix, limit=200):
     """按 id 降序返回 matched_rule 以 prefix 开头的 PreToolUse 事件（最新的在前），
     字段顺序跟 fetch_recent 一致。`CC-Monitor workdir` 用它列跨工作目录的操作。"""

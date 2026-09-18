@@ -59,6 +59,23 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
     when bpftrace is available.
   - Design document `DESIGN-multi-agent.md` (Chinese; includes the agentsight analysis and the
     list of what was borrowed).
+- **Probe file-level observation and listening ports** (after agentsight's `process_ext` probe
+  set): write-opens (`openat` with write flags), deletes (`unlinkat`/`unlink`/`rmdir`), renames and
+  mkdirs → `os_file`; `bind`+`listen` → `os_listen` (`0.0.0.0`/`::` flagged `listen_exposed`).
+  unlink/rename/mkdir are paired enter→exit and only successful calls are reported. Relative
+  paths: at `sys_exit_openat` the task's fd table is consulted and an `OPENDIR` line is emitted
+  when the inode is a directory; with `DUP`/`FCHDIR`/`CHDIR`/`FORK` lines userland keeps
+  (pid, fd)→dir and pid→cwd tables, so every level of `rm -rf`, `mkdir -p` and `shutil.rmtree`
+  resolves correctly (agentsight does not do this). Noise control: `/proc` `/sys` `/dev` dropped
+  in-kernel, `.git`/`node_modules`/caches/agent state dirs excluded in userland, 60-second
+  window aggregation, a 200-events-per-second breaker per root. File-path rules apply to
+  kernel-observed writes (a child process writing `~/.ssh` hits `sensitive_file_write`); the
+  agent process writing a file directly with no matching hook Write/Edit record →
+  `hook_bypass_suspected`. CLI and Web UI render and colour the two new sources.
+- **`CC-Monitor run [--agent <id>] -- <cmd>`**: explicitly binds a process as an agent root
+  (registered under `~/.cc-monitor/run/<pid>.json`, picked up by the probe within 3 s, cleaned on
+  exit), sets `CC_MONITOR_AGENT` / `CC_MONITOR_SESSION` and execs; hooks fall back to the env var
+  when `--agent` is absent. For hook-less custom agents. New `tests/test_probe_files.py` (16 cases).
 
 ### Changed
 - **Account panel gains identifiers and local environment info**: from 9 rows to 17. Adds

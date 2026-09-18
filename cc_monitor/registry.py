@@ -171,6 +171,20 @@ def home_ignore():
     return tuple(out)
 
 
+def state_dirs(agent_id=None):
+    """agent 自己的状态目录（家目录下的相对路径：.claude、.codex、.gemini……）。探针的文件级观测
+    用它判断"agent 进程自己写这些路径是正常维护自身状态，不是绕过 hook 写文件"。"""
+    out = []
+    specs = [get(agent_id)] if agent_id else load_all().values()
+    for spec in specs:
+        if not spec:
+            continue
+        for rel in spec.get("state_dirs") or []:
+            if rel not in out:
+                out.append(rel)
+    return tuple(out)
+
+
 def project_markers():
     out = [".git", ".hg", ".svn"]
     for spec in load_all().values():

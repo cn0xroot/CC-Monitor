@@ -64,18 +64,25 @@ def snapshot():
     return procs
 
 
-def find_roots(procs=None):
+def find_roots(procs=None, registrations=None):
     """返回 {root_pid: agent_id}。一个 agent 进程的祖先里如果已经有另一个 agent 根（比如在
     Claude Code 里跑 codex），只算最外层那个根——子 agent 的行为归到外层会话，跟 hook 层
-    "子代理归父会话"的口径一致。"""
+    "子代理归父会话"的口径一致。registrations 是 `CC-Monitor run --` 显式登记的 {pid: agent}，
+    优先于按特征识别（用户说它是什么就是什么）。"""
     procs = procs if procs is not None else snapshot()
+    if registrations is None:
+        from . import run as _run
+        registrations = _run.load_registrations()
     candidates = {}
     for pid, p in procs.items():
-        aid = registry.classify_process(p["comm"], p["argv"], p["exe"])
+        aid = registrations.get(pid) or registry.classify_process(p["comm"], p["argv"], p["exe"])
         if aid:
             candidates[pid] = aid
     roots = {}
     for pid, aid in candidates.items():
+        if pid in registrations:
+            roots[pid] = aid  # 显式登记的永远是根，哪怕它跑在另一个 agent 里面
+            continue
         anc = procs.get(pid, {}).get("ppid")
         nested = False
         seen = 0
@@ -105,11 +112,11 @@ def descendants(root_pid, procs):
     return out
 
 
-def seed_map(procs=None):
+def seed_map(procs=None, registrations=None):
     """{pid: (root_pid, agent_id)}——每个 agent 根及其所有后代。渲染进 bpftrace 的 BEGIN 块。"""
     procs = procs if procs is not None else snapshot()
     out = {}
-    for root, aid in find_roots(procs).items():
+    for root, aid in find_roots(procs, registrations).items():
         out[root] = (root, aid)
         for d in descendants(root, procs):
             out[d] = (root, aid)

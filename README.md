@@ -37,6 +37,7 @@ Every release — what was added, changed and fixed — is recorded in
   users' homes, system directories, other project directories) × read/write: writes to sensitive
   locations prompt for confirmation, everything else is logged. Review them with `CC-Monitor workdir` or
   the "Cross-workdir operations" home-page card.
+- **File-level and listening-port observation (Linux)**: the probe also sees write-opens / deletes / renames / mkdirs and `bind`+`listen` — a pip/npm/script spawned by the agent writing `~/.ssh` or opening an exposed port is invisible to hooks but visible here; directory-fd tracking resolves the relative paths used by `rm -r` / `shutil.rmtree` to absolute ones. `CC-Monitor run -- <cmd>` binds any process explicitly as some agent's root.
 - **Network visibility**: eBPF captures the destination IP:port of every `connect()` call
   directly — no TLS termination, no CA certificate to install — with a connection detail table,
   GeoIP lookups, and a WebGL2 world map in the Web UI.

@@ -2,35 +2,92 @@
   "id": "cursor",
   "display": "Cursor",
   "process": {
-    "comm": ["cursor-agent"],
+    "comm": [
+      "cursor-agent"
+    ],
     "comm_prefix": [],
-    "exe_basename": ["cursor-agent"],
-    "argv_patterns": ["(^|/)cursor-agent( |$)"],
-    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
-    "infra_noise": ["CC-Monitor-hook"]
+    "exe_basename": [
+      "cursor-agent"
+    ],
+    "argv_patterns": [
+      "(^|/)cursor-agent( |$)"
+    ],
+    "shell_comms": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh"
+    ],
+    "infra_noise": [
+      "CC-Monitor-hook"
+    ]
   },
   "hooks": {
     "protocol": "cursor",
-    "config": {"kind": "cursor-hooks", "user_path": "~/.cursor/hooks.json", "project_path": ".cursor/hooks.json"},
+    "config": {
+      "kind": "cursor-hooks",
+      "user_path": "~/.cursor/hooks.json",
+      "project_path": ".cursor/hooks.json"
+    },
     "events": {
-      "beforeShellExecution": "pre", "beforeMCPExecution": "pre", "beforeReadFile": "pre",
-      "preToolUse": "pre", "postToolUse": "post", "afterShellExecution": "post", "afterMCPExecution": "post",
-      "afterFileEdit": "post", "beforeSubmitPrompt": "prompt",
-      "sessionStart": "session_start", "sessionEnd": "session_end",
-      "preCompact": "precompact", "stop": "stop", "subagentStop": "subagent_stop"
+      "beforeShellExecution": "pre",
+      "beforeMCPExecution": "pre",
+      "beforeReadFile": "pre",
+      "preToolUse": "pre",
+      "postToolUse": "post",
+      "afterShellExecution": "post",
+      "afterMCPExecution": "post",
+      "afterFileEdit": "post",
+      "beforeSubmitPrompt": "prompt",
+      "sessionStart": "session_start",
+      "sessionEnd": "session_end",
+      "preCompact": "precompact",
+      "stop": "stop",
+      "subagentStop": "subagent_stop"
     }
   },
   "tools": {
-    "Shell": "Bash", "shell": "Bash", "run_terminal_cmd": "Bash", "read_file": "Read", "edit_file": "Edit",
-    "write": "Write", "delete_file": "Bash", "grep": "Grep", "glob": "Glob", "list_dir": "LS", "web_search": "WebSearch",
-    "fetch": "WebFetch", "Task": "Task"
+    "Shell": "Bash",
+    "shell": "Bash",
+    "run_terminal_cmd": "Bash",
+    "read_file": "Read",
+    "edit_file": "Edit",
+    "write": "Write",
+    "delete_file": "Bash",
+    "grep": "Grep",
+    "glob": "Glob",
+    "list_dir": "LS",
+    "web_search": "WebSearch",
+    "fetch": "WebFetch",
+    "Task": "Task"
   },
-  "field_aliases": {"target_file": "file_path", "relative_workspace_path": "path"},
-  "sessions": {"glob": "~/.cursor/projects/*/agent-transcripts/*/*.jsonl", "format": "cursor_transcript"},
-  "home_ignore": [".cursor/projects"],
-  "project_markers": [".cursor"],
-  "config_tamper_paths": ["(^|/)\\.cursor/hooks\\.json$", "(^|/)\\.cursor/rules/", "(^|/)\\.cursorrules$", "(^|/)\\.cursor/mcp\\.json$"],
-  "history_paths": ["\\.cursor/projects/"],
+  "field_aliases": {
+    "target_file": "file_path",
+    "relative_workspace_path": "path"
+  },
+  "sessions": {
+    "glob": "~/.cursor/projects/*/agent-transcripts/*/*.jsonl",
+    "format": "cursor_transcript"
+  },
+  "home_ignore": [
+    ".cursor/projects"
+  ],
+  "state_dirs": [
+    ".cursor"
+  ],
+  "project_markers": [
+    ".cursor"
+  ],
+  "config_tamper_paths": [
+    "(^|/)\\.cursor/hooks\\.json$",
+    "(^|/)\\.cursor/rules/",
+    "(^|/)\\.cursorrules$",
+    "(^|/)\\.cursor/mcp\\.json$"
+  ],
+  "history_paths": [
+    "\\.cursor/projects/"
+  ],
   "launch_command": "cursor-agent",
   "env_strip_prefixes": []
 }

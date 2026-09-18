@@ -49,6 +49,20 @@
     探针渲染与嵌套 agent 归属），`test_platform_caps.py` 改为检查渲染后的脚本并在有 bpftrace 时
     真的 `-d` dry-run 一遍。
   - 技术方案 `DESIGN-multi-agent.md`（含对 agentsight 的分析与借鉴清单）。
+- **探针文件级观测与监听端口**（借 agentsight `process_ext` 探点集）：写打开（`openat` 带写标志）、
+  删除（`unlinkat`/`unlink`/`rmdir`）、重命名、建目录 → `os_file`；`bind`+`listen` → `os_listen`
+  （`0.0.0.0`/`::` 标 `listen_exposed`）。unlink/rename/mkdir 用 enter→exit 配对只报成功的。
+  相对路径解析：`sys_exit_openat` 时从任务 fd 表取 `struct file` 判 inode 是目录就报 `OPENDIR`，
+  加 `DUP`/`FCHDIR`/`CHDIR`/`FORK`，用户态维护 (pid, fd)→目录 和 pid→cwd 两张表，`rm -rf`、
+  `mkdir -p`、`shutil.rmtree` 的每级路径实测正确（agentsight 没做这一步）。噪音控制：内核丢
+  `/proc` `/sys` `/dev`，用户态排除 `.git`/`node_modules`/缓存/agent 状态目录，60 秒窗口聚合，
+  每根进程每秒 200 条熔断。文件路径类规则对内核层写入同样生效（子进程写 `~/.ssh` 也命中
+  `sensitive_file_write`）；agent 进程自己直接写文件而 hook 层无对应 Write/Edit 记录 →
+  `hook_bypass_suspected`。CLI/Web UI 新增两种 source 的展示与配色。
+- **`CC-Monitor run [--agent <id>] -- <命令>`**：显式把一个进程绑定成某家 agent 的根（登记到
+  `~/.cc-monitor/run/<pid>.json`，探针 3 秒内纳入，退出自动清理），设 `CC_MONITOR_AGENT` /
+  `CC_MONITOR_SESSION` 后 exec；hook 命令行没写 `--agent` 时从环境变量取 agent。给无 hook 的
+  自研 agent 用。新增 `tests/test_probe_files.py`（16 个用例）。
 
 ### 变更
 - **账号面板新增标识符与本机环境信息**：从 9 行增到 17 行。新增账号 UUID / 组织 UUID /

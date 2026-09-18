@@ -174,6 +174,23 @@ agent（Gemini CLI、Aider）会打印"发现新的 agent 根进程 …，重启
 在 Claude Code 里再跑一个 codex 这种嵌套情况，内层归到外层的 agent 名下（与 hook 层"子代理归
 父会话"的口径一致）。
 
+探针现在还看**文件级**系统调用和**监听端口**（借 agentsight `process_ext` 的探点集，见 3.5）：
+
+- 写打开（`openat` 带 O_WRONLY/O_RDWR/O_CREAT/O_TRUNC）、删除（`unlinkat`/`unlink`/`rmdir`）、
+  重命名（`renameat2`/`renameat`/`rename`）、建目录（`mkdirat`/`mkdir`）→ `os_file` 事件，
+  Log 审计里标"系统层观测: 文件写入/删除/重命名/创建目录"。纯读不报。
+- `bind` + `listen` → `os_listen` 事件；监听在 `0.0.0.0` / `::` 上的标中危 `listen_exposed`。
+- 文件路径类规则（`sensitive_file_write`、`agent_config_tamper`、越界规则……）对内核层看到的
+  写入同样生效——**哪怕是 agent 派生的 pip / npm / 脚本写的**，hook 层根本看不见这些。结果记成
+  `observed`（拦不住，只能事后知道）。
+- 绕过交叉验证扩到文件：agent **进程自己**（不是子进程）直接写了一个文件、hook 层 15 秒内却没有
+  指向同一路径的 Write/Edit 记录 → `hook_bypass_suspected`。agent 写自己的状态目录
+  （`~/.claude/…`、`~/.codex/…`）不算。
+- 噪音控制：`/proc` `/sys` `/dev` 在内核里就丢；`.git/`、`node_modules/`、`__pycache__/`、
+  各种 cache/build 目录、`/tmp`、agent 状态目录、`.pyc/.swp/~` 等在 probe.py 里排除；同一
+  (根进程, 路径, 操作) 60 秒内只落一条、到期补一条汇总计数；一个根进程一秒超过 200 条文件事件
+  触发熔断，只计数不落库，窗口结束记一条"事件过多"。
+
 ### 2.8 给某家 agent 定制规则
 
 规则文件 `~/.cc-monitor/rules.json` 与以前相同，两个新能力：
@@ -206,7 +223,26 @@ agent（Gemini CLI、Aider）会打印"发现新的 agent 根进程 …，重启
 
 改完探针要重启（它启动时读一次注册表）；hook 每次调用现读，立即生效；Web UI 30 秒内刷新。
 
-### 2.10 卸载某家的 hook
+### 2.10 显式绑定：`CC-Monitor run -- <命令>`
+
+没有 hook、进程特征也认不出来的 agent（自研脚本、`python my_agent.py`、容器里的东西），
+或者想给一次运行一个确定的 session 键时：
+
+```bash
+bin/CC-Monitor run --agent aider -- aider --model gpt-4o
+bin/CC-Monitor run -- python3 my_agent.py        # 不带 --agent：按注册表猜，猜不出记为 generic
+```
+
+它做三件事：在 `~/.cc-monitor/run/<pid>.json` 登记"这个 pid 是 <agent> 的根"（探针的扫描线程
+3 秒内纳入，进程退出后登记自动清理）；给进程树设 `CC_MONITOR_AGENT` / `CC_MONITOR_SESSION`
+环境变量（hook 命令行没写 `--agent` 时从环境变量取，所以按 Claude Code 协议调 hook 的自研 agent
+会被正确归属）；然后 `exec` 目标命令（同一个 pid，不多一层父进程）。显式登记的 pid 永远算根，
+哪怕它跑在另一个 agent 里面。
+
+注意探针和 `run` 要看同一个 `~/.cc-monitor`：探针用 `sudo` 跑时 HOME 是 root 的，
+用 `sudo -E env CC_MONITOR_HOME=$HOME/.cc-monitor bin/CC-Monitor-probe` 之类的方式对齐。
+
+### 2.11 卸载某家的 hook
 
 手动从对应配置文件里删掉 `command` 含 `CC-Monitor-hook` 的条目；OpenCode 删掉
 `~/.config/opencode/plugins/cc-monitor.js`。库里已有的记录保留。分支目前没有 `--uninstall`。
@@ -360,6 +396,27 @@ __CC_SEED__                 →  @watch[87740] = 1; @root[87740] = 87740;  @watc
   就让主循环 terminate bpftrace、重新渲染（播种 = 所有已知根的当前后代）、重启。重启窗口约 1 秒，
   期间事件丢失；`(pid, argv)` 1 秒去重让已在跑的进程不会被重复记。
 
+**文件级探点**（`FILE` / `OPENDIR` / `FCHDIR` / `DUP` / `CHDIR` / `FORK` / `BIND` / `LISTEN` 行）：
+
+- 写打开在 `sys_enter_openat` 报（"试图写 ~/.ssh 但没权限"本身值得记）；unlink / rename / mkdir /
+  rmdir 用 enter→exit 配对，**只报 `ret == 0` 的**——`mkdir -p a/b/c` 对每级祖先都试一次 mkdir
+  （EEXIST）、`rm -f 不存在` 是 ENOENT，失败调用没改变任何东西，报出来只是噪音。
+- 相对路径的解析是这一层最难的地方。`rm -r` / `mkdir -p` / `find` / Python 的 `shutil.rmtree`
+  都拿着目录 fd 逐级操作（`unlinkat(5, "f")`），事后读 `/proc/<pid>/fd/5` 常常已经晚了（进程一毫秒
+  跑完）、甚至读到 fd 号复用后的错目录。做法：`sys_exit_openat` 成功返回时从当前任务的 fd 表取出
+  `struct file`，`f_inode->i_mode` 是目录就报一条 `OPENDIR pid fd path dfd`（不能只看 O_DIRECTORY
+  标志，Python 打开目录不带它）；`dup`/`dup2`/`dup3`/`fcntl(F_DUPFD*)` 报 `DUP old new`（coreutils 的
+  fts 把 fd 立刻 dup 一份）；`fchdir` 报 `FCHDIR fd`；`sched_process_fork` 报 `FORK parent child`。
+  probe.py 据此维护 `(pid, fd) → 目录绝对路径` 和 `pid → cwd` 两张表，所有相对路径在用户态查表，
+  不碰 `/proc`。本机实测 `rm -rf`、`mkdir -p`、`shutil.rmtree` 的每一级路径都解析正确。
+  agentsight 在这一点上没做（它只按原始路径的目录前缀聚合）。
+- 用户态：排除表（`FILE_IGNORE_SEGMENTS` / `FILE_IGNORE_SUFFIXES` + workdir 忽略目录 + 注册表
+  `home_ignore` / `state_dirs`）→ 60 秒窗口聚合（`_FileAggregator`）→ 每根进程每秒 200 条熔断 →
+  `policy.evaluate("Write", {"file_path": path}, cwd=根进程 cwd)` 跑文件路径类规则和越界规则 →
+  agent 进程自己写的再做 hook 交叉验证（`storage.fetch_recent_file_writes`）。
+- `bind` 报 ip:port，`listen` 报 fd，probe.py 把同一 (pid, fd) 的 bind→listen 合成一条 `os_listen`；
+  没看到 bind 的 listen（unix socket、探针启动前就 bind 的）不记。
+
 绕过交叉验证 `_find_matching_hook_command()` 只比对同一家 agent 最近 300 条 `hook_pre` Bash 记录
 （`storage.fetch_recent_shell_commands(agent=…)`），多 agent 并行时不会拿 A 的 hook 记录解释 B 的进程。
 shell 提取认 `-c` 和 `-lc`（Codex 用 `bash -lc`）。
@@ -377,7 +434,10 @@ ALTER TABLE pending_approvals ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude-cod
 agent：session id 是各家自己生成的 UUID / 长 id，跨 agent 撞车的概率可以忽略。
 
 `os_exec` / `os_net` 事件的 `detail` 新增 `root_pid` 和 `agent` 两个键；`session_id` 仍为空
-（系统层事件到会话的归属属于未做的 Phase C）。
+（系统层事件到会话的归属属于未做的 Phase C）。新增两种 `source`：`os_file`（`detail`：`op`
+write/unlink/rename/mkdir/storm、`path`、`path2`、`flags`、`by_agent_process`、`agent_state`、
+`hook_matched`、`count`/`window_sec`/`aggregated`）和 `os_listen`（`ip`、`port`、`exposed`）。
+显式绑定的登记文件在 `~/.cc-monitor/run/<pid>.json`。
 
 ### 3.7 Web UI
 
@@ -552,6 +612,8 @@ cd webui && npm test                # 30 个用例
 | hook 触发了但 agent 没被拦 | 该协议的拒绝格式可能与实际版本不符（见第 4 节各家"待实测"）；`bin/CC-Monitor tail` 里 `decision=blocked` 说明我们这边判对了，问题在 emit 格式 |
 | 探针把事件归错 agent / `agent=?` | `python3 -m cc_monitor.probe --print-script` 看播种块；`ROOT` 行的 pid 在 `/proc` 里读不到时分类为 None。嵌套运行（Claude Code 里跑 codex）**故意**归外层 |
 | 探针频繁重启 | 某个进程的 argv 命中了 `argv_patterns` 但不是根（比如 `grep gemini`）。收紧该 agent 的正则，或在 `~/.cc-monitor/agents/<id>.json` 覆盖 |
+| 文件事件太多 / 太少 | 多：看 `FILE_IGNORE_SEGMENTS`、`FILE_STORM_PER_SEC`，或把目录加进某家 agent 的 `home_ignore`；少：纯读不报是设计如此，`/proc` `/sys` `/dev` `/tmp` 也不报 |
+| 文件事件的路径是相对的或错的 | 目录 fd 表没建起来——探针启动前就打开的目录句柄查不到，会退回 `/proc` 再退回 cwd；重启探针后新进程都对 |
 | 探针启动报 bpftrace 语法错误 | 注册表里 `comm` 含非法字符（只允许 `[A-Za-z0-9._+-]`，超过 15 字节被截）；`--print-script` 后 `bpftrace -d <文件>` 定位 |
 | Web UI 看不到过滤器 / 徽标 | 只有库里 ≥2 家 agent 有记录时才显示；`/api/agents` 看 `events` 计数 |
 | 越界检测把 agent 自己的状态目录报出来 | 该 agent 的注册表 `home_ignore` 没写对；Claude Code 的 `~/.claude/projects` 行为与 master 相同 |
@@ -563,9 +625,9 @@ cd webui && npm test                # 30 个用例
 
 按 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) 的分期：
 
-- **Phase B 后半**：文件级探点（`openat` 写 / `unlinkat` / `renameat2` / `mkdirat` / `bind` / `listen`，
-  带路径排除与 60 秒聚合）；`CC-Monitor run [--agent] -- <cmd>` 显式绑定（解决 Aider 这类 argv 也
-  不好认的场景，并给系统层事件一个可靠的 session 键）。
+- **Phase B 后半（已完成）**：文件级探点、监听端口、`CC-Monitor run --` 显式绑定都已实现（见 2.7 /
+  2.10 / 3.5）。剩余：`os_*` 事件带上 `CC_MONITOR_SESSION` 作为 `session_id`（登记文件里有 session，
+  探针还没把它写进事件）；文件事件的 Web UI 专属卡片/下钻（现在只在 Log 审计和事件类型分布里）。
 - **Phase C**：其它 agent 的会话文件解析（Codex `rollout-*.jsonl`、Gemini `chats/session-*.json`、
   Cursor `agent-transcripts`），Tap 页目前仍只解析 Claude Code；`sessions` / `processes` 表；
   带证据类型和置信度的会话↔进程匹配（现在 `os_*` 事件的 `session_id` 为空）；`staleSessions.js`

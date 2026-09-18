@@ -1180,7 +1180,7 @@ async function refreshOverview() {
 
 // 日志类型的固定渲染顺序 + 配色。顺序和 style.css 里 --cat-1..6 的验证顺序一一对应，
 // 改任何一边都要同时改另一边，并重跑 dataviz 的 validate_palette.js。
-const SOURCE_ORDER = ["hook_lifecycle", "hook_post", "hook_pre", "hook_prompt", "os_exec", "os_net"];
+const SOURCE_ORDER = ["hook_lifecycle", "hook_post", "hook_pre", "hook_prompt", "os_exec", "os_net", "os_file", "os_listen"];
 const SOURCE_COLOR = {
   hook_lifecycle: "var(--cat-1)",
   hook_post: "var(--cat-2)",
@@ -1188,6 +1188,8 @@ const SOURCE_COLOR = {
   hook_prompt: "var(--cat-4)",
   os_exec: "var(--cat-5)",
   os_net: "var(--cat-6)",
+  os_file: "var(--cat-7)",
+  os_listen: "var(--cat-8)",
 };
 
 function renderBarList(containerId, rows) {

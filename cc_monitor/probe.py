@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 from . import colors as col
-from . import policy, procscan, registry, storage
+from . import policy, procscan, registry, storage, workdir
 
 BT_TEMPLATE = Path(__file__).parent / "probe_linux.bt.tmpl"
 
@@ -36,6 +36,17 @@ CORRELATION_WINDOW_SEC = 15
 DNS_CACHE_TTL_SEC = 3600
 # 扫 /proc 找新根的间隔
 RESCAN_INTERVAL_SEC = 3
+# 文件级观测：同一 (根进程, 路径, 操作) 在这个窗口内只报第一次，其余累计计数，窗口到期报一条汇总
+FILE_AGG_WINDOW_SEC = 60
+# 文件级观测的熔断：任一根进程每秒超过这个数就只计数不落库（构建/安装类命令一秒能写几千个文件）
+FILE_STORM_PER_SEC = 200
+# 路径里含这些目录段的写入不报：构建缓存、版本库内部、包缓存——量大且没有安全含义
+FILE_IGNORE_SEGMENTS = (
+    ".git", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
+    ".venv", "venv", ".cache", "target", "build", "dist", ".next", ".nuxt", ".gradle", ".m2",
+    ".npm", ".yarn", ".pnpm-store", ".cargo", ".rustup", "go/pkg", ".terraform",
+)
+FILE_IGNORE_SUFFIXES = (".pyc", ".pyo", ".o", ".a", ".class", ".swp", ".swo", ".swx", "~", ".tmp", ".part")
 
 
 def _is_infra_noise(command_text, agent=None):
@@ -164,6 +175,8 @@ def _handle_root_line(fields):
     # ROOT \t pid \t uid \t comm
     _tag, pid, uid, comm = fields[:4]
     agent = ROOTS.agent_of(pid)
+    _cwd_cache.pop(pid, None)
+    _pid_cwd(pid)
     print(col.c("[CC-Monitor][probe] 发现 agent 根进程: pid={} comm={} agent={}".format(
         pid, comm, agent or "?"), color="cyan"))
 
@@ -248,6 +261,307 @@ def _handle_connect_line(fields):
     print(msg)
 
 
+# ---- 文件级观测 ----
+
+_cwd_cache = {}  # pid -> 当前目录（CHDIR 事件维护；第一次见到时读 /proc）
+
+
+def _pid_cwd(pid):
+    cwd = _cwd_cache.get(pid)
+    if cwd:
+        return cwd
+    if len(_cwd_cache) > 5000:
+        _cwd_cache.clear()
+    try:
+        cwd = os.readlink("/proc/{}/cwd".format(pid))
+    except OSError:
+        cwd = "/"
+    _cwd_cache[pid] = cwd
+    return cwd
+
+
+AT_FDCWD = -100
+_dirfds = {}  # (pid, fd) -> 目录绝对路径（OPENDIR 事件维护）
+
+
+def _dirfd_path(pid, dirfd):
+    base = _dirfds.get((pid, str(dirfd)))
+    if base:
+        return base
+    try:
+        return os.readlink("/proc/{}/fd/{}".format(pid, dirfd))
+    except OSError:
+        return None
+
+
+def _resolve_path(pid, raw, dirfd=AT_FDCWD):
+    """相对路径：dirfd 是 AT_FDCWD 就相对于进程当前目录；否则（`rm -r` / `mkdir -p` 这类工具
+    用 openat 拿着目录 fd 逐级操作）相对于那个 fd 指向的目录——优先查 OPENDIR 事件建的表，
+    没有再试 /proc/<pid>/fd/<n>（进程可能已经退出），都拿不到退回当前目录。"""
+    raw = raw or ""
+    if not raw:
+        return ""
+    if not raw.startswith("/"):
+        base = _dirfd_path(pid, dirfd) if dirfd != AT_FDCWD else None
+        raw = os.path.join(base or _pid_cwd(pid), raw)
+    return os.path.normpath(raw)
+
+
+def _handle_opendir_line(fields):
+    # OPENDIR \t pid \t uid \t comm \t root \t fd \t path \t dfd
+    pid, fd, raw, dfd = fields[1], fields[5], fields[6] if len(fields) > 6 else "", fields[7] if len(fields) > 7 else ""
+    try:
+        dfd_i = int(dfd) if dfd else AT_FDCWD
+    except ValueError:
+        dfd_i = AT_FDCWD
+    if len(_dirfds) > 20000:
+        _dirfds.clear()
+    _dirfds[(pid, fd)] = _resolve_path(pid, raw, dfd_i)
+
+
+def _handle_dup_line(fields):
+    # DUP \t pid \t uid \t comm \t root \t oldfd \t newfd
+    pid, old, new = fields[1], fields[5], fields[6] if len(fields) > 6 else ""
+    path = _dirfds.get((pid, old))
+    if path and new:
+        _dirfds[(pid, new)] = path
+
+
+def _handle_fchdir_line(fields):
+    # FCHDIR \t pid \t uid \t comm \t root \t fd
+    pid, fd = fields[1], fields[5] if len(fields) > 5 else ""
+    base = _dirfd_path(pid, fd)
+    if base:
+        _cwd_cache[pid] = base
+
+
+def _ignored_roots_cached(cache={}):
+    """探针侧的排除前缀：workdir 的临时目录 + 各 agent 的状态目录（对所有可能的家目录）+
+    CC-Monitor 自己的数据目录 + 系统只读目录。启动时算一次。"""
+    if cache:
+        return cache["roots"]
+    homes = ["/root"] + [d for parent in ("/home", "/Users") if os.path.isdir(parent)
+                         for d in (os.path.join(parent, n) for n in os.listdir(parent))]
+    roots = set(workdir.DEFAULT_IGNORE) | {"/proc", "/sys", "/dev", "/run", "/var/cache", "/var/lib/apt", "/var/lib/dpkg",
+                                           "/usr/lib", "/usr/lib64", "/usr/libexec", "/lib", "/lib64", "/usr/share",
+                                           str(storage.CONFIG_DIR)}
+    tmpdir = os.environ.get("TMPDIR")
+    if tmpdir:
+        roots.add(os.path.normpath(tmpdir))
+    for home in homes:
+        for rel in registry.home_ignore() + registry.state_dirs() + workdir.HOME_READ_QUIET:
+            roots.add(os.path.join(home, rel))
+        roots.add(os.path.join(home, ".cc-monitor"))
+    cache["roots"] = tuple(sorted(roots))
+    return cache["roots"]
+
+
+def _is_agent_state_path(path, agent):
+    """agent 进程自己写自己的状态目录（~/.claude/…、~/.codex/…）——正常维护，不是绕过 hook。"""
+    for home in ("/root",) + tuple(os.path.join(p, n) for p in ("/home", "/Users") if os.path.isdir(p) for n in os.listdir(p)):
+        for rel in registry.state_dirs(agent) or registry.state_dirs():
+            full = os.path.join(home, rel)
+            if path == full or path.startswith(full + "/"):
+                return True
+    return False
+
+
+def _file_ignored(path):
+    if not path:
+        return True
+    for root in _ignored_roots_cached():
+        if path == root or path.startswith(root.rstrip("/") + "/"):
+            return True
+    parts = path.split("/")
+    if any(seg in FILE_IGNORE_SEGMENTS for seg in parts[:-1]):
+        return True
+    base = parts[-1]
+    if base.endswith(FILE_IGNORE_SUFFIXES) or base.startswith(".#"):
+        return True
+    return False
+
+
+class _FileAggregator(object):
+    """(根 pid, 路径, 操作) 的 60 秒滑动窗口：第一次立刻报，窗口内重复只计数，到期报汇总。
+    另有每秒熔断：一个根进程一秒内文件事件超过 FILE_STORM_PER_SEC 就只计数不落库。"""
+
+    def __init__(self):
+        self.windows = {}   # key -> [first_ts, count, agent, comm, pid, uid]
+        self.storm = {}     # root -> [sec, count, dropped]
+
+    def storm_check(self, root, now):
+        sec = int(now)
+        st = self.storm.setdefault(root, [sec, 0, 0])
+        if st[0] != sec:
+            if st[2]:
+                storage.log_event(
+                    session_id="", source="os_file", tool_name="probe",
+                    detail={"root_pid": root, "agent": ROOTS.agent_of(root), "op": "storm",
+                            "note": "文件事件过多，{} 秒内丢弃 {} 条未落库".format(1, st[2]), "dropped": st[2]},
+                    cwd="", risk="info", matched_rule=None, decision="observed",
+                    agent=ROOTS.agent_of(root) or storage.DEFAULT_AGENT,
+                )
+            st[0], st[1], st[2] = sec, 0, 0
+        st[1] += 1
+        if st[1] > FILE_STORM_PER_SEC:
+            st[2] += 1
+            return False
+        return True
+
+    def hit(self, key, now, meta):
+        """返回 True 表示这次要落库（首次），False 表示已计入聚合。"""
+        w = self.windows.get(key)
+        if w and now - w[0] < FILE_AGG_WINDOW_SEC:
+            w[1] += 1
+            return False
+        if w:
+            self._flush_one(key, w, now)
+        self.windows[key] = [now, 1] + list(meta)
+        return True
+
+    def flush_expired(self, now):
+        for key, w in list(self.windows.items()):
+            if now - w[0] >= FILE_AGG_WINDOW_SEC:
+                self._flush_one(key, w, now)
+                del self.windows[key]
+
+    def _flush_one(self, key, w, now):
+        root, path, op = key
+        first_ts, count, agent, comm, pid, uid = w
+        if count <= 1:
+            return
+        storage.log_event(
+            session_id="", source="os_file", tool_name=comm,
+            detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "op": op, "path": path,
+                    "count": count, "window_sec": FILE_AGG_WINDOW_SEC, "aggregated": True},
+            cwd="", risk="info", matched_rule=None, decision="observed",
+            agent=agent or storage.DEFAULT_AGENT,
+        )
+
+
+FILES = _FileAggregator()
+FILE_TOOL_BY_OP = {"write": "Write", "unlink": "Write", "rename": "Write", "mkdir": "Write"}
+
+
+def _find_matching_hook_write(path, around_ts_epoch, agent=None):
+    """agent 进程自己写了 path：hook 层 15 秒内应有 Write/Edit 类记录指向同一个文件。"""
+    for ts, _agent, hook_path in storage.fetch_recent_file_writes(agent=agent, limit=300):
+        try:
+            ts_epoch = time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            continue
+        if abs(ts_epoch - around_ts_epoch) > CORRELATION_WINDOW_SEC:
+            continue
+        if os.path.normpath(os.path.expanduser(hook_path)) == path:
+            return True
+    return False
+
+
+def _handle_fork_line(fields):
+    # FORK \t parent \t child ：子进程继承父进程的当前目录和已打开的目录句柄
+    parent, child = fields[1], fields[2]
+    cwd = _cwd_cache.get(parent)
+    if cwd:
+        _cwd_cache[child] = cwd
+    for (p, fd), path in list(_dirfds.items()):
+        if p == parent:
+            _dirfds[(child, fd)] = path
+
+
+def _handle_chdir_line(fields):
+    # CHDIR \t pid \t uid \t comm \t root \t path
+    pid, path = fields[1], fields[5] if len(fields) > 5 else ""
+    _cwd_cache[pid] = _resolve_path(pid, path)
+
+
+def _handle_file_line(fields):
+    # FILE \t pid \t uid \t comm \t root \t op \t flags \t path \t path2 \t dirfd
+    _tag, pid, uid, comm, root, op = fields[:6]
+    flags = fields[6] if len(fields) > 6 else ""
+    raw_path = fields[7] if len(fields) > 7 else ""
+    raw_path2 = fields[8] if len(fields) > 8 else ""
+    try:
+        dirfd = int(fields[9]) if len(fields) > 9 and fields[9] else AT_FDCWD
+    except ValueError:
+        dirfd = AT_FDCWD
+    now = time.time()
+    if not FILES.storm_check(root, now):
+        return
+    path = _resolve_path(pid, raw_path, dirfd)
+    path2 = _resolve_path(pid, raw_path2, dirfd) if raw_path2 else None
+    target = path2 or path  # rename 看目标；其它看路径本身
+    if _file_ignored(target) and (not path2 or _file_ignored(path)):
+        return
+    agent = ROOTS.agent_of(root)
+    if not FILES.hit((root, target, op), now, (agent, comm, pid, uid)):
+        return
+
+    # 规则：文件路径类规则（写 SSH 密钥、改 agent 配置……）对内核层看到的写入同样生效，
+    # 哪怕是 agent 派生的子进程（pip/npm/脚本）写的。cwd 给根进程的，让越界规则也能判。
+    rule, matched_value = policy.evaluate(FILE_TOOL_BY_OP.get(op, "Write"), {"file_path": target},
+                                          cwd=_pid_cwd(root), agent=agent)
+    is_self = str(pid) == str(root)
+    state_path = is_self and _is_agent_state_path(target, agent)
+    hook_matched = None
+    if is_self and not state_path and op in ("write", "rename"):
+        # agent 进程自己（不是它派生的子进程）直接写文件 = 走的是 Write/Edit 工具，hook 层必须有记录
+        hook_matched = _find_matching_hook_write(target, now, agent=agent)
+    bypass = hook_matched is False
+    risk = rule["risk"] if rule else ("high" if bypass else "info")
+    note = "agent 进程直接写入文件但 hook 层没有对应的 Write/Edit 记录，可能绕过了监测" if bypass else None
+    storage.log_event(
+        session_id="", source="os_file", tool_name=comm,
+        detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "op": op, "flags": flags,
+                "path": path, "path2": path2, "by_agent_process": is_self, "agent_state": state_path,
+                "hook_matched": hook_matched, "matched_rule": rule["id"] if rule else None,
+                "matched_value": matched_value, "note": note},
+        cwd="", risk=risk,
+        matched_rule=rule["id"] if rule else ("hook_bypass_suspected" if bypass else None),
+        decision="observed", agent=agent or storage.DEFAULT_AGENT,
+    )
+    if bypass:
+        print(col.c("[CC-Monitor][probe] ⚠ 可能绕过监测: agent={} pid={} 直接写入 {} 但无对应 hook 记录".format(
+            agent or "?", pid, target), color="bright_red", bold=True), file=sys.stderr)
+    elif rule:
+        print(col.c("[CC-Monitor][probe] [{}] agent={} pid={} comm={} 文件{} {} 命中规则 {}".format(
+            risk, agent or "?", pid, comm, op, target, rule["id"]), color=col.RISK_COLOR.get(risk, "gray"), bold=(risk == "high")))
+
+
+# ---- 监听端口 ----
+
+_binds = {}  # (pid, fd) -> (ip, port, ts)
+
+
+def _handle_bind_line(fields):
+    # BIND \t pid \t uid \t comm \t root \t fd \t ip \t port
+    _tag, pid, uid, comm, root, fd, ip, port = fields[:8]
+    _binds[(pid, fd)] = (ip, port, time.time())
+    if len(_binds) > 5000:
+        _binds.clear()
+
+
+def _handle_listen_line(fields):
+    # LISTEN \t pid \t uid \t comm \t root \t fd
+    _tag, pid, uid, comm, root, fd = fields[:6]
+    bound = _binds.pop((pid, fd), None)
+    if not bound:
+        return  # 没看到 bind（unix socket、或探针启动前就 bind 了）：报不出端口，不记
+    ip, port, _ts = bound
+    agent = ROOTS.agent_of(root)
+    exposed = ip in ("0.0.0.0", "::")
+    storage.log_event(
+        session_id="", source="os_listen", tool_name=comm,
+        detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "ip": ip, "port": port,
+                "exposed": exposed,
+                "note": "监听在所有网卡上，局域网/公网可达" if exposed else None},
+        cwd="", risk="medium" if exposed else "low", matched_rule="listen_exposed" if exposed else None,
+        decision="observed", agent=agent or storage.DEFAULT_AGENT,
+    )
+    print(col.c("[CC-Monitor][probe] 开始监听: agent={} pid={} comm={} {}:{}{}".format(
+        agent or "?", pid, comm, ip, port, "  ⚠ 对外暴露" if exposed else ""),
+        color="yellow" if exposed else None))
+
+
 # bpftrace 打印聚合 map 用的是自己的默认格式，不是我们自己拼的 tag\t字段 这一套，
 # 得单独用正则认——比如 `@tx_bytes[160.79.104.10, 443]: 725`。
 _BYTES_MAP_LINE = re.compile(r"^@(tx_bytes|rx_bytes)\[([^,]+), (\d+)\]: (\d+)$")
@@ -275,8 +589,9 @@ def render_script(seed=None, template_text=None):
 
 
 def _write_script(seed):
-    for _pid, (root, agent) in seed.items():
+    for pid, (root, agent) in seed.items():
         ROOTS.set(root, agent)
+        _pid_cwd(pid)  # 播种的进程还活着，现在就把 cwd 读进缓存
     fd, path = tempfile.mkstemp(prefix="cc-monitor-probe-", suffix=".bt")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(render_script(seed))
@@ -375,7 +690,7 @@ def run():
 
 def _pump(proc, rescanner):
     """读 bpftrace 输出直到它退出，或者扫描线程要求重启。"""
-    known_tags = {"READY", "ROOT", "EXEC", "CONNECT"}
+    known_tags = {"READY", "ROOT", "EXEC", "CONNECT", "FILE", "CHDIR", "BIND", "LISTEN", "FORK", "OPENDIR", "FCHDIR", "DUP"}
     pending = None  # 正在组装的一条记录（字段列表），最后一个字段可能横跨多行
 
     def flush(rec):
@@ -390,6 +705,22 @@ def _pump(proc, rescanner):
                 _handle_exec_line(rec)
             elif rec[0] == "CONNECT":
                 _handle_connect_line(rec)
+            elif rec[0] == "FILE":
+                _handle_file_line(rec)
+            elif rec[0] == "CHDIR":
+                _handle_chdir_line(rec)
+            elif rec[0] == "FORK":
+                _handle_fork_line(rec)
+            elif rec[0] == "OPENDIR":
+                _handle_opendir_line(rec)
+            elif rec[0] == "FCHDIR":
+                _handle_fchdir_line(rec)
+            elif rec[0] == "DUP":
+                _handle_dup_line(rec)
+            elif rec[0] == "BIND":
+                _handle_bind_line(rec)
+            elif rec[0] == "LISTEN":
+                _handle_listen_line(rec)
         except Exception as exc:  # 探针本身绝不能因为单条解析失败而退出
             msg = "[CC-Monitor][probe] 解析事件出错: {} (记录: {})".format(exc, rec)
             print(col.c(msg, color="yellow"), file=sys.stderr)
@@ -397,10 +728,15 @@ def _pump(proc, rescanner):
     # 用 select 而不是 for line in proc.stdout，这样扫描线程要求重启时不用等下一行输出
     import select
     buf = ""
+    last_flush = time.time()
     while True:
         if rescanner.event.is_set():
             flush(pending)
             return
+        now = time.time()
+        if now - last_flush >= 2:
+            FILES.flush_expired(now)
+            last_flush = now
         r, _, _ = select.select([proc.stdout], [], [], 0.5)
         if not r:
             if proc.poll() is not None:

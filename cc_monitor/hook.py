@@ -6,6 +6,7 @@
 settings.json 里的命令行不带这个参数，行为跟以前完全一样。
 """
 import json
+import os
 import sys
 
 from . import adapters, audit_state, notify, policy, registry, rematch, storage
@@ -25,7 +26,9 @@ def parse_args(argv):
     """argv[1] 是模式，其余只认 --agent <id> / --agent=<id>。多余的参数忽略，不报错——hook
     命令行是写在别人配置文件里的，宁可放行也不能因为参数不认识就把 agent 卡住。"""
     mode = "pre"
-    agent = registry.DEFAULT_AGENT
+    # `CC-Monitor run --agent x -- <cmd>` 会给整棵进程树设 CC_MONITOR_AGENT；hook 命令行没写
+    # --agent 时用它，这样自研 agent 只要按 Claude Code 协议调 hook 就能被正确归属。
+    agent = os.environ.get("CC_MONITOR_AGENT") or registry.DEFAULT_AGENT
     rest = list(argv[1:])
     if rest and not rest[0].startswith("-"):
         mode = rest.pop(0)
@@ -39,7 +42,7 @@ def parse_args(argv):
         if a.startswith("--agent="):
             agent = a.split("=", 1)[1]
         i += 1
-    if registry.get(agent) is None:
+    if registry.get(agent) is None and agent != "generic":
         agent = registry.DEFAULT_AGENT
     return mode, agent
 

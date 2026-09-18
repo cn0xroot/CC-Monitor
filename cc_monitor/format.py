@@ -35,6 +35,8 @@ STAGE_LABELS = {
     "hook_lifecycle": "生命周期",
     "os_exec": "内核观测",
     "os_net": "内核观测",
+    "os_file": "内核观测",
+    "os_listen": "内核观测",
 }
 
 
@@ -165,12 +167,50 @@ def _describe_os_net(comm, detail):
     return "系统层观测: 网络连接 ({})".format(comm), summary, []
 
 
+FILE_OP_LABELS = {"write": "写入", "unlink": "删除", "rename": "重命名/移动", "mkdir": "创建目录", "storm": "事件过多"}
+
+
+def _describe_os_file(comm, detail):
+    detail = detail or {}
+    op = detail.get("op", "")
+    label = "系统层观测: 文件{} ({})".format(FILE_OP_LABELS.get(op, op), comm)
+    if op == "storm":
+        return label, detail.get("note") or "", []
+    summary = detail.get("path", "")
+    if detail.get("path2"):
+        summary += " → " + detail["path2"]
+    if detail.get("count", 0) > 1:
+        summary += "  ×{} / {}s".format(detail["count"], detail.get("window_sec", 60))
+    extra = []
+    if detail.get("by_agent_process"):
+        if detail.get("hook_matched") is False:
+            extra.append("⚠ agent 进程直接写入，hook 层没有对应的 Write/Edit 记录，可能绕过了监测")
+        elif detail.get("hook_matched") is True:
+            extra.append("✓ 与 hook 层的 Write/Edit 记录吻合")
+        elif detail.get("agent_state"):
+            extra.append("agent 自身状态目录")
+    else:
+        extra.append("由 agent 派生的子进程执行")
+    return label, summary, extra
+
+
+def _describe_os_listen(comm, detail):
+    detail = detail or {}
+    summary = "{}:{}".format(detail.get("ip", ""), detail.get("port", ""))
+    extra = ["⚠ 监听在所有网卡上，局域网/公网可达"] if detail.get("exposed") else []
+    return "系统层观测: 开始监听端口 ({})".format(comm), summary, extra
+
+
 def describe(tool_name, source, detail):
     """返回 (事件类型标签, 一行摘要, 附加信息行列表)。"""
     if source == "os_exec":
         return _describe_os_exec(tool_name, detail)
     if source == "os_net":
         return _describe_os_net(tool_name, detail)
+    if source == "os_file":
+        return _describe_os_file(tool_name, detail)
+    if source == "os_listen":
+        return _describe_os_listen(tool_name, detail)
 
     tool_input, response = split_detail(source, detail)
     label = TOOL_LABELS.get(tool_name, tool_name or "未知操作")

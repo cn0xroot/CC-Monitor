@@ -119,6 +119,14 @@ def cmd_stats(args):
         print("按 agent:", {registry.display_name(a): n for a, n in by_agent})
 
 
+def cmd_run(args):
+    from . import run as _run
+    argv = list(args.command)
+    if args.agent:
+        argv = ["--agent", args.agent] + argv
+    _run.main(argv)
+
+
 def cmd_agents(args):
     """列出认识的 agent、本机有没有装、hook 有没有接、库里有多少条它的记录。"""
     counts = dict(storage.count_by_agent())
@@ -173,7 +181,8 @@ def cmd_verify(args):
             detail = json.loads(detail_raw)
         except json.JSONDecodeError:
             detail = {}
-        cmd_text = detail.get("shell_command") or detail.get("argv") or ""
+        cmd_text = detail.get("shell_command") or detail.get("argv") or (
+            "文件{} {}".format(detail.get("op", ""), detail.get("path", "")) if detail.get("path") else "")
         print(
             "  [{ts}] agent={agent} pid={pid} comm={comm} 命令: {cmd}".format(
                 ts=col.c(ts, dim=True),
@@ -307,6 +316,11 @@ def main():
 
     p_agents = sub.add_parser("agents", help="列出认识的 AI agent 及各自的接入状态")
     p_agents.set_defaults(func=cmd_agents)
+
+    p_run = sub.add_parser("run", help="显式把一个命令绑定成某家 agent 的根进程再执行：CC-Monitor run [--agent <id>] -- <命令>")
+    p_run.add_argument("--agent", default=None, help="agent id（不传就按注册表特征猜，猜不出记为 generic）")
+    p_run.add_argument("command", nargs=argparse.REMAINDER, help="要执行的命令（前面加 -- ）")
+    p_run.set_defaults(func=cmd_run)
 
     p_verify = sub.add_parser("verify", help="查看系统层探针标记的可疑（疑似绕过监测）记录")
     p_verify.add_argument("--limit", type=int, default=5000, help="最多回溯检查多少条事件")
