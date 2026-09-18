@@ -7,6 +7,54 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Multi-agent support (dev branch)**: the detection surface grows from "Claude Code only" to
+  Codex CLI, Gemini CLI, Cursor and OpenCode (application-layer hooks / plugin + system-layer
+  probe) and Aider (system layer only).
+  - New agent registry `cc_monitor/agents/<id>.json` + `cc_monitor/registry.py`: each agent's
+    process signature (comm / executable name / argv regex), hook protocol and config path, tool
+    and field mappings, session directory, home-dir ignore paths, project-root markers and
+    config-tamper paths are data; no agent name is hard-coded anywhere. Users can override per
+    field with a same-named file under `~/.cc-monitor/agents/`.
+  - New hook adapters `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode}.py`; `hook.py`
+    is now "adapter parses stdin → agent-agnostic decide/approve/log → adapter emits". Other
+    agents' tool names are translated into Claude Code vocabulary before reaching the engine
+    (`run_shell_command`→`Bash`, `filePath`→`file_path`, …) so the 87 rules, cross-workdir
+    detection and approval desk are one code path; the original name is kept in
+    `events.native_tool`. Codex's `apply_patch` is split into per-file Write/Edit decisions and
+    the whole call is blocked if any file is. Cursor's post-hoc `afterFileEdit` is still evaluated
+    and logged as observed. Deny formats: Codex `permissionDecision=deny`, Gemini
+    `{"decision":"deny"}`, Cursor `{"permission":"deny"}`, OpenCode plugin exit code 2.
+  - `install.py --agent <id>|all` and `--list`: writes each agent's config from the registry
+    (`~/.codex/hooks.json`, the `hooks` block of `~/.gemini/settings.json`, `~/.cursor/hooks.json`,
+    the OpenCode plugin file), idempotent and never touching existing entries; with no flag the
+    behaviour is byte-identical to before (verified as a no-op against a real settings.json).
+  - The system-layer probe is now a template `probe_linux.bt.tmpl` rendered by `probe.py`: every
+    compiled agent's comm goes into a `sched_process_exec` probe; new `cc_monitor/procscan.py`
+    scans `/proc` to seed already-running agent trees into `@watch`/`@root` at start-up (which also
+    fixes "a Claude Code started before the probe was invisible"), and restarts bpftrace when a new
+    node/python-hosted root (Gemini CLI, Aider) appears. Events carry `root_pid` and `agent`;
+    bypass cross-checking only compares against the same agent's hook records. The macOS `nettop`
+    probe recognises process trees from the registry too.
+  - New rule `agent_config_tamper` (confirm on edits to Codex / Gemini / Cursor / OpenCode
+    hooks.json, settings.json, AGENTS.md, plugin dirs) whose pattern `@registry:config_tamper` is
+    expanded from the registry at load time; the `history_read` rules cover other agents' session
+    dirs; `kill_monitoring_process` covers the OpenCode plugin file. Rule count 86 → 87.
+  - Storage: `events` gains `agent`/`native_tool`, `pending_approvals` gains `agent`; old rows
+    default to `claude-code` via idempotent `ALTER TABLE`. New `CC-Monitor agents` subcommand;
+    `stats` counts per agent.
+  - Web UI: `/api/agents`; `/api/logs` and `/api/log-sessions` accept `?agent=`; an agent filter
+    in the top bar; a "Monitored AI agents" home card; agent badges on log rows, the session
+    dropdown, approval cards and the process drilldown; "New session" can pick which agent to
+    launch (registry `launch_command`; env-var stripping prefixes also from the registry); the
+    process scan recognises every agent. All of it is hidden when only Claude Code is present.
+  - New tests `tests/test_agents.py` (registry, adapter parse/emit, per-agent hook end-to-end,
+    installer idempotency, probe rendering and nested-agent attribution);
+    `test_platform_caps.py` now checks the rendered script and runs a real `bpftrace -d` dry-run
+    when bpftrace is available.
+  - Design document `DESIGN-multi-agent.md` (Chinese; includes the agentsight analysis and the
+    list of what was borrowed).
+
 ### Changed
 - **Account panel gains identifiers and local environment info**: from 9 rows to 17. Adds
   account UUID / organization UUID / user ID / machine ID (truncated to "first 8…last 4" with

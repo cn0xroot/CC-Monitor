@@ -8,6 +8,7 @@
 const { execFile } = require("child_process");
 const fs = require("fs");
 const os = require("os");
+const agentsRegistry = require("./agents");
 
 // `-A`（选中所有进程）和 `args`（完整命令行）是 POSIX ps(1) 标准里都有定义的选项/
 // 字段名，GNU ps（Linux）和 BSD ps（macOS）两边都认——避免用 GNU 专有的 `-e` 或者
@@ -41,6 +42,13 @@ function isClaudeProcess(args) {
   const exe = (args || "").trim().split(/\s+/)[0] || "";
   const base = exe.split("/").pop();
   return base === "claude";
+}
+
+// 多 agent：不只认 claude，注册表里每家 agent 的可执行文件名 / argv 特征都认（Codex、
+// Gemini CLI、OpenCode……）。返回 agent id 或 null。
+function agentOfProcess(args) {
+  if (isClaudeProcess(args)) return "claude-code";
+  return agentsRegistry.classifyArgs(args);
 }
 
 // macOS 没有 /proc，进程的 cwd 只能问 lsof。cwd 拿不到的后果不只是"目录列显示空"：
@@ -103,15 +111,17 @@ async function scanClaudeProcesses() {
     const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(.*)$/);
     if (!m) continue;
     const [, pidStr, uidStr, user, etime, rssStr, args] = m;
-    if (!isClaudeProcess(args)) continue;
-    matched.push({ pid: parseInt(pidStr, 10), uidStr, user, etime, rssStr, args });
+    const agent = agentOfProcess(args);
+    if (!agent) continue;
+    matched.push({ pid: parseInt(pidStr, 10), uidStr, user, etime, rssStr, args, agent });
   }
   const darwinCwds = await lsofCwds(matched.map((p) => p.pid));
   const procs = [];
-  for (const { pid, uidStr, user, etime, rssStr, args } of matched) {
+  for (const { pid, uidStr, user, etime, rssStr, args, agent } of matched) {
     const uptimeSec = parseEtime(etime);
     procs.push({
       pid,
+      agent,
       uid: parseInt(uidStr, 10),
       user,
       cwd: tryReadCwd(pid, darwinCwds),

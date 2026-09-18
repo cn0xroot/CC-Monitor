@@ -6,7 +6,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from . import workdir
+from . import registry, workdir
 
 CONFIG_DIR = Path(os.environ.get("CC_MONITOR_HOME", str(Path.home() / ".cc-monitor")))
 RULES_PATH = CONFIG_DIR / "rules.json"
@@ -124,7 +124,35 @@ def _fill_display_text(rules):
     return rules
 
 
+# pattern 里的占位符：规则文件里写 "@registry:config_tamper"，加载时从 Agent 注册表
+# （cc_monitor/agents/*.json）拼出真正的正则。这样接一个新 agent 只加一份 JSON，规则文件和
+# 用户的 rules.json 都不用动；用户改过的规则（pattern 不再是占位符）不受影响。
+_REGISTRY_PLACEHOLDERS = {
+    "@registry:config_tamper": registry.config_tamper_pattern,
+    "@registry:history": registry.history_pattern,
+}
+
+
+def _expand_registry_placeholders(rules):
+    for rule in rules:
+        pat = rule.get("pattern") if isinstance(rule, dict) else None
+        if not isinstance(pat, str) or "@registry:" not in pat:
+            continue
+        for key, fn in _REGISTRY_PLACEHOLDERS.items():
+            if key in pat:
+                expanded = fn()
+                # 空展开（注册表里没这一类路径）就把占位符连同旁边的 | 一起去掉，别留下空分支
+                pat = pat.replace("|" + key, "|" + expanded if expanded else "").replace(key + "|", expanded + "|" if expanded else "")
+                pat = pat.replace(key, expanded or "(?!)")
+        rule["pattern"] = pat
+    return rules
+
+
 def load_rules():
+    return _expand_registry_placeholders(_load_rules_raw())
+
+
+def _load_rules_raw():
     try:
         merged = ensure_config()
     except OSError:
@@ -305,7 +333,7 @@ def rules_fingerprint(rules):
     return hashlib.sha256(payload).hexdigest()
 
 
-def evaluate(tool_name, tool_input, rules=None, cwd=None):
+def evaluate(tool_name, tool_input, rules=None, cwd=None, agent=None):
     """Return (rule, matched_value) for the first matching rule, or (None, None).
 
     matched_value：search 模式下是被匹配的整个字段值；segment 模式下是命中的那个子命令
@@ -314,13 +342,20 @@ def evaluate(tool_name, tool_input, rules=None, cwd=None):
     rules 不传就每次现读 rules.json（hook 一次只判一条，读一次没关系）；rematch 要
     对几千条历史事件逐条判，传进来一份预加载的表避免反复读文件。
     cwd 是 hook 输入里 Claude Code 的当前工作目录，只有 match="workdir" 的规则用得到
-    ——不传（老的调用方/单测）这类规则一律不命中。"""
+    ——不传（老的调用方/单测）这类规则一律不命中。
+    agent 是这次调用来自哪家 agent（"claude-code"/"codex"/...）：规则可以带一个可选的
+    "agents" 列表只对某几家生效；不带的规则对所有 agent 生效。不传 agent 视为 Claude Code。
+    tool_name 已经是映射后的 Claude Code 词汇（见 adapters/），规则表不需要认各家的原名。"""
     if rules is None:
         rules = load_rules()
+    agent = agent or "claude-code"
     workdir_hits = None  # 一次 evaluate 里最多扫一遍路径，几条 workdir 规则共用
     for rule in rules:
         tools = rule.get("tools", ["*"])
         if "*" not in tools and tool_name not in tools:
+            continue
+        agents = rule.get("agents")
+        if agents and agent not in agents:
             continue
         if rule.get("match") == "workdir":
             # 跨工作目录检测不是正则：看的是路径相对 cwd 的位置（见 workdir.py）。

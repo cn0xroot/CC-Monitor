@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 from . import colors as col
+from . import registry
 from . import storage
 from .probe import _reverse_dns
 
@@ -53,13 +54,18 @@ def _split_endpoint(proto, endpoint):
 
 
 def _is_claude_argv(args):
-    exe = (args or "").strip().split(None, 1)[0] if args and args.strip() else ""
-    return exe.rsplit("/", 1)[-1] == "claude"
+    """老名字，留给还在 import 它的代码；现在按 Agent 注册表认所有 agent。"""
+    return _agent_of(args.split(None, 1)[0].rsplit("/", 1)[-1] if args and args.strip() else "", args) is not None
+
+
+def _agent_of(comm, args):
+    return registry.classify_process(comm, args, None)
 
 
 def claude_process_tree():
-    """返回 {pid: (uid, comm)}，包含所有 claude 进程及其全部子进程。每次采样都重新算一遍——
-    子进程（bash/curl...）随时在生灭，新起的 claude 会话也要能自动跟上。"""
+    """返回 {pid: (uid, comm, root_pid, agent_id)}，包含所有 AI agent 根进程（Claude Code / Codex /
+    Gemini CLI / ……，按注册表认）及其全部子进程。每次采样都重新算一遍——子进程（bash/curl...）
+    随时在生灭，新起的 agent 会话也要能自动跟上。"""
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,ppid=,uid=,comm=,args="],
@@ -78,16 +84,19 @@ def claude_process_tree():
         args = parts[4] if len(parts) > 4 else ""
         procs[pid] = (uid, comm.rsplit("/", 1)[-1])
         children.setdefault(ppid, []).append(pid)
-        if _is_claude_argv(args) or comm.rsplit("/", 1)[-1] == "claude":
-            roots.append(pid)
+        agent = _agent_of(comm.rsplit("/", 1)[-1], args)
+        if agent:
+            roots.append((pid, agent))
     tree = {}
-    stack = list(roots)
-    while stack:
-        pid = stack.pop()
-        if pid in tree:
-            continue
-        tree[pid] = procs.get(pid, (0, "?"))
-        stack.extend(children.get(pid, []))
+    for root, agent in roots:
+        stack = [root]
+        while stack:
+            pid = stack.pop()
+            if pid in tree:
+                continue  # 嵌套的 agent（在 Claude Code 里跑 codex）归外层根，跟 Linux 探针口径一致
+            uid, comm = procs.get(pid, (0, "?"))
+            tree[pid] = (uid, comm, root, agent)
+            stack.extend(children.get(pid, []))
     return tree
 
 
@@ -137,22 +146,24 @@ class NettopProbe:
             self.seen_conns.clear()
 
     def _on_connect(self, pid, ip, port):
-        uid, comm = self.tree.get(pid, (0, "?"))
+        uid, comm, root, agent = self.tree.get(pid, (0, "?", pid, None))
         host = _reverse_dns(ip)
         target = "{} ({})".format(ip, host) if host else ip
         storage.log_event(
             session_id="",
             source="os_net",
             tool_name=comm,
-            detail={"pid": str(pid), "uid": str(uid), "ip": ip, "port": str(port), "host": host},
+            detail={"pid": str(pid), "uid": str(uid), "root_pid": str(root), "agent": agent,
+                    "ip": ip, "port": str(port), "host": host},
             cwd="",
             risk="info",
             matched_rule=None,
             decision="observed",
+            agent=agent or storage.DEFAULT_AGENT,
         )
         storage.record_network_connect(ip, port, host)
-        print("[CC-Monitor][probe] 网络连接: pid={} comm={} -> {}:{}".format(
-            pid, col.c(comm, color="cyan"), col.c(target, color="blue"), port
+        print("[CC-Monitor][probe] 网络连接: agent={} pid={} comm={} -> {}:{}".format(
+            agent or "?", pid, col.c(comm, color="cyan"), col.c(target, color="blue"), port
         ), flush=True)
 
 
@@ -161,7 +172,7 @@ def run():
         print("错误: 找不到 nettop（macOS 自带在 /usr/bin/nettop）", file=sys.stderr)
         sys.exit(1)
     print(col.c(
-        "[CC-Monitor][probe] 启动系统层探针 (macOS nettop)，每 {}s 采样 claude 进程树的网络连接/字节数...".format(SAMPLE_INTERVAL_SEC),
+        "[CC-Monitor][probe] 启动系统层探针 (macOS nettop)，每 {}s 采样 AI agent 进程树的网络连接/字节数...".format(SAMPLE_INTERVAL_SEC),
         color="cyan",
     ))
     # -n 不做反向解析（我们自己做、自己缓存）；-x 纯数字；-d 增量模式（第一份是累计，

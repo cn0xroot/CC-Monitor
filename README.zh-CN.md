@@ -15,13 +15,41 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 ## 核心能力一览
 
 - **应用层 + 系统层双重监测**：Claude Code hooks 拿语义信息，Linux eBPF / macOS nettop 探针在内核/系统层独立交叉验证——hooks 被绕过或篡改也能兜底发现，不是只靠 Claude Code 自己诚实上报。
-- **86 条内置检测规则，三级风险自动分流**：高危直接拦截（`rm -rf`、反弹 shell、写 SSH 密钥……），中危弹窗要求人工确认，低危静默记录，不用每条操作都手动盯着。
+- **87 条内置检测规则，三级风险自动分流**：高危直接拦截（`rm -rf`、反弹 shell、写 SSH 密钥……），中危弹窗要求人工确认，低危静默记录，不用每条操作都手动盯着。
 - **全操作留痕审计**：每次工具调用的命令、路径、参数、决策结果全量落盘 SQLite，`CC-Monitor tail` 一行命令实时查看，语法高亮到命令名/参数/字符串/管道分色。
 - **绕过检测**：拿系统层探针实测到的命令跟应用层 hook 记录交叉比对，专门揪出"监测被静默关闭却没人发现"这种更隐蔽的风险。
 - **跨工作目录行为检测**：正则规则看不见 cwd，这一层专门补上——把每次工具调用要碰的路径（文件类工具的 `file_path`、Bash 命令按子命令拆开认路径、跟踪 `cd`、识别重定向和 `rm`/`cp`/`tee` 等写操作）解析成绝对路径跟当前项目目录比对，跑到项目外的按位置分档（家目录隐藏配置/凭据、别的用户的家目录、系统目录、其它项目目录）× 读/写：往敏感位置写弹确认，其余只记录；`CC-Monitor workdir` 和首页"跨工作目录操作"卡片可以回看。
 - **网络层可视化**：eBPF 直抓 `connect()` 目标 IP:port，不解密 TLS、不装 CA 证书，Web UI 有连接明细表 + GeoIP 归属地 + WebGL2 世界地图。
 - **Web UI 全景仪表盘**：首页统计卡片、AI 审批台（网页/终端/桌面通知三处同步确认）、Claude Tap（还原完整对话，不抓包）、账号额度实时展示，一个网页看全部。
 - **跨平台**：Linux 和 macOS（含 Apple Silicon M4 实机验证）都能用，核心功能两边一致。
+- **多 agent**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode 通过各自的 hook /
+  插件接入同一套规则、审批台和审计日志；系统层探针按 Agent 注册表认所有 agent 的进程树，
+  Aider 这类没有 hook 的 agent 也能在系统层观测到。见下面["支持的 AI agent"](#支持的-ai-agent)。
+
+## 支持的 AI agent
+
+| Agent | 应用层（规则拦截 / 审批 / 审计） | 系统层探针（exec / connect） | 接入命令 |
+|---|---|---|---|
+| Claude Code | ✅ hooks（默认，跟以前完全一样） | ✅ 按 `comm` 认 | `python3 install.py` |
+| Codex CLI | ✅ `~/.codex/hooks.json`（协议与 Claude Code 同构；`apply_patch` 拆成逐文件判定） | ✅ 按 `comm` 认 | `python3 install.py --agent codex` |
+| Gemini CLI | ✅ `~/.gemini/settings.json` 的 `hooks` 块（`run_shell_command` 等工具名映射成 Claude Code 词汇） | ✅ 扫 `/proc` 按 argv 认（node 托管） | `python3 install.py --agent gemini-cli` |
+| Cursor | ✅ `~/.cursor/hooks.json`（`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` 可拦，`afterFileEdit` 只记不拦） | ➖ Electron IDE 不适用 | `python3 install.py --agent cursor` |
+| OpenCode | ✅ 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | ✅ 按 `comm` 认 | `python3 install.py --agent opencode` |
+| Aider / 自研脚本 | ➖ 没有 hook | ✅ 扫 `/proc` 按 argv 认 | 无需配置 |
+
+`python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents`
+查看每家的安装/接入状态和记录数。工作原理：其它 agent 的工具名和入参字段在进入规则引擎之前
+先翻译成 Claude Code 的词汇（`run_shell_command` → `Bash`、`filePath` → `file_path`……），
+所以 87 条规则、跨工作目录检测、审批台、Web UI 统计一份代码服务所有 agent；原始工具名保留
+在记录的 `native_tool` 里。每家 agent 的进程特征、hook 协议、工具映射、会话目录都在
+`cc_monitor/agents/<id>.json`，用户可在 `~/.cc-monitor/agents/` 放同名文件覆盖。Web UI 顶栏
+多一个 agent 过滤器，首页多一张"被监测的 AI agent"卡，审计日志/会话/审批卡带 agent 徽标——
+只装了 Claude Code 时这些全部隐藏，界面跟以前一样。设计与取舍见
+[DESIGN-multi-agent.md](./DESIGN-multi-agent.md)。
+
+> 各家 hook 协议以官方文档为准实现，实施时本机只有 Claude Code 可实测；Codex 的
+> `[features] hooks` 开关默认值、Gemini `{"decision":"allow"}` 是否跳过其原生确认、Cursor CLI
+> 是否本地执行 hook、OpenCode 的会话目录，都还需要在装了对应 agent 的机器上验证。
 
 ## 截图
 
@@ -56,7 +84,8 @@ python3 install.py
 ```
 
 这一步只做一件事——把 hooks 注册进 Claude Code 的 `~/.claude/settings.json`，不装
-任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。装完 `CC-Monitor tail`
+任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。要同时接入 Codex / Gemini CLI /
+Cursor / OpenCode，加 `--agent <id>` 或 `--agent all`（见["支持的 AI agent"](#支持的-ai-agent)）。装完 `CC-Monitor tail`
 /`rules`/`stats`/`verify` 这些 CLI 命令已经能直接用，Web UI 是完全独立的可选项，
 随时可以后补装。两种装法的详细参数、`install.sh` 具体做了哪 5 步、以及装到系统路径
 （`make install`）的方式，见下面["安装"](#安装)一节。
@@ -240,7 +269,7 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
   - cwd、git 分支、活跃时长、拦截情况。
 - **网络流量**：Claude Code 进程树实际发起过的网络连接——目标 IP/端口、域名、上传/下载
   字节数、连接次数，外加一张世界地图标出连接目的地的大致位置。数据完全来自系统层探针
-  （Linux：`cc_monitor/probe_linux.bt`，eBPF；macOS：`cc_monitor/probe_darwin.py`，`nettop`
+  （Linux：`cc_monitor/probe_linux.bt.tmpl`，eBPF；macOS：`cc_monitor/probe_darwin.py`，`nettop`
   采样），不是抓包/中间人。**探针不跑这页就是空的**——启动 Web UI 不会自动拉起探针。
   - 注意：Claude Code 走了本地代理（`HTTPS_PROXY=http://127.0.0.1:xxxx`）的话，任何进程级
     探针看到的远端都只会是 `127.0.0.1:<代理端口>`，真正的目标在代理进程那边，地图上自然
@@ -354,7 +383,7 @@ CC-Monitor 是双层监测架构：
   `pattern`（正则）、`risk`/`action`。规则文件首次使用时从 `default_rules.json` 拷贝到
   `~/.cc-monitor/rules.json`，之后可以自己改。新版本往 `default_rules.json` 里加的规则会按 id
   自动合并进这份文件（你改过或删掉的规则一律不动，靠 `rules.defaults_snapshot.json` 区分）。
-- **系统层 eBPF 探针**：`probe_linux.bt` 挂在内核的 `execve`/`connect` 等 tracepoint 上，先用
+- **系统层 eBPF 探针**：`probe_linux.bt.tmpl` 挂在内核的 `execve`/`connect` 等 tracepoint 上，先用
   `comm=="claude"` 认出 Claude Code 自己的进程，再监听 `sched_process_fork` 事件，把"正在被监控"
   这个标记沿着进程树一路传给它 fork 出来的所有子进程——不管子进程改名叫什么都跟得上。
   `CC-Monitor verify` 拿探针观测到的命令去匹配同一时间窗口内 hook 记录的命令文本（做了引号归一化，
@@ -484,7 +513,7 @@ python3 /usr/local/lib/cc-monitor/install.py
 CC-Monitor 是纯 Python 实现（标准库 `sqlite3`/`json`/`argparse`/`re` 等，无第三方依赖），**不需要编译**：
 
 - `bin/CC-Monitor`、`bin/CC-Monitor-hook`、`bin/CC-Monitor-probe` 都是带 `#!/usr/bin/env python3` shebang 的可执行脚本，`install.py` 会自动给它们加执行权限。
-- 系统层探针依赖的 `bpftrace` 是系统包管理器直接安装的现成二进制，不需要自己编译；`cc_monitor/probe_linux.bt` 是 bpftrace 脚本，运行时由 `bpftrace` 解释执行，同样不需要编译。
+- 系统层探针依赖的 `bpftrace` 是系统包管理器直接安装的现成二进制，不需要自己编译；`cc_monitor/probe_linux.bt.tmpl` 是 bpftrace 脚本，运行时由 `bpftrace` 解释执行，同样不需要编译。
 - `Makefile` 里的 `make install` 不是编译，只是把文件拷到 `PREFIX` 下再建命令行链接，见上面"安装"一节。
 - 目前**没有**打包成单文件可执行程序（比如用 PyInstaller/Nuitka），这属于待办事项，见下方"开发进展"。
 
@@ -766,7 +795,7 @@ Web UI（`webui/`）构建在下面这些开源项目之上：
 - [Electron](https://github.com/electron/electron)（MIT）、[electron-builder](https://github.com/electron-userland/electron-builder)（MIT）、[@electron/rebuild](https://github.com/electron/rebuild)（MIT）—— 桌面版打包和原生模块的重新编译
 
 **数据与工具**
-- [bpftrace](https://github.com/bpftrace/bpftrace)（Apache-2.0）—— Linux 系统层探针（`probe_linux.bt`）依赖的 eBPF 追踪工具
+- [bpftrace](https://github.com/bpftrace/bpftrace)（Apache-2.0）—— Linux 系统层探针（`probe_linux.bt.tmpl`）依赖的 eBPF 追踪工具
 - [sapics/ip-location-db](https://github.com/sapics/ip-location-db) —— 把 [DB-IP](https://db-ip.com/) Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议）转成现成的 `.mmdb` 文件，`install.sh` 默认下载的就是这份，用于网络流量页的 GeoIP 归属地查询
 - [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) —— 精度通常更高的备选 GeoIP 数据库，需要用户自己按 MaxMind 的许可条款注册获取
 - [Keep a Changelog](https://keepachangelog.com/) —— `CHANGELOG.md`/`CHANGELOG.en.md` 大致参考的格式规范

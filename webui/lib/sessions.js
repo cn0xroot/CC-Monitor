@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const pty = require("node-pty");
+const agentsRegistry = require("./agents");
 // 启动时顺手确认 node-pty 的 spawn-helper 有可执行位（见 scripts/fix-node-pty-perms.js，
 // 没有的话 pty.spawn 会直接抛 "posix_spawnp failed."）。幂等，通常什么都不做。
 try {
@@ -21,13 +22,30 @@ const SCROLLBACK_LIMIT = 5000;
 // transcript .jsonl 文件（Web UI 这边模型ID、token 用量这些依赖 transcript 的信息就永远
 // 是空的，跟目录是不是 /tmp 没关系，纯粹是环境变量污染）。建终端前把这些变量摘掉，
 // 让每个 Web UI 终端会话里跑起来的 claude 都是货真价实的独立顶层会话。
+// 其它 agent 同理（Codex 的 CODEX_*、OpenCode 的 OPENCODE_*……），前缀列表来自注册表的
+// env_strip_prefixes；Claude Code 这几个写死在这里兜底，注册表读不到也不影响老行为。
 const CLAUDE_ENV_PREFIX = /^(CLAUDE_CODE_|CLAUDECODE$|CLAUDE_PID$|CLAUDE_EFFORT$)/;
 function cleanEnv() {
+  const prefixes = [];
+  for (const a of agentsRegistry.list()) {
+    for (const p of a.envStripPrefixes || []) prefixes.push(p);
+  }
   const env = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (!CLAUDE_ENV_PREFIX.test(k)) env[k] = v;
+    if (CLAUDE_ENV_PREFIX.test(k)) continue;
+    if (prefixes.some((p) => (p.endsWith("_") ? k.startsWith(p) : k === p))) continue;
+    env[k] = v;
   }
   return env;
+}
+
+// "新建会话"要自动敲的启动命令：按 agent id 查注册表的 launch_command；不认识的 id 或者
+// 没写启动命令的 agent 退回 claude（老行为）。只允许安全字符，别的一律当 claude 处理——
+// 这个字符串是要写进 PTY 的。
+function launchCommandFor(agentId) {
+  const spec = agentsRegistry.get(agentId || "claude-code");
+  const cmd = spec && spec.launchCommand;
+  return cmd && /^[A-Za-z0-9._-]+$/.test(cmd) ? cmd : "claude";
 }
 
 // Claude Code 的信任确认框是用逐词 "ESC[<N>G"（光标绝对定位）画出来的，不是普通空格，
@@ -47,7 +65,7 @@ class SessionManager {
     this.sessions = new Map(); // id -> session record
   }
 
-  create({ cwd, cols = 100, rows = 30, launchClaude = true } = {}) {
+  create({ cwd, cols = 100, rows = 30, launchClaude = true, agent = "claude-code" } = {}) {
     const id = crypto.randomUUID();
     const shell = process.env.SHELL || "/bin/bash";
     const workDir = cwd && fs.existsSync(cwd) ? cwd : os.homedir();
@@ -113,9 +131,11 @@ class SessionManager {
     // "新建窗口"（launchClaude:false）要的就是一个裸 shell，不自动敲 claude——
     // 跟"新建会话"共用同一套 PTY/信任确认框逻辑，唯一区别就这一行要不要执行。
     if (launchClaude) {
-      // Launch Claude Code directly in this session's shell, like a user typing it.
+      // Launch the agent directly in this session's shell, like a user typing it.
+      const cmd = launchCommandFor(agent);
+      session.agent = agent || "claude-code";
       setTimeout(() => {
-        if (session.alive) term.write("claude\r");
+        if (session.alive) term.write(cmd + "\r");
       }, 150);
     }
 

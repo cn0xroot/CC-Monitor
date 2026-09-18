@@ -4,7 +4,7 @@ import select
 import subprocess
 import time
 
-from . import storage
+from . import registry, storage
 
 
 def desktop_notify(title, message):
@@ -119,7 +119,7 @@ def _remember_session_allow(result_status, session_id, key):
         storage.add_session_always_allow(session_id, key, expires_at=expires_at)
 
 
-def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=90):
+def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=90, agent=None):
     """询问是否允许这次操作——终端 tty 和 Web UI 的"待批准"页面两条路同时等着，
     哪边先给出答案就用哪边的。没有 tty（无头环境）完全不影响 Web UI 这条路。
 
@@ -135,7 +135,8 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
     # 光给一个 git_force_push 这样的 id 大多数人看不懂。用户自己加的规则没写就退回 id。
     title = rule.get("title") or rule["id"]
     desc = rule.get("desc") or ""
-    desktop_notify("CC-Monitor 需要确认：{}".format(title), "{}: {}".format(tool_name, matched_value[:80]))
+    agent_name = registry.display_name(agent)
+    desktop_notify("CC-Monitor 需要确认：{}".format(title), "[{}] {}: {}".format(agent_name, tool_name, matched_value[:80]))
     approval_id = storage.create_pending_approval(
         session_id=session_id,
         tool_name=tool_name,
@@ -143,6 +144,7 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
         matched_rule=rule["id"],
         matched_value=matched_value,
         risk=rule["risk"],
+        agent=agent,
     )
 
     tty = _open_tty()
@@ -151,13 +153,14 @@ def confirm(tool_name, rule, matched_value, session_id=None, cwd=None, timeout=9
             tty,
             "\n[CC-Monitor] 需要确认：{title}\n"
             "{desc}"
-            "规则: {rule} · 风险: {risk} · 工具: {tool}\n匹配内容: {value}\n"
+            "规则: {rule} · 风险: {risk} · 工具: {tool} · agent: {agent}\n匹配内容: {value}\n"
             "是否允许? [y/N]（也可以去 Web UI 的“AI 审批台”处理，等待 {timeout}s 后默认拒绝）: ".format(
                 title=title,
                 desc=("说明: " + desc + "\n") if desc else "",
                 rule=rule["id"],
                 risk=rule.get("risk", "-"),
                 tool=tool_name,
+                agent=agent_name,
                 value=matched_value,
                 timeout=timeout,
             ),
@@ -181,7 +184,7 @@ def permission_session_key(tool_name):
     return "permission:" + tool_name
 
 
-def permission_request(tool_name, matched_value, session_id=None, cwd=None, timeout=90):
+def permission_request(tool_name, matched_value, session_id=None, cwd=None, timeout=90, agent=None):
     """Claude Code 自己准备弹原生"Do you want to proceed?"确认框（PermissionRequest
     hook 事件）——把它同步到 Web UI 的"AI 审批台"上，网页点了就替用户答掉。
 
@@ -192,7 +195,8 @@ def permission_request(tool_name, matched_value, session_id=None, cwd=None, time
 
     返回 "allow" / "deny" / None（None = 交还原生确认框）。
     """
-    desktop_notify("CC-Monitor：Claude 请求权限", "{}: {}".format(tool_name, matched_value[:80]))
+    agent_name = registry.display_name(agent)
+    desktop_notify("CC-Monitor：{} 请求权限".format(agent_name), "{}: {}".format(tool_name, matched_value[:80]))
     approval_id = storage.create_pending_approval(
         session_id=session_id,
         tool_name=tool_name,
@@ -201,16 +205,17 @@ def permission_request(tool_name, matched_value, session_id=None, cwd=None, time
         matched_value=matched_value,
         risk="low",
         kind="permission",
+        agent=agent,
     )
 
     tty = _open_tty()
     if tty is not None:
         _tty_write(
             tty,
-            "\n[CC-Monitor] Claude Code 请求权限\n"
+            "\n[CC-Monitor] {} 请求权限\n"
             "工具: {}\n内容: {}\n"
-            "是否允许? [y/n]（也可以去 Web UI 的“AI 审批台”处理；敲回车或等待 {}s 后转回 Claude Code 原生确认框）: ".format(
-                tool_name, matched_value, timeout
+            "是否允许? [y/n]（也可以去 Web UI 的“AI 审批台”处理；敲回车或等待 {}s 后转回 {} 原生确认框）: ".format(
+                agent_name, tool_name, matched_value, timeout, agent_name
             ),
         )
 
@@ -222,7 +227,7 @@ def permission_request(tool_name, matched_value, session_id=None, cwd=None, time
         return "deferred"
 
     result_status = _wait_for_decision(
-        approval_id, tty, timeout, parse_answer=parse_answer, timeout_note="超时，转回 Claude Code 原生确认框"
+        approval_id, tty, timeout, parse_answer=parse_answer, timeout_note="超时，转回 {} 原生确认框".format(agent_name)
     )
     _remember_session_allow(result_status, session_id, permission_session_key(tool_name))
     if result_status in ALLOW_STATUSES:

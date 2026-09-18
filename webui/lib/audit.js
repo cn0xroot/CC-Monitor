@@ -796,22 +796,70 @@ function hasTranscriptColumn(db) {
   }
 }
 
-function listSessions(limit = 200) {
+// `agent` 列同样是 Python 那边升级时才加的（多 agent 支持：这条记录来自 Claude Code / Codex /
+// Gemini CLI / ……）。老库没有这一列时所有记录都当 claude-code。
+function hasAgentColumn(db) {
+  try {
+    return db.prepare(`PRAGMA table_info(events)`).all().some((c) => c.name === "agent");
+  } catch (e) {
+    return false;
+  }
+}
+
+const DEFAULT_AGENT = "claude-code";
+
+function listSessions(limit = 200, { agent = null } = {}) {
   return withDb((db) => {
     const withTranscript = hasTranscriptColumn(db);
+    const withAgent = hasAgentColumn(db);
+    const params = [];
+    let where = `WHERE session_id IS NOT NULL AND session_id != ''`;
+    if (agent && withAgent) {
+      where += ` AND agent = ?`;
+      params.push(agent);
+    }
+    params.push(limit);
     return db
       .prepare(
         `SELECT session_id, cwd, MIN(ts) AS first_ts, MAX(ts) AS last_ts, COUNT(*) AS event_count,
                 SUM(CASE WHEN decision = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
                 SUM(CASE WHEN matched_rule = 'hook_bypass_suspected' THEN 1 ELSE 0 END) AS bypass_count
                 ${withTranscript ? ", MAX(transcript_path) AS transcript_path" : ""}
+                ${withAgent ? ", MAX(agent) AS agent" : `, '${DEFAULT_AGENT}' AS agent`}
          FROM events
-         WHERE session_id IS NOT NULL AND session_id != ''
+         ${where}
          GROUP BY session_id
          ORDER BY last_ts DESC
          LIMIT ?`
       )
-      .all(limit);
+      .all(...params);
+  }, []);
+}
+
+// 每家 agent 的汇总：事件数、会话数、拦截数、疑似绕过数——首页"活跃 agent"卡和 /api/agents 用。
+function agentStats() {
+  return withDb((db) => {
+    if (!hasAgentColumn(db)) {
+      const row = db
+        .prepare(
+          `SELECT COUNT(*) AS events, COUNT(DISTINCT NULLIF(session_id, '')) AS sessions,
+                  SUM(CASE WHEN decision = 'blocked' THEN 1 ELSE 0 END) AS blocked,
+                  SUM(CASE WHEN matched_rule = 'hook_bypass_suspected' THEN 1 ELSE 0 END) AS bypass,
+                  MAX(ts) AS last_ts
+           FROM events`
+        )
+        .get();
+      return row && row.events ? [{ agent: DEFAULT_AGENT, ...row }] : [];
+    }
+    return db
+      .prepare(
+        `SELECT agent, COUNT(*) AS events, COUNT(DISTINCT NULLIF(session_id, '')) AS sessions,
+                SUM(CASE WHEN decision = 'blocked' THEN 1 ELSE 0 END) AS blocked,
+                SUM(CASE WHEN matched_rule = 'hook_bypass_suspected' THEN 1 ELSE 0 END) AS bypass,
+                MAX(ts) AS last_ts
+         FROM events GROUP BY agent ORDER BY events DESC`
+      )
+      .all();
   }, []);
 }
 
@@ -829,14 +877,20 @@ function getTranscriptPath(sessionId) {
   }, null);
 }
 
-function queryEvents({ sessionId, sinceId = 0, limit = 300 } = {}) {
+function queryEvents({ sessionId, sinceId = 0, limit = 300, agent = null } = {}) {
   return withDb((db) => {
+    const withAgent = hasAgentColumn(db);
     let sql = `SELECT id, ts, session_id, source, tool_name, cwd, risk, matched_rule, decision, detail
+               ${withAgent ? ", agent, native_tool" : `, '${DEFAULT_AGENT}' AS agent, NULL AS native_tool`}
                FROM events WHERE id > ?`;
     const params = [sinceId];
     if (sessionId) {
       sql += ` AND session_id = ?`;
       params.push(sessionId);
+    }
+    if (agent && withAgent) {
+      sql += ` AND agent = ?`;
+      params.push(agent);
     }
     sql += ` ORDER BY id ASC LIMIT ?`;
     params.push(limit);
@@ -1503,6 +1557,8 @@ function blockedDetails(limit = 200) {
 }
 
 module.exports = {
+  agentStats,
+  hasAgentColumn,
   listSessions,
   queryEvents,
   stats,

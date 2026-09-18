@@ -1498,3 +1498,19 @@ html, body {
 }
 
 .dd-open-hint { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
+/* ---- 多 agent：徽标与顶栏过滤器 ---- */
+.agent-badge {
+  display: inline-block; font-size: 0.7143rem; font-weight: 700; letter-spacing: .02em;
+  padding: 1px 7px; border-radius: 999px; line-height: 1.5; white-space: nowrap;
+  color: #fff; background: var(--text-dim, #777); vertical-align: middle;
+}
+.agent-badge.agent-claude-code { background: #7c5cff; }
+.agent-badge.agent-codex { background: #10a37f; }
+.agent-badge.agent-gemini-cli { background: #1a73e8; }
+.agent-badge.agent-cursor { background: #e8590c; }
+.agent-badge.agent-opencode { background: #0e9aa7; }
+.agent-badge.agent-aider { background: #b5179e; }
+#strip-agents .strip-users { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+#strip-agents .agent-row { display: flex; gap: 8px; align-items: center; font-size: 0.8571rem; }
+#strip-agents .agent-row .cap { color: var(--text-dim); }

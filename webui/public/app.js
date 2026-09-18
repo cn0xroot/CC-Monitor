@@ -159,10 +159,45 @@ function hideError() {
   clearTimeout(errorHideTimer);
 }
 
+// ---------- 多 agent：顶栏过滤器 ----------
+// 选了某家 agent 之后，所有 GET /api/* 请求自动带上 agent=<id>；后端认这个参数的接口
+// （/api/logs、/api/log-sessions）就只返回那一家的记录，不认的接口忽略它。存在 localStorage
+// 里，刷新页面不丢。
+const AGENT_FILTER_KEY = "cc-monitor-agent-filter";
+const agentFilterSelect = document.getElementById("agent-filter");
+let agentFilter = "";
+try {
+  agentFilter = localStorage.getItem(AGENT_FILTER_KEY) || "";
+} catch (e) {
+  agentFilter = "";
+}
+// id → 显示名，来自 /api/agents；拿到之前用 id 本身
+const agentNames = new Map();
+let multiAgent = false; // 库里有不止一家 agent 的记录时才在各处显示徽标
+let lastAgentRows = []; // /api/agents 最近一次的结果
+
+function agentDisplay(id) {
+  return agentNames.get(id) || id || "";
+}
+
+function agentBadge(id, force) {
+  if (!id || (!multiAgent && !force)) return "";
+  const safe = String(id).replace(/[^a-z0-9_-]/gi, "");
+  return `<span class="agent-badge agent-${safe}" title="${escapeHtml(id)}">${escapeHtml(agentDisplay(id))}</span>`;
+}
+
+function withAgentParam(path) {
+  if (!agentFilter || !path.startsWith("/api/")) return path;
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  if (!params.has("agent")) params.set("agent", agentFilter);
+  return base + "?" + params.toString();
+}
+
 async function api(path, opts) {
   let res;
   try {
-    res = await fetch(path, opts);
+    res = await fetch(!opts || !opts.method || opts.method === "GET" ? withAgentParam(path) : path, opts);
   } catch (e) {
     showError(t("error.fetchFailed", { msg: e.message }));
     return null;
@@ -562,9 +597,26 @@ function syncNewSessionModalText() {
   newSessionTitleEl.textContent = newSessionLaunchClaude ? t("modal.newSession.title") : t("modal.newWindow.title");
   newSessionHintEl.innerHTML = newSessionLaunchClaude ? t("modal.newSession.hint") : t("modal.newWindow.hint");
 }
+const newSessionAgentSelect = document.getElementById("new-session-agent");
+const newSessionAgentRow = document.getElementById("new-session-agent-row");
+// 下拉框里列本机装了、且有启动命令的 agent（/api/agents 的 installed 字段）；只有 Claude Code
+// 一家时整行藏起来，弹窗跟以前一样。
+function syncNewSessionAgentOptions() {
+  const rows = (lastAgentRows || []).filter((a) => a.launchCommand && (a.installed || a.id === "claude-code"));
+  newSessionAgentSelect.innerHTML = "";
+  for (const a of rows) {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = a.display;
+    newSessionAgentSelect.appendChild(opt);
+  }
+  newSessionAgentSelect.value = rows.some((a) => a.id === agentFilter) ? agentFilter : "claude-code";
+  newSessionAgentRow.hidden = rows.length <= 1 || !newSessionLaunchClaude;
+}
 function openNewSessionModal(launchClaude) {
   newSessionLaunchClaude = launchClaude;
   newSessionCwdInput.value = "";
+  syncNewSessionAgentOptions();
   newSessionModal.hidden = false;
   syncNewSessionModalText();
   newSessionCwdInput.focus();
@@ -584,7 +636,7 @@ async function createSessionFromModal() {
   const session = await api("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: cwd || undefined, launchClaude }),
+    body: JSON.stringify({ cwd: cwd || undefined, launchClaude, agent: newSessionAgentSelect.value || "claude-code" }),
   });
   if (!session) return;
   await refreshSessionList();
@@ -709,7 +761,8 @@ async function refreshLogSessionOptions() {
       const opt = document.createElement("option");
       opt.value = r.session_id;
       const flag = r.bypass_count > 0 ? " ⚠" : r.blocked_count > 0 ? " 🛑" : "";
-      opt.textContent = sessionLabel(r) + flag;
+      const agentTag = multiAgent && r.agent ? "[" + agentDisplay(r.agent) + "] " : "";
+      opt.textContent = agentTag + sessionLabel(r) + flag;
       opt.title = `${r.cwd || ""}\nID: ${r.session_id}`;
       logFilter.appendChild(opt);
     }
@@ -783,7 +836,8 @@ function renderLogItem(ev) {
     <div class="row1">
       <span class="ts">${ev.ts}</span>
       <span class="risk ${ev.risk}">${escapeHtml(riskLabel(ev.risk))}</span>
-      <span class="label op-${opCategory}">${escapeHtml(toolLabel(ev.toolName, ev.label))}</span>
+      ${agentBadge(ev.agent)}
+      <span class="label op-${opCategory}"${ev.nativeTool ? ` title="${escapeHtml(ev.nativeTool)}"` : ""}>${escapeHtml(toolLabel(ev.toolName, ev.label))}</span>
       <span class="decision ${ev.decision}">${escapeHtml(decisionLabel(ev.decision))}</span>
       <span class="session-tag">${ev.sessionId ? "📁 " + escapeHtml(folderName(ev.cwd)) + " · " + ev.sessionId.slice(0, 8) + "…" : ""}</span>
     </div>
@@ -973,6 +1027,60 @@ async function pollTap() {
   while (list.children.length > 400) list.removeChild(list.lastChild);
   if (tapAutoscrollToggle.checked) list.scrollTop = 0;
 }
+
+// ---------- 多 agent：/api/agents → 顶栏过滤器 + 首页"被监测的 AI agent"卡 ----------
+async function refreshAgents() {
+  const rows = await fetch("/api/agents").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (!rows) return;
+  lastAgentRows = rows;
+  for (const a of rows) agentNames.set(a.id, a.display);
+  const active = rows.filter((a) => a.events > 0);
+  multiAgent = active.length > 1;
+
+  // 顶栏过滤器：只列有记录的 agent；只有一家时整个下拉框藏起来（界面跟以前一样）
+  if (document.activeElement !== agentFilterSelect) {
+    const current = agentFilterSelect.value;
+    agentFilterSelect.innerHTML = `<option value="">${t("topbar.agentFilter.all")}</option>`;
+    for (const a of active) {
+      const opt = document.createElement("option");
+      opt.value = a.id;
+      opt.textContent = a.display;
+      agentFilterSelect.appendChild(opt);
+    }
+    agentFilterSelect.value = active.some((a) => a.id === agentFilter) ? agentFilter : current && active.some((a) => a.id === current) ? current : "";
+    if (agentFilter && agentFilterSelect.value !== agentFilter) setAgentFilter("");
+  }
+  agentFilterSelect.hidden = !multiAgent;
+
+  // 首页卡片
+  const card = document.getElementById("strip-agents");
+  const list = document.getElementById("strip-agents-list");
+  card.hidden = !multiAgent;
+  if (multiAgent) {
+    list.innerHTML = active
+      .map(
+        (a) => `<div class="agent-row">${agentBadge(a.id, true)}<span class="cap">${escapeHtml(
+          t("home.strip.agentRow", { sessions: a.sessions, blocked: a.blocked, bypass: a.bypass })
+        )}</span></div>`
+      )
+      .join("");
+  }
+}
+
+function setAgentFilter(id) {
+  agentFilter = id || "";
+  try {
+    localStorage.setItem(AGENT_FILTER_KEY, agentFilter);
+  } catch (e) {
+    // ignore
+  }
+  lastLogId = 0;
+  document.getElementById("log-list-full").innerHTML = "";
+  refreshLogSessionOptions();
+  pollLogs();
+}
+
+agentFilterSelect.addEventListener("change", () => setAgentFilter(agentFilterSelect.value));
 
 // ---------- 首页概览 ----------
 async function refreshOverview() {
@@ -1511,6 +1619,7 @@ async function refreshApprovals() {
       <div class="row1">
         <span class="ts">${escapeHtml(r.ts)}</span>
         <span class="risk ${r.risk}">${escapeHtml(riskLabel(r.risk))}</span>
+        ${agentBadge(r.agent, true)}
         <span class="session-tag">📁 ${escapeHtml(folderName(r.cwd))} · ${r.session_id ? escapeHtml(r.session_id.slice(0, 8)) + "…" : "-"}</span>
       </div>
       <div class="approval-headline">${isNotify ? "" : `<span class="approval-headline-prefix">${t("approvals.needConfirm")}</span>`}${escapeHtml(headline)}</div>
@@ -1891,7 +2000,7 @@ async function openDrilldownInner(kind) {
             .map(
               (p) => `
             <tr${p.user !== result.currentUser ? ' class="dd-row-mismatch"' : ""}>
-              <td class="dd-mono dd-nowrap">${p.pid}</td>
+              <td class="dd-mono dd-nowrap">${p.pid}${p.agent ? " " + agentBadge(p.agent, true) : ""}</td>
               <td class="dd-nowrap">${escapeHtml(p.user)}${p.user === result.currentUser ? " " + t("home.identity.currentTag") : ""}</td>
               <td class="dd-nowrap">${renderVital(p.status, p.statusAgoMs)}</td>
               <td class="dd-mono dd-nowrap">${p.lastEventTs ? formatAgo(Date.now() - new Date(p.lastEventTs).getTime()) : "-"}</td>
@@ -3328,6 +3437,7 @@ async function bootstrap() {
   if (lastId && (initialSessions || []).some((s) => s.id === lastId)) {
     selectSession(lastId);
   }
+  await refreshAgents();
   await refreshLogSessionOptions();
   await pollLogs();
   await refreshOverview();
@@ -3341,6 +3451,7 @@ async function bootstrap() {
   await refreshIdentityCard();
 
   setInterval(refreshSessionList, 4000);
+  setInterval(refreshAgents, 15000);
   setInterval(refreshLogSessionOptions, 8000);
   setInterval(pollLogs, 1500);
   setInterval(pollTap, 2000);

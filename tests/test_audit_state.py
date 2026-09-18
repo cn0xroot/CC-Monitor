@@ -18,6 +18,12 @@ sys.path.insert(0, _REPO)
 
 from cc_monitor import audit_state  # noqa: E402
 
+# pytest 会先把所有测试模块都 import 一遍，cc_monitor.audit_state 的 CONFIG_DIR 是第一个
+# import 它的测试模块的 _TMP——不一定是这个文件的。子进程必须用进程内模块实际在用的那个
+# 目录，否则进程内 set_state() 写的状态子进程看不到（默认 running → confirm 规则会在 tty
+# 上等 90 秒才超时）。
+_TMP = str(audit_state.CONFIG_DIR)
+
 
 class TestStateAliases(unittest.TestCase):
     def test_canonical_values_pass_through(self):

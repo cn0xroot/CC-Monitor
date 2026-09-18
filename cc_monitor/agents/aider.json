@@ -1,0 +1,21 @@
+{
+  "id": "aider",
+  "display": "Aider",
+  "process": {
+    "comm": [],
+    "comm_prefix": [],
+    "exe_basename": ["aider"],
+    "argv_patterns": ["(^|/)aider( |$)", "aider/main\\.py", "-m aider"],
+    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
+    "infra_noise": ["^git (rev-parse|status|diff|log|ls-files)"]
+  },
+  "hooks": null,
+  "tools": {},
+  "sessions": {"glob": "**/.aider.chat.history.md", "format": "aider_markdown"},
+  "home_ignore": [],
+  "project_markers": [".aider.conf.yml"],
+  "config_tamper_paths": ["(^|/)\\.aider\\.conf\\.yml$", "(^|/)\\.aider\\.model\\.settings\\.yml$"],
+  "history_paths": ["\\.aider\\.(chat|input)\\.history"],
+  "launch_command": "aider",
+  "env_strip_prefixes": []
+}

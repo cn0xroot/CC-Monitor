@@ -1,16 +1,21 @@
 #!/usr/bin/env bpftrace
-// CC-Monitor 系统层探针（Linux / eBPF）
+// CC-Monitor 系统层探针（Linux / eBPF）—— 这是模板，probe.py 渲染后才交给 bpftrace。
 //
-// 独立于 Claude Code 自身的 hooks，直接在内核层跟踪所有从 `claude` 进程派生出来的
-// 子进程树的 execve（真正执行了什么命令）和 connect（真正连了哪个 IP:port）。
-// 用于交叉验证应用层 hooks 是否被绕过/篡改——hooks 是"自证清白"，这里是独立的第三方观察。
+// 独立于各家 AI agent 自身的 hooks，直接在内核层跟踪所有从 agent 进程派生出来的子进程树
+// 的 execve（真正执行了什么命令）和 connect（真正连了哪个 IP:port）。用于交叉验证应用层
+// hooks 是否被绕过/篡改——hooks 是"自证清白"，这里是独立的第三方观察。
 //
-// 边界识别：子进程 fork 出来后、真正 exec 新程序之前，comm 仍然继承自父进程（"claude"）；
-// 一旦这个子进程 execve 到别的程序（比如 /bin/bash），就是它从 Claude Code 派生出来的证据。
-// 之后再用 sched_process_fork 把这层派生关系持续传播给后续所有子进程。
+// 谁是 agent 由 Agent 注册表（cc_monitor/agents/*.json）说了算，probe.py 把所有 agent 的
+// comm 名渲染进 sched_process_exec 里的条件表达式；node/python 托管的 agent（Gemini CLI、Aider……）
+// 的 comm 是解释器名，内核里认不出来，probe.py 扫 /proc 找到它们之后渲染进 BEGIN 块的播种语句
+// （探针启动时就在跑的 agent 进程树也走这条路，不用等它们再 exec 一次）。
+//
+// 每个被跟踪进程记两个 map：@watch[pid]=1 表示"在监视树里"，@root[pid]=根进程 pid——
+// 事件行里带上根 pid，probe.py 据此把事件归到具体哪家 agent、哪个实例。
 
 BEGIN
 {
+__CC_SEED__
     printf("READY\n");
 }
 
@@ -18,17 +23,29 @@ tracepoint:sched:sched_process_fork
 /@watch[args.parent_pid]/
 {
     @watch[args.child_pid] = 1;
+    @root[args.child_pid] = @root[args.parent_pid];
 }
 
-tracepoint:syscalls:sys_enter_execve
+// sched_process_exec 在 exec 完成之后触发，comm 已经是新程序名——一个 agent 从 shell 里
+// 被启动时，这里第一次认出它并把它自己登记为根。
+tracepoint:sched:sched_process_exec
 {
-    if (comm == "claude") {
-        @watch[pid] = 1;
+    if (__CC_ROOT_COMM_PREDICATE__) {
+        if (@watch[pid] == 0) {
+            @root[pid] = pid;
+            @watch[pid] = 1;
+            printf("ROOT\t%d\t%d\t%s\n", pid, uid, comm);
+        }
     }
-    if (@watch[pid]) {
-        printf("EXEC\t%d\t%d\t%s\t", pid, uid, comm);
-        join(args.argv);
-    }
+}
+
+// 子进程 fork 出来后、真正 exec 新程序之前，@watch 已经通过 sched_process_fork 继承过来，
+// 所以这里能拿到完整 argv（真正要执行的命令）。
+tracepoint:syscalls:sys_enter_execve
+/@watch[pid]/
+{
+    printf("EXEC\t%d\t%d\t%s\t%d\t", pid, uid, comm, @root[pid]);
+    join(args.argv);
 }
 
 // libc 的 getaddrinfo(node, ...) 第一个参数就是应用层真正想解析的域名（比如
@@ -56,12 +73,12 @@ tracepoint:syscalls:sys_enter_connect
     if ($sa->sa_family == 2) {
         $sin = (struct sockaddr_in *) $sa;
         $port = ($sin->sin_port >> 8) | (($sin->sin_port << 8) & 0xff00);
-        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\t%s\n", pid, uid, comm, ntop($sin->sin_addr.s_addr), $port, @dns_query[pid]);
+        printf("CONNECT\t%d\t%d\t%s\t%d\t%s\t%d\t%s\n", pid, uid, comm, @root[pid], ntop($sin->sin_addr.s_addr), $port, @dns_query[pid]);
     }
     if ($sa->sa_family == 10) {
         $sin6 = (struct sockaddr_in6 *) $sa;
         $port6 = ($sin6->sin6_port >> 8) | (($sin6->sin6_port << 8) & 0xff00);
-        printf("CONNECT\t%d\t%d\t%s\t%s\t%d\t%s\n", pid, uid, comm, ntop($sin6->sin6_addr.in6_u.u6_addr8), $port6, @dns_query[pid]);
+        printf("CONNECT\t%d\t%d\t%s\t%d\t%s\t%d\t%s\n", pid, uid, comm, @root[pid], ntop($sin6->sin6_addr.in6_u.u6_addr8), $port6, @dns_query[pid]);
     }
 }
 
@@ -117,5 +134,6 @@ tracepoint:sched:sched_process_exit
 /@watch[pid]/
 {
     delete(@watch[pid]);
+    delete(@root[pid]);
     delete(@dns_query[pid]);
 }

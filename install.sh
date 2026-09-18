@@ -5,14 +5,16 @@
 #   ./install.sh --project /path        # hooks 只对某个项目生效
 #   ./install.sh --skip-geoip           # 不下载 GeoIP 数据库（离线/不需要世界地图时）
 #   ./install.sh --skip-ccstatusline    # 不装/不接 ccstatusline 状态栏
-#   其它参数跟 install.py 支持的完全一样，原样透传过去。
+#   ./install.sh --agent all            # 同时接入本机装了的 Codex / Gemini CLI / Cursor / OpenCode
+#   其它参数跟 install.py 支持的完全一样，原样透传过去（--agent <id> 见 python3 install.py --list）。
 #
 # One-shot install: register the hooks into Claude Code + install the Web UI deps.
 #   ./install.sh                        # global hooks (writes ~/.claude/settings.json)
 #   ./install.sh --project /path        # hooks scoped to one project
 #   ./install.sh --skip-geoip           # skip the GeoIP database download
 #   ./install.sh --skip-ccstatusline    # skip installing/wiring ccstatusline
-#   Any other flag is passed straight through to install.py.
+#   ./install.sh --agent all            # also hook every installed Codex / Gemini CLI / Cursor / OpenCode
+#   Any other flag is passed straight through to install.py (--agent <id>; see python3 install.py --list).
 set -euo pipefail
 
 # ---------- 语言检测 / language detection ----------

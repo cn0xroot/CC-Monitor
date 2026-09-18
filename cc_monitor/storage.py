@@ -107,17 +107,33 @@ def _connect():
         conn.execute("ALTER TABLE pending_approvals ADD COLUMN resolved_value TEXT")
     except sqlite3.OperationalError:
         pass  # 列已经存在（老数据库升级过一次之后）
+    # 多 agent 支持：事件/审批记录都带上"来自哪家 agent"。带常量默认值的 ADD COLUMN 会让
+    # 老行直接得到 'claude-code'——升级前的数据库里只可能有 Claude Code 的记录。
+    # native_tool 记 agent 自己的工具名（tool_name 列存的是映射后的 Claude Code 词汇）。
+    for stmt in (
+        "ALTER TABLE events ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude-code'",
+        "ALTER TABLE events ADD COLUMN native_tool TEXT",
+        "ALTER TABLE pending_approvals ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude-code'",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # 列已经存在
     return conn
 
 
-def log_event(session_id, source, tool_name, detail, cwd, risk, matched_rule, decision, transcript_path=None):
+DEFAULT_AGENT = "claude-code"
+
+
+def log_event(session_id, source, tool_name, detail, cwd, risk, matched_rule, decision, transcript_path=None,
+              agent=DEFAULT_AGENT, native_tool=None):
     conn = _connect()
     try:
         with conn:
             conn.execute(
                 "INSERT INTO events "
-                "(ts, session_id, source, tool_name, cwd, risk, matched_rule, decision, detail, transcript_path) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "(ts, session_id, source, tool_name, cwd, risk, matched_rule, decision, detail, transcript_path, agent, native_tool) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     session_id,
@@ -129,6 +145,8 @@ def log_event(session_id, source, tool_name, detail, cwd, risk, matched_rule, de
                     decision,
                     json.dumps(detail, ensure_ascii=False, default=str),
                     transcript_path,
+                    agent or DEFAULT_AGENT,
+                    native_tool if native_tool and native_tool != tool_name else None,
                 ),
             )
     finally:
@@ -244,6 +262,39 @@ def fetch_last(limit=200):
         conn.close()
 
 
+def count_by_agent():
+    """[(agent, n)]，事件数降序。"""
+    conn = _connect()
+    try:
+        return conn.execute("SELECT agent, COUNT(*) FROM events GROUP BY agent ORDER BY 2 DESC").fetchall()
+    finally:
+        conn.close()
+
+
+def fetch_recent_shell_commands(agent=None, limit=300):
+    """最近的 hook_pre Bash 记录 [(ts_epoch_str, agent, command)]，探针的绕过交叉验证用。
+    传 agent 只看那一家的（多 agent 并行时别拿 A 的 hook 记录去解释 B 的进程）。"""
+    conn = _connect()
+    try:
+        sql = ("SELECT ts, agent, detail FROM events WHERE source = 'hook_pre' AND tool_name = 'Bash'")
+        params = []
+        if agent:
+            sql += " AND agent = ?"
+            params.append(agent)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        out = []
+        for ts, ag, detail_raw in conn.execute(sql, params).fetchall():
+            try:
+                cmd = (json.loads(detail_raw).get("command") or "").strip()
+            except (ValueError, AttributeError):
+                continue
+            out.append((ts, ag, cmd))
+        return out
+    finally:
+        conn.close()
+
+
 def fetch_by_rule_prefix(prefix, limit=200):
     """按 id 降序返回 matched_rule 以 prefix 开头的 PreToolUse 事件（最新的在前），
     字段顺序跟 fetch_recent 一致。`CC-Monitor workdir` 用它列跨工作目录的操作。"""
@@ -260,15 +311,15 @@ def fetch_by_rule_prefix(prefix, limit=200):
         conn.close()
 
 
-def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_value, risk, kind="confirm"):
+def create_pending_approval(session_id, tool_name, cwd, matched_rule, matched_value, risk, kind="confirm", agent=DEFAULT_AGENT):
     conn = _connect()
     try:
         with conn:
             cur = conn.execute(
                 "INSERT INTO pending_approvals "
-                "(ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind) "
-                "VALUES (?,?,?,?,?,?,?,'pending',?)",
-                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name, cwd, matched_rule, matched_value, risk, kind),
+                "(ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind, agent) "
+                "VALUES (?,?,?,?,?,?,?,'pending',?,?)",
+                (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session_id, tool_name, cwd, matched_rule, matched_value, risk, kind, agent or DEFAULT_AGENT),
             )
             return cur.lastrowid
     finally:

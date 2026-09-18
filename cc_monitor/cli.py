@@ -1,14 +1,17 @@
 import argparse
 import json
+import os
 import platform
+import shutil
 import sys
 import time
 from collections import Counter
+from pathlib import Path
 
 from . import audit_state
 from . import colors as col
 from . import format as fmt
-from . import policy, rematch, storage, transcript
+from . import policy, registry, rematch, storage, transcript
 
 # 介入级别的显示文案。注意不要再写成"暂停审计"——paused 这一档审计照常在跑，
 # 停下来的只是拦截，叫"暂停审计"会让人以为记录也断了（见 audit_state.py 的模块注释）。
@@ -111,6 +114,33 @@ def cmd_stats(args):
     print("总事件数:", len(rows))
     print("按风险等级:", dict(by_risk))
     print("按决策结果:", dict(by_decision))
+    by_agent = storage.count_by_agent()
+    if by_agent:
+        print("按 agent:", {registry.display_name(a): n for a, n in by_agent})
+
+
+def cmd_agents(args):
+    """列出认识的 agent、本机有没有装、hook 有没有接、库里有多少条它的记录。"""
+    counts = dict(storage.count_by_agent())
+    print("{:<12} {:<12} {:<8} {:<8} {}".format("id", "名称", "已安装", "hook", "事件数"))
+    for aid in registry.ids():
+        spec = registry.get(aid)
+        hooks = spec.get("hooks") or {}
+        cfg = hooks.get("config") or {}
+        installed = shutil.which(spec.get("launch_command") or "") is not None
+        hooked = "-"
+        if cfg.get("user_path"):
+            path = Path(os.path.expanduser(cfg["user_path"]))
+            if path.exists():
+                try:
+                    hooked = "已接" if "CC-Monitor-hook" in path.read_text(encoding="utf-8") else "未接"
+                except OSError:
+                    hooked = "?"
+            else:
+                hooked = "未接"
+        print("{:<12} {:<12} {:<8} {:<8} {}".format(
+            aid, spec["display"], "是" if installed else "-", hooked, counts.get(aid, 0)))
+    print(col.c("接入某家 agent 的 hook：python3 install.py --agent <id>（或 --agent all）", dim=True))
 
 
 def cmd_verify(args):
@@ -145,8 +175,9 @@ def cmd_verify(args):
             detail = {}
         cmd_text = detail.get("shell_command") or detail.get("argv") or ""
         print(
-            "  [{ts}] pid={pid} comm={comm} 命令: {cmd}".format(
+            "  [{ts}] agent={agent} pid={pid} comm={comm} 命令: {cmd}".format(
                 ts=col.c(ts, dim=True),
+                agent=detail.get("agent") or "?",
                 pid=detail.get("pid"),
                 comm=col.c(str(tool_name), color="cyan"),
                 cmd=col.c(cmd_text[:200], color="yellow"),
@@ -256,7 +287,7 @@ def cmd_audit(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="CC-Monitor", description="CC-Monitor：Claude Code 操作监测工具")
+    parser = argparse.ArgumentParser(prog="CC-Monitor", description="CC-Monitor：AI coding agent（Claude Code / Codex / Gemini CLI / Cursor / OpenCode…）操作监测工具")
     sub = parser.add_subparsers(dest="cmd")
 
     p_tail = sub.add_parser("tail", help="实时查看监测事件")
@@ -273,6 +304,9 @@ def main():
 
     p_stats = sub.add_parser("stats", help="查看统计信息")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_agents = sub.add_parser("agents", help="列出认识的 AI agent 及各自的接入状态")
+    p_agents.set_defaults(func=cmd_agents)
 
     p_verify = sub.add_parser("verify", help="查看系统层探针标记的可疑（疑似绕过监测）记录")
     p_verify.add_argument("--limit", type=int, default=5000, help="最多回溯检查多少条事件")

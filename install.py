@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""将 CC-Monitor 的 hooks 安装到 Claude Code 的 settings.json：PreToolUse/PostToolUse/
-PermissionRequest（工具调用的判定/审批）+ UserPromptSubmit/SessionStart/SessionEnd/
-PreCompact/Stop/SubagentStop（会话生命周期，纯审计留痕，不参与拦截）。
+"""把 CC-Monitor 的 hooks 装进各家 AI agent 的配置里。
 
-用法:
-    python3 install.py                     # 安装到全局 ~/.claude/settings.json
-    python3 install.py --project DIR       # 安装到指定项目的 DIR/.claude/settings.json
-    python3 install.py --target FILE       # 安装到指定的 settings.json（用于以其它用户身份安装，避免依赖 HOME）
+    python3 install.py                        # Claude Code：~/.claude/settings.json（跟以前完全一样）
+    python3 install.py --agent codex          # Codex CLI：~/.codex/hooks.json
+    python3 install.py --agent gemini-cli     # Gemini CLI：~/.gemini/settings.json 的 hooks 块
+    python3 install.py --agent cursor         # Cursor：~/.cursor/hooks.json
+    python3 install.py --agent opencode       # OpenCode：~/.config/opencode/plugins/cc-monitor.js
+    python3 install.py --agent all            # 上面全部（只装本机检测到已安装的那些，--force-all 不做检测）
+    python3 install.py --list                 # 列出认识的 agent 和各自的配置文件路径
+    python3 install.py --project DIR          # 装到项目级配置（各家 agent 的项目级路径见 --list）
+    python3 install.py --target FILE          # 直接指定配置文件路径（跨用户安装用）
+
+每家 agent 长什么样（事件名、配置路径、工具名映射）都在 cc_monitor/agents/<id>.json 里，
+这个脚本本身不认识任何一家。幂等：已经装过的条目不重复加，用户自己配的其它 hook 一律不动。
 """
 import argparse
 import json
@@ -16,33 +22,56 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO_ROOT))
+from cc_monitor import adapters, registry  # noqa: E402
+
 HOOK_BIN = REPO_ROOT / "bin" / "CC-Monitor-hook"
 
 
+# ---- 通用合并 ----
+
+def _entry_commands(entry):
+    """一个 hooks 条目里所有 command 字符串——Claude/Codex/Gemini 是 entry.hooks[].command，
+    Cursor 是 entry.command。"""
+    cmds = []
+    if isinstance(entry, dict):
+        if isinstance(entry.get("command"), str):
+            cmds.append(entry["command"])
+        for h in entry.get("hooks") or []:
+            if isinstance(h, dict) and isinstance(h.get("command"), str):
+                cmds.append(h["command"])
+    return cmds
+
+
+def merge_hook_entries(hooks, new_hooks):
+    """hooks 是配置文件里现有的 {event: [entries]}，new_hooks 是要加的。同一个 command 已经在
+    某个 event 下了就跳过（老版本装过），其它条目原样保留。返回加了几条。"""
+    added = 0
+    for event_name, entries in new_hooks.items():
+        existing = hooks.setdefault(event_name, [])
+        for entry in entries:
+            wanted = set(_entry_commands(entry))
+            if any(wanted & set(_entry_commands(e)) for e in existing):
+                continue
+            existing.append(entry)
+            added += 1
+    return added
+
+
 def merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission=None, extra_hooks=None):
-    hooks = settings.setdefault("hooks", {})
+    """老接口（Claude Code 专用形状），留给还在 import 它的脚本/测试用。"""
+    new_hooks = {}
 
     def add(event_name, command):
-        entries = hooks.setdefault(event_name, [])
-        for entry in entries:
-            for h in entry.get("hooks", []):
-                if h.get("command") == command:
-                    return  # 已安装过，跳过
-        entries.append({"matcher": "*", "hooks": [{"type": "command", "command": command}]})
+        new_hooks[event_name] = [{"matcher": "*", "hooks": [{"type": "command", "command": command}]}]
 
     add("PreToolUse", hook_cmd_pre)
     add("PostToolUse", hook_cmd_post)
-    # PermissionRequest：Claude Code 自己准备弹原生"Do you want to proceed?"时触发，
-    # 用来把那些没命中我们 confirm 规则、但 Claude Code 自己要问的工具调用也同步到
-    # "AI 审批台"（老版本装的配置里没有这一条，重跑 install 会补上，已有的两条不动）。
     if hook_cmd_permission:
         add("PermissionRequest", hook_cmd_permission)
-    # UserPromptSubmit/SessionStart/SessionEnd/PreCompact/Stop/SubagentStop：会话生命周期
-    # hook，纯审计留痕（见 cc_monitor/hook.py 里对应 handler 的注释），不参与 confirm/block。
-    # 老版本装的配置里没有这几条，重跑 install 会补上，已有的条目不动——跟上面
-    # PermissionRequest 的补丁逻辑是同一个道理。
     for event_name, command in (extra_hooks or {}).items():
         add(event_name, command)
+    merge_hook_entries(settings.setdefault("hooks", {}), new_hooks)
     return settings
 
 
@@ -71,74 +100,152 @@ def configure_statusline(settings):
     return True
 
 
+def _read_json(target):
+    if not target.exists():
+        return {}
+    try:
+        return json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        backup = target.with_suffix(".json.bak")
+        print("警告: {} 不是合法 JSON，已备份为 {} 并重建".format(target, backup), file=sys.stderr)
+        target.rename(backup)
+        return {}
+
+
+def _write_json(target, data):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def resolve_target(spec, args):
+    cfg = spec["hooks"]["config"]
+    if args.target:
+        return Path(args.target).resolve()
+    if args.project:
+        return Path(args.project).resolve() / cfg["project_path"]
+    return Path(os.path.expanduser(cfg["user_path"]))
+
+
+def agent_installed(spec):
+    """这家 agent 本机装了吗——launch_command 在 PATH 里，或者它的用户级配置目录已经存在。"""
+    if shutil.which(spec.get("launch_command") or ""):
+        return True
+    cfg = (spec.get("hooks") or {}).get("config") or {}
+    user_path = cfg.get("user_path")
+    return bool(user_path) and Path(os.path.expanduser(user_path)).parent.exists()
+
+
+# ---- 各种配置文件形状 ----
+
+def install_agent(agent_id, args):
+    spec = registry.get(agent_id)
+    if not spec or not spec.get("hooks"):
+        print("{}：没有应用层 hook 协议，只能靠系统层探针观测（sudo bin/CC-Monitor-probe）".format(
+            registry.display_name(agent_id)))
+        return
+    kind = spec["hooks"]["config"]["kind"]
+    adapter = adapters.for_agent(agent_id)
+    target = resolve_target(spec, args)
+    new_hooks = adapter.hook_config_entries(str(HOOK_BIN), agent_id, spec["hooks"]["events"])
+
+    if kind == "opencode-plugin":
+        src = REPO_ROOT / "cc_monitor" / "adapters" / "opencode_plugin.js"
+        text = src.read_text(encoding="utf-8").replace("__CC_MONITOR_HOOK_BIN__", str(HOOK_BIN))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        print("已写入 OpenCode 插件: {}".format(target))
+        print("重启 opencode 后生效（插件目录里的文件会被自动加载）。")
+        return
+
+    settings = _read_json(target)
+    if kind == "cursor-hooks":
+        settings.setdefault("version", 1)
+    added = merge_hook_entries(settings.setdefault("hooks", {}), new_hooks)
+
+    statusline_configured = False
+    if kind == "claude-settings" and not args.skip_statusline:
+        statusline_configured = configure_statusline(settings)
+
+    _write_json(target, settings)
+    print("[{}] 已写入: {}（新增 {} 条 hook，已有的不动）".format(spec["display"], target, added))
+
+    if kind == "claude-settings":
+        print("重启 Claude Code 后生效。可用 `{}/bin/CC-Monitor tail` 实时查看监测事件。".format(REPO_ROOT))
+        if statusline_configured:
+            print("已配置 statusLine: ccstatusline（终端里会显示模型/额度/git 分支等状态栏信息）")
+        elif args.skip_statusline:
+            print("跳过 statusLine 配置（--skip-statusline）。")
+        elif "statusLine" not in settings:
+            print("未配置 statusLine：没有检测到 ccstatusline，跑一遍 install.sh 会自动装上并接线，"
+                  "或者手动 `npm install -g ccstatusline` 后重跑 install.py")
+    elif kind == "codex-hooks":
+        _check_codex_feature_flag(target.parent / "config.toml")
+        print("重启 codex 后生效。")
+    elif kind == "gemini-settings":
+        print("重启 gemini 后生效。")
+    elif kind == "cursor-hooks":
+        print("Cursor 会自动重新加载 hooks.json；Cursor CLI（cursor-agent）是否本地执行 hook 以实测为准。")
+
+
+def _check_codex_feature_flag(config_toml):
+    """Codex 的 hooks 受 config.toml 里 [features] hooks 开关控制。不改用户的 toml（没有
+    标准库 toml 写入器，硬改容易把用户的注释/格式弄坏），只检查并提示。"""
+    try:
+        text = config_toml.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    if "hooks = false" in text.replace(" ", " ") or "codex_hooks = false" in text:
+        print("注意: {} 里 hooks 被显式关掉了（[features] hooks = false），改成 true 才会触发。".format(config_toml))
+    elif "hooks = true" not in text and "codex_hooks = true" not in text:
+        print("提示: 如果 hook 没触发，在 {} 加上:\n  [features]\n  hooks = true".format(config_toml))
+
+
+def list_agents():
+    for aid in registry.ids():
+        spec = registry.get(aid)
+        hooks = spec.get("hooks") or {}
+        cfg = hooks.get("config") or {}
+        print("{:<12} {:<12} {:<10} {}".format(
+            aid, spec["display"], "已安装" if agent_installed(spec) else "-",
+            cfg.get("user_path") or "（无应用层 hook，仅系统层探针）"))
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--project",
-        help="安装到指定项目目录的 .claude/settings.json，而非全局 ~/.claude/settings.json",
-    )
-    parser.add_argument(
-        "--target",
-        help="直接指定 settings.json 的绝对路径（优先级最高，用于跨用户安装）",
-    )
-    parser.add_argument(
-        "--skip-statusline",
-        action="store_true",
-        help="不把 ccstatusline 接进 statusLine 配置（install.sh 的 --skip-ccstatusline 会转成这个）",
-    )
+    parser.add_argument("--agent", default="claude-code",
+                        help="要接入的 agent id（见 --list），或 all；默认 claude-code")
+    parser.add_argument("--list", action="store_true", help="列出认识的 agent 及配置文件路径")
+    parser.add_argument("--force-all", action="store_true", help="--agent all 时不做本机安装检测，全部写入")
+    parser.add_argument("--project", help="安装到指定项目目录的项目级配置，而非用户级")
+    parser.add_argument("--target", help="直接指定配置文件的绝对路径（优先级最高，用于跨用户安装）")
+    parser.add_argument("--skip-statusline", action="store_true",
+                        help="不把 ccstatusline 接进 Claude Code 的 statusLine 配置")
     args = parser.parse_args()
 
-    if args.target:
-        target = Path(args.target).resolve()
-    elif args.project:
-        target = Path(args.project).resolve() / ".claude" / "settings.json"
-    else:
-        target = Path.home() / ".claude" / "settings.json"
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    settings = {}
-    if target.exists():
-        try:
-            settings = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            backup = target.with_suffix(".json.bak")
-            print(
-                "警告: {} 不是合法 JSON，已备份为 {} 并重建".format(target, backup),
-                file=sys.stderr,
-            )
-            target.rename(backup)
-            settings = {}
+    if args.list:
+        list_agents()
+        return
 
     os.chmod(REPO_ROOT / "bin" / "CC-Monitor", 0o755)
     os.chmod(HOOK_BIN, 0o755)
 
-    hook_cmd_pre = '"{}" pre'.format(HOOK_BIN)
-    hook_cmd_post = '"{}" post'.format(HOOK_BIN)
-    hook_cmd_permission = '"{}" permission'.format(HOOK_BIN)
-    extra_hooks = {
-        "UserPromptSubmit": '"{}" prompt'.format(HOOK_BIN),
-        "SessionStart": '"{}" session_start'.format(HOOK_BIN),
-        "SessionEnd": '"{}" session_end'.format(HOOK_BIN),
-        "PreCompact": '"{}" precompact'.format(HOOK_BIN),
-        "Stop": '"{}" stop'.format(HOOK_BIN),
-        "SubagentStop": '"{}" subagent_stop'.format(HOOK_BIN),
-    }
-    settings = merge_hooks(settings, hook_cmd_pre, hook_cmd_post, hook_cmd_permission, extra_hooks)
-    statusline_configured = False if args.skip_statusline else configure_statusline(settings)
+    if args.agent == "all":
+        if args.target:
+            print("--agent all 不能和 --target 同时用（每家 agent 的配置文件不同）", file=sys.stderr)
+            sys.exit(2)
+        for aid in registry.hook_capable_ids():
+            spec = registry.get(aid)
+            if not args.force_all and not agent_installed(spec):
+                print("跳过 {}：本机没检测到（--force-all 可强制写入）".format(spec["display"]))
+                continue
+            install_agent(aid, args)
+        return
 
-    target.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    print("已写入: {}".format(target))
+    if registry.get(args.agent) is None:
+        print("不认识的 agent: {}（可用: {}）".format(args.agent, ", ".join(registry.ids())), file=sys.stderr)
+        sys.exit(2)
+    install_agent(args.agent, args)
     print("Hook 脚本: {}".format(HOOK_BIN))
-    print("重启 Claude Code 后生效。可用 `{}/bin/CC-Monitor tail` 实时查看监测事件。".format(REPO_ROOT))
-    if statusline_configured:
-        print("已配置 statusLine: ccstatusline（终端里会显示模型/额度/git 分支等状态栏信息）")
-    elif args.skip_statusline:
-        print("跳过 statusLine 配置（--skip-statusline）。")
-    elif "statusLine" not in settings:
-        print("未配置 statusLine：没有检测到 ccstatusline，跑一遍 install.sh 会自动装上并接线，"
-              "或者手动 `npm install -g ccstatusline` 后重跑 install.py")
 
 
 if __name__ == "__main__":

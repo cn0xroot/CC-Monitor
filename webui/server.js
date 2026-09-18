@@ -10,6 +10,7 @@ const { WebSocketServer } = require("ws");
 
 const { SessionManager } = require("./lib/sessions");
 const audit = require("./lib/audit");
+const agentsRegistry = require("./lib/agents");
 const fmt = require("./lib/format");
 const status = require("./lib/status");
 const transcript = require("./lib/transcript");
@@ -181,10 +182,10 @@ app.get("/api/sessions", (req, res) => {
 });
 
 app.post("/api/sessions", (req, res) => {
-  const { cwd, launchClaude } = req.body || {};
+  const { cwd, launchClaude, agent } = req.body || {};
   // launchClaude 不传就是 true（"新建会话"的默认行为，保持原样）；"新建窗口"
-  // 显式传 false，要一个不自动敲 claude 的裸 shell。
-  const session = sessions.create({ cwd, launchClaude: launchClaude !== false });
+  // 显式传 false，要一个不自动敲 claude 的裸 shell。agent 不传就是 claude-code。
+  const session = sessions.create({ cwd, launchClaude: launchClaude !== false, agent: agent || "claude-code" });
   res.json({ id: session.id, cwd: session.cwd, createdAt: session.createdAt });
 });
 
@@ -310,7 +311,7 @@ app.get("/api/geoip-status", async (req, res) => {
 // ---- REST API: 审计日志 ----
 
 app.get("/api/log-sessions", (req, res) => {
-  const rows = audit.listSessions().map((r) => ({
+  const rows = audit.listSessions(200, { agent: req.query.agent || null }).map((r) => ({
     ...r,
     model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
     has_transcript: !!r.transcript_path,
@@ -402,7 +403,7 @@ app.get("/api/account", (req, res) => {
 app.get("/api/logs", (req, res) => {
   const sinceId = parseInt(req.query.since_id || "0", 10);
   const limit = Math.min(parseInt(req.query.limit || "300", 10), 2000);
-  const rows = audit.queryEvents({ sessionId: req.query.session_id || null, sinceId, limit });
+  const rows = audit.queryEvents({ sessionId: req.query.session_id || null, sinceId, limit, agent: req.query.agent || null });
   const events = rows.map((row) => {
     let detail = {};
     try {
@@ -418,6 +419,8 @@ app.get("/api/logs", (req, res) => {
       source: row.source,
       stageLabel: fmt.stageLabel(row.source),
       toolName: row.tool_name,
+      nativeTool: row.native_tool || null,
+      agent: row.agent || "claude-code",
       cwd: row.cwd,
       risk: row.risk || "-",
       matchedRule: row.matched_rule,
@@ -428,6 +431,41 @@ app.get("/api/logs", (req, res) => {
     };
   });
   res.json({ events, dbPath: audit.dbPath() });
+});
+
+// ---- REST API: 多 agent ----
+// 启动命令在不在 PATH 里（"新建会话"弹窗只列装了的 agent）。结果缓存 60 秒。
+const commandExistsCache = new Map();
+function commandExists(cmd) {
+  const hit = commandExistsCache.get(cmd);
+  if (hit && Date.now() - hit.at < 60 * 1000) return hit.ok;
+  let ok = false;
+  try {
+    require("child_process").execFileSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore", timeout: 2000 });
+    ok = true;
+  } catch (e) {
+    ok = false;
+  }
+  commandExistsCache.set(cmd, { ok, at: Date.now() });
+  return ok;
+}
+// 认识哪些 agent 来自 cc_monitor/agents/*.json（跟 Python 那边同一份注册表），每家的事件/
+// 会话/拦截/疑似绕过计数来自 events 表。前端顶栏的 agent 过滤器和首页"活跃 agent"卡都用这个。
+app.get("/api/agents", (req, res) => {
+  const stats = new Map(audit.agentStats().map((r) => [r.agent, r]));
+  const known = agentsRegistry.list();
+  const ids = new Set([...known.map((a) => a.id), ...stats.keys()]);
+  const rows = [...ids].map((id) => {
+    const spec = known.find((a) => a.id === id) || { id, display: id, hasHooks: false };
+    const st = stats.get(id) || { events: 0, sessions: 0, blocked: 0, bypass: 0, last_ts: null };
+    return {
+      ...spec,
+      installed: !!(spec.launchCommand && commandExists(spec.launchCommand)),
+      events: st.events, sessions: st.sessions, blocked: st.blocked, bypass: st.bypass, lastTs: st.last_ts,
+    };
+  });
+  rows.sort((a, b) => b.events - a.events || a.id.localeCompare(b.id));
+  res.json(rows);
 });
 
 app.get("/api/stats", (req, res) => {

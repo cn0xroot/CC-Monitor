@@ -41,8 +41,9 @@ import json
 import os
 import re
 import shlex
-
 from pathlib import Path
+
+from . import registry
 
 TIER_HOME_DOTFILE = "homeDotfile"
 TIER_OTHER_USER = "otherUserHome"
@@ -65,16 +66,19 @@ SYSTEM_ROOTS = (
 USER_HOME_PARENTS = ("/home", "/Users")
 # 永远不报的路径前缀：临时目录、设备文件。$TMPDIR 在 _ignored_roots() 里动态加进来。
 DEFAULT_IGNORE = ("/tmp", "/var/tmp", "/private/tmp", "/private/var/folders", "/dev")
-# 家目录下永远不报的相对路径（对会话涉及的每个家目录都生效）
-HOME_IGNORE = (".claude/projects",)
+# 家目录下永远不报的相对路径（对会话涉及的每个家目录都生效）：各家 agent 自己的会话/状态目录
+# （~/.claude/projects、~/.codex/sessions、~/.gemini/tmp……），从注册表合并而来。
+HOME_IGNORE = registry.home_ignore()
 # 只读系统目录：在这些地方"读"不报（跑程序/查库/看头文件），"写"照样按 system 档报
 SYSTEM_READ_QUIET = (
     "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/opt", "/snap", "/nix",
     "/System", "/Library", "/Applications",
 )
 HOME_READ_QUIET = (".cache",)
-# 项目根的标记：从 cwd 往上找，家目录之下最靠上的带标记的目录就是项目根
-PROJECT_MARKERS = (".git", ".hg", ".svn", "CLAUDE.md", ".claude")
+# 项目根的标记：从 cwd 往上找，家目录之下最靠上的带标记的目录就是项目根。
+# .git/.hg/.svn 之外是各家 agent 的项目级配置（CLAUDE.md/.claude、AGENTS.md/.codex、GEMINI.md/.gemini……），
+# 从注册表合并而来。
+PROJECT_MARKERS = registry.project_markers()
 
 # 这些命令一旦带了路径参数，路径就是被改写的对象。
 WRITE_ALL_CMDS = {

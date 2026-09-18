@@ -7,6 +7,45 @@
 
 ## [未发布]
 
+### 新增
+- **多 agent 支持（dev 分支）**：检测面从"只有 Claude Code"扩到 Codex CLI、Gemini CLI、
+  Cursor、OpenCode（应用层 hook / 插件 + 系统层探针）和 Aider（仅系统层）。
+  - 新增 Agent 注册表 `cc_monitor/agents/<id>.json` + `cc_monitor/registry.py`：每家 agent 的
+    进程特征（comm / 可执行文件名 / argv 正则）、hook 协议与配置路径、工具名和入参字段映射、
+    会话目录、家目录忽略路径、项目根标记、配置篡改路径全部数据化；代码里不再写死任何一家的
+    名字。用户可在 `~/.cc-monitor/agents/` 放同名文件按字段覆盖。
+  - 新增 hook 适配器 `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode}.py`：`hook.py`
+    重构成"适配器解析 stdin → 判定/审批/记录（agent 无关）→ 适配器输出"。其它 agent 的工具名
+    进引擎前翻译成 Claude Code 词汇（`run_shell_command`→`Bash`、`filePath`→`file_path`……），
+    87 条规则、越界检测、审批台一份代码服务所有 agent；原名存在 `events.native_tool`。Codex 的
+    `apply_patch` 拆成逐文件的 Write/Edit 判定，任一文件命中拦截整个调用就拦。Cursor 的
+    `afterFileEdit` 事后事件也跑规则，结果记成 observed。各家的拒绝格式：Codex 走
+    `permissionDecision=deny`、Gemini 走 `{"decision":"deny"}`、Cursor 走 `{"permission":"deny"}`、
+    OpenCode 插件看退出码 2。
+  - `install.py --agent <id>|all`、`--list`：按注册表写各家配置（`~/.codex/hooks.json`、
+    `~/.gemini/settings.json` hooks 块、`~/.cursor/hooks.json`、OpenCode 插件文件），幂等、不动
+    用户已有条目；不带参数的行为与以前逐字节一致（已对真实 settings.json 做 no-op 验证）。
+  - 系统层探针改成模板 `probe_linux.bt.tmpl` 由 `probe.py` 渲染：所有编译型 agent 的 comm 名进
+    `sched_process_exec` 探点；新增 `cc_monitor/procscan.py` 扫 `/proc`，启动时把已在运行的
+    agent 进程树播种进 `@watch`/`@root`（顺带修掉"探针启动前已在跑的 Claude Code 看不到"），
+    运行中发现 node/python 托管的新根（Gemini CLI、Aider）就重启 bpftrace 纳入。事件带
+    `root_pid` 和 `agent`，绕过交叉验证只比对同一家 agent 的 hook 记录。macOS `nettop` 探针同样
+    按注册表认进程树。
+  - 新规则 `agent_config_tamper`（改 Codex / Gemini / Cursor / OpenCode 的 hooks.json、
+    settings.json、AGENTS.md、插件目录要确认），pattern 写 `@registry:config_tamper` 加载时从
+    注册表展开；`history_read` 系列同样覆盖其它 agent 的会话目录；`kill_monitoring_process`
+    加上 OpenCode 插件文件名。规则总数 86 → 87。
+  - 存储：`events` 加 `agent`/`native_tool` 列，`pending_approvals` 加 `agent` 列，老行默认
+    `claude-code`，幂等 `ALTER TABLE` 升级。`CC-Monitor agents` 子命令、`stats` 按 agent 计数。
+  - Web UI：`/api/agents`；`/api/logs`、`/api/log-sessions` 支持 `?agent=`；顶栏 agent 过滤器；
+    首页"被监测的 AI agent"卡；审计日志/会话下拉/审批卡/进程下钻带 agent 徽标；"新建会话"可选
+    启动哪个 agent（按注册表 `launch_command`，环境变量剥离前缀也按注册表）；进程扫描认所有
+    agent。只有 Claude Code 一家时以上全部隐藏，界面与以前一致。
+  - 新测试 `tests/test_agents.py`（注册表、适配器解析/输出、各家 hook 端到端、installer 幂等、
+    探针渲染与嵌套 agent 归属），`test_platform_caps.py` 改为检查渲染后的脚本并在有 bpftrace 时
+    真的 `-d` dry-run 一遍。
+  - 技术方案 `DESIGN-multi-agent.md`（含对 agentsight 的分析与借鉴清单）。
+
 ### 变更
 - **账号面板新增标识符与本机环境信息**：从 9 行增到 17 行。新增账号 UUID / 组织 UUID /
   用户 ID / 机器 ID 四个标识符（截断成"头 8…尾 4"，完整值在悬停提示里，默认显示、跟着

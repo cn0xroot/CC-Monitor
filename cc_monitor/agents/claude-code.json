@@ -1,0 +1,35 @@
+{
+  "id": "claude-code",
+  "display": "Claude Code",
+  "process": {
+    "comm": ["claude"],
+    "comm_prefix": [],
+    "exe_basename": ["claude"],
+    "argv_patterns": ["(^|/)claude( |$)"],
+    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
+    "infra_noise": [
+      "CC-Monitor-hook", "ccmon-hook", "aimon-hook", "open-island-hook\\.js",
+      "ccstatusline", "herdr-agent-state\\.sh", "^ps -o (ppid|tty)=", "^stty -F \\S+ size"
+    ]
+  },
+  "hooks": {
+    "protocol": "claude",
+    "config": {"kind": "claude-settings", "user_path": "~/.claude/settings.json", "project_path": ".claude/settings.json"},
+    "events": {
+      "PreToolUse": "pre", "PostToolUse": "post", "PermissionRequest": "permission",
+      "UserPromptSubmit": "prompt", "SessionStart": "session_start", "SessionEnd": "session_end",
+      "PreCompact": "precompact", "Stop": "stop", "SubagentStop": "subagent_stop"
+    }
+  },
+  "tools": {},
+  "sessions": {"glob": "~/.claude/projects/*/*.jsonl", "format": "claude_jsonl"},
+  "home_ignore": [".claude/projects"],
+  "project_markers": ["CLAUDE.md", ".claude"],
+  "config_tamper_paths": [
+    "(^|/)\\.claude/settings(\\.local)?\\.json$", "(^|/)\\.claude/hooks/", "(^|/)CLAUDE\\.md$",
+    "(^|/)\\.mcp\\.json$", "(^|/)\\.claude/skills/"
+  ],
+  "history_paths": ["\\.claude/history\\.jsonl"],
+  "launch_command": "claude",
+  "env_strip_prefixes": ["CLAUDE_CODE_", "CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"]
+}

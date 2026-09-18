@@ -20,7 +20,7 @@ Every release — what was added, changed and fixed — is recorded in
 - **Two independent layers of monitoring**: Claude Code hooks capture semantic detail; a
   Linux eBPF / macOS nettop probe cross-verifies at the kernel/system level, independent of
   the hooks — so a bypassed or tampered hook config doesn't mean monitoring silently stops.
-- **86 built-in detection rules, auto-triaged by risk**: high-risk operations get blocked
+- **87 built-in detection rules, auto-triaged by risk**: high-risk operations get blocked
   outright (`rm -rf`, reverse shells, writing SSH keys…), medium-risk ones pop a confirmation
   prompt, low-risk ones are logged silently — you're not babysitting every single action.
 - **Full audit trail**: every tool call's command, path, arguments, and decision are logged to
@@ -46,6 +46,38 @@ Every release — what was added, changed and fixed — is recorded in
   in one page.
 - **Cross-platform**: works on both Linux and macOS (including real Apple Silicon M4 hardware
   verification), with the core feature set consistent across both.
+- **Multi-agent**: not just Claude Code. Codex CLI, Gemini CLI, Cursor and OpenCode plug into the
+  same rules, approval desk and audit log through their own hooks / plugin; the system-layer probe
+  recognises every agent's process tree via an agent registry, so hook-less agents like Aider are
+  still observed at the OS level. See ["Supported AI agents"](#supported-ai-agents).
+
+## Supported AI agents
+
+| Agent | Application layer (rule blocking / approvals / audit) | System-layer probe (exec / connect) | Enable |
+|---|---|---|---|
+| Claude Code | ✅ hooks (default, unchanged) | ✅ by `comm` | `python3 install.py` |
+| Codex CLI | ✅ `~/.codex/hooks.json` (protocol mirrors Claude Code's; `apply_patch` is split per file) | ✅ by `comm` | `python3 install.py --agent codex` |
+| Gemini CLI | ✅ `hooks` block in `~/.gemini/settings.json` (`run_shell_command` etc. mapped to Claude Code tool names) | ✅ `/proc` scan by argv (node-hosted) | `python3 install.py --agent gemini-cli` |
+| Cursor | ✅ `~/.cursor/hooks.json` (`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` can block; `afterFileEdit` is log-only) | ➖ not applicable to an Electron IDE | `python3 install.py --agent cursor` |
+| OpenCode | ✅ plugin bridge `~/.config/opencode/plugins/cc-monitor.js` (`tool.execute.before` calls the hook synchronously; exit 2 blocks) | ✅ by `comm` | `python3 install.py --agent opencode` |
+| Aider / custom scripts | ➖ no hooks | ✅ `/proc` scan by argv | nothing to configure |
+
+`python3 install.py --agent all` enables every agent detected on this machine; `CC-Monitor agents`
+shows each agent's install / hook status and record count. How it works: other agents' tool names
+and argument fields are translated into Claude Code's vocabulary before they reach the rule engine
+(`run_shell_command` → `Bash`, `filePath` → `file_path`, …), so the 87 rules, cross-workdir
+detection, approval desk and Web UI stats are one code path for every agent; the original tool
+name is kept in the record's `native_tool`. Each agent's process signature, hook protocol, tool
+mapping and session directory live in `cc_monitor/agents/<id>.json`; drop a same-named file in
+`~/.cc-monitor/agents/` to override. The Web UI gains an agent filter in the top bar, a
+"Monitored AI agents" card on the home page and agent badges on log / session / approval rows —
+all hidden when only Claude Code is present, so the UI looks exactly as before. Design and
+trade-offs: [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) (Chinese).
+
+> Each hook protocol is implemented from its official documentation; only Claude Code could be
+> tested on the development machine. Still to verify on a machine with the agent installed: the
+> default of Codex's `[features] hooks` flag, whether Gemini's `{"decision":"allow"}` skips its
+> native prompt, whether Cursor's CLI runs hooks locally, and OpenCode's session directory.
 
 ## Screenshots
 
@@ -84,7 +116,9 @@ python3 install.py
 
 It does exactly one thing — registers the hooks into Claude Code's
 `~/.claude/settings.json`. No npm or Python dependencies get installed (`cc_monitor/`
-itself is standard-library-only Python). Once that's done, the `CC-Monitor
+itself is standard-library-only Python). Add `--agent <id>` or `--agent all` to also enable
+Codex / Gemini CLI / Cursor / OpenCode (see ["Supported AI agents"](#supported-ai-agents)).
+Once that's done, the `CC-Monitor
 tail`/`rules`/`stats`/`verify` CLI commands already work; the Web UI is an entirely
 optional, separate add-on you can install later whenever you want it. For the exact
 flags each script takes, what `install.sh`'s 5 steps actually do, and installing to a
@@ -307,7 +341,7 @@ node server.js          # listens on http://127.0.0.1:9999 by default, localhost
 - **Network**: the actual network connections the Claude Code process tree has made —
   destination IP/port, hostname, upload/download byte counts, connection count, plus a world
   map plotting roughly where those destinations are. All of this comes from the system-layer
-  probe (`cc_monitor/probe_linux.bt`, Linux + eBPF) — not packet capture or MITM.
+  probe (`cc_monitor/probe_linux.bt.tmpl`, Linux + eBPF) — not packet capture or MITM.
   - **Domain capture**: a `uprobe:libc:getaddrinfo` records the hostname the moment the
     application resolves it, instead of reverse-DNS-ing the IP afterward — many cloud/CDN
     egress IPs never had a PTR record configured, so reverse DNS can't recover a domain that
@@ -438,7 +472,7 @@ source (full depth in [DESIGN.en.md](./DESIGN.en.md)):
   from `default_rules.json` into `~/.cc-monitor/rules.json` on first use, and can be edited from there.
   Rules added to `default_rules.json` by later versions are merged into that file automatically by id
   (a rule you edited or deleted is never touched; see `rules.defaults_snapshot.json`).
-- **System-layer eBPF probe**: `probe_linux.bt` attaches to kernel tracepoints like `execve`/`connect`.
+- **System-layer eBPF probe**: `probe_linux.bt.tmpl` attaches to kernel tracepoints like `execve`/`connect`.
   It first recognizes Claude Code's own process via `comm=="claude"`, then listens for
   `sched_process_fork` events to propagate a "being monitored" flag down through every descendant
   process it spawns — tracking continues even if a child process renames itself. `CC-Monitor verify`
@@ -595,7 +629,7 @@ CC-Monitor is pure Python (standard library only: `sqlite3`, `json`, `argparse`,
 - `bin/CC-Monitor`, `bin/CC-Monitor-hook`, and `bin/CC-Monitor-probe` are executable scripts with a
   `#!/usr/bin/env python3` shebang; `install.py` chmod's them automatically.
 - The system-layer probe depends on `bpftrace`, which is a prebuilt binary from your system's
-  package manager — nothing to compile. `cc_monitor/probe_linux.bt` is a bpftrace script, interpreted
+  package manager — nothing to compile. `cc_monitor/probe_linux.bt.tmpl` is a bpftrace script, interpreted
   at runtime by `bpftrace` itself.
 - `make install` in the `Makefile` isn't a build step either — it just copies files under `PREFIX`
   and creates command-line symlinks; see "Installation" above.
@@ -925,7 +959,7 @@ third-party packages. The Web UI (`webui/`) builds on these open-source projects
 - [Electron](https://github.com/electron/electron) (MIT), [electron-builder](https://github.com/electron-userland/electron-builder) (MIT), [@electron/rebuild](https://github.com/electron/rebuild) (MIT) — the desktop build and its native-module packaging
 
 **Data & tooling**
-- [bpftrace](https://github.com/bpftrace/bpftrace) (Apache-2.0) — the eBPF tracer the Linux system-layer probe (`probe_linux.bt`) is built on
+- [bpftrace](https://github.com/bpftrace/bpftrace) (Apache-2.0) — the eBPF tracer the Linux system-layer probe (`probe_linux.bt.tmpl`) is built on
 - [sapics/ip-location-db](https://github.com/sapics/ip-location-db) — republishes [DB-IP](https://db-ip.com/) Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) as ready-to-use `.mmdb` files; `install.sh` downloads this by default for the Network tab's GeoIP lookups
 - [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) — the alternative, usually more accurate GeoIP database option, self-hosted by the user under MaxMind's own license
 - [Keep a Changelog](https://keepachangelog.com/) — the loosely-followed format for `CHANGELOG.md`/`CHANGELOG.en.md`

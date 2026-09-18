@@ -1,0 +1,34 @@
+{
+  "id": "codex",
+  "display": "Codex CLI",
+  "process": {
+    "comm": ["codex"],
+    "comm_prefix": ["codex-x86_64", "codex-aarch64"],
+    "exe_basename": ["codex", "codex-x86_64-unknown-linux-musl", "codex-aarch64-unknown-linux-musl", "codex-aarch64-apple-darwin", "codex-x86_64-apple-darwin"],
+    "argv_patterns": ["@openai/codex", "(^|/)codex( |$)", "codex-(x86_64|aarch64)-(unknown-linux|apple-darwin)"],
+    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
+    "infra_noise": ["CC-Monitor-hook", "^git (rev-parse|status|diff|log|ls-files)"]
+  },
+  "hooks": {
+    "protocol": "codex",
+    "config": {"kind": "codex-hooks", "user_path": "~/.codex/hooks.json", "project_path": ".codex/hooks.json"},
+    "events": {
+      "PreToolUse": "pre", "PostToolUse": "post", "PermissionRequest": "permission",
+      "UserPromptSubmit": "prompt", "SessionStart": "session_start", "SessionEnd": "session_end",
+      "PreCompact": "precompact", "Stop": "stop", "SubagentStop": "subagent_stop"
+    }
+  },
+  "tools": {
+    "Bash": "Bash", "shell": "Bash", "shell_command": "Bash", "exec_command": "Bash",
+    "Read": "Read", "read_file": "Read", "Write": "Write", "Edit": "Edit",
+    "apply_patch": "apply_patch", "WebFetch": "WebFetch", "web_search": "WebSearch",
+    "view_image": "Read"
+  },
+  "sessions": {"glob": "~/.codex/sessions/*/*/*/rollout-*.jsonl", "format": "codex_rollout"},
+  "home_ignore": [".codex/sessions", ".codex/log"],
+  "project_markers": ["AGENTS.md", ".codex"],
+  "config_tamper_paths": ["(^|/)\\.codex/hooks\\.json$", "(^|/)\\.codex/config\\.toml$", "(^|/)AGENTS\\.md$"],
+  "history_paths": ["\\.codex/history\\.jsonl", "\\.codex/sessions/"],
+  "launch_command": "codex",
+  "env_strip_prefixes": ["CODEX_"]
+}

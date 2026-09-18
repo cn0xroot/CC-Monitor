@@ -23,7 +23,7 @@ sys.path.insert(0, _REPO)
 
 from cc_monitor import cli  # noqa: E402
 
-BT_PATH = os.path.join(_REPO, "cc_monitor", "probe_linux.bt")
+BT_PATH = os.path.join(_REPO, "cc_monitor", "probe_linux.bt.tmpl")
 
 
 class Args:
@@ -58,7 +58,37 @@ class TestVerifyPlatformHonesty(unittest.TestCase):
 class TestProbeCoversIPv6(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.bt = io.open(BT_PATH, encoding="utf-8").read()
+        # 探针脚本现在是模板（agent 的 comm 名和播种 pid 由 probe.py 渲染进去），
+        # 检查的是渲染后的产物——那才是真正交给 bpftrace 的东西。
+        from cc_monitor import probe
+
+        cls.bt = probe.render_script(seed={1234: (1234, "claude-code")})
+
+    def test_template_placeholders_are_all_rendered(self):
+        self.assertNotIn("__CC_", self.bt)
+        self.assertIn('comm == "claude"', self.bt)
+        self.assertIn("@watch[1234] = 1; @root[1234] = 1234;", self.bt)
+
+    def test_rendered_script_parses_when_bpftrace_is_available(self):
+        """有 bpftrace 就真的让它 dry-run 一遍（-d 只做解析和 BPF 生成，不加载）；没有就跳过。"""
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("bpftrace"):
+            self.skipTest("bpftrace not installed")
+        with tempfile.NamedTemporaryFile("w", suffix=".bt", delete=False) as f:
+            f.write(self.bt)
+            path = f.name
+        try:
+            proc = subprocess.run(["bpftrace", "-d", path], capture_output=True, text=True, timeout=60)
+        except (subprocess.SubprocessError, OSError) as exc:
+            self.skipTest("bpftrace dry-run unavailable: {}".format(exc))
+        finally:
+            os.unlink(path)
+        if proc.returncode != 0 and "Operation not permitted" in (proc.stdout + proc.stderr):
+            self.skipTest("bpftrace dry-run needs root")
+        self.assertEqual(proc.returncode, 0, (proc.stdout + proc.stderr)[-2000:])
 
     def test_connect_handles_both_address_families(self):
         """AF_INET=2 和 AF_INET6=10 两族都要有分支。"""

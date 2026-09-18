@@ -64,7 +64,7 @@ flowchart TB
 
 | 能力 | Linux 方案 | macOS 方案 |
 |---|---|---|
-| 进程事件审计（`execve` 级绕过检测） | **已实现**：`bpftrace` 脚本（`cc_monitor/probe_linux.bt`），跟踪从 `claude` 进程派生出来的所有子进程的 `execve`/`connect`，不依赖 auditd | Endpoint Security Framework（`eslogger` 可无需自研 System Extension 快速验证；生产版本需签名的 ES 客户端 + 用户授权 Full Disk Access），暂未实现——这一层是 `CC-Monitor verify` 绕过检测的基础，目前仍是 Linux 独有 |
+| 进程事件审计（`execve` 级绕过检测） | **已实现**：`bpftrace` 脚本（`cc_monitor/probe_linux.bt.tmpl`），跟踪从 `claude` 进程派生出来的所有子进程的 `execve`/`connect`，不依赖 auditd | Endpoint Security Framework（`eslogger` 可无需自研 System Extension 快速验证；生产版本需签名的 ES 客户端 + 用户授权 Full Disk Access），暂未实现——这一层是 `CC-Monitor verify` 绕过检测的基础，目前仍是 Linux 独有 |
 | 强制沙箱（拦截而非只审计） | Landlock LSM（内核 ≥5.13，按路径限制读写）或 bubblewrap/firejail 包一层，限制可写目录、挂载只读根——暂未实现 | `sandbox-exec`（配合自定义 profile）或跑在容器/轻量 VM（OrbStack/Docker Desktop）中——暂未实现 |
 | 网络监测 | **已实现**：直接用 eBPF 抓 `connect()` 系统调用拿目标 IP:port（+ `uprobe:libc:getaddrinfo` 在应用层解析域名的那一刻记下来，反向 DNS 兜底），再加 `tcp_sendmsg`/`tcp_cleanup_rbuf` 两个内核探点统计上传/下载字节数，不解密 TLS、不用装 CA 证书；Web UI 有专门的"网络流量"页做明细表 + IP 归属地（本地 MaxMind/DB-IP Lite 数据库）+ WebGL2 世界地图 | **已实现**（`cc_monitor/probe_darwin.py`）：用系统自带的 `nettop` 每 2 秒采样 claude 进程树的连接，拿目标 IP:port 和上传/下载字节增量，写进跟 Linux 一致的 `network_traffic` 表，**不需要 root**；跟 Linux 版的差异是没有 `getaddrinfo` 域名捕获（域名只能靠反向 DNS 兜底）、也没有 `execve` 观测（上一行的绕过检测在 macOS 上不成立） |
 

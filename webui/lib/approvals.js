@@ -18,11 +18,22 @@ function withDb(fn, fallback) {
   }
 }
 
+// agent 列是多 agent 支持时才加的；老库没有就全当 claude-code。
+function agentCol(db) {
+  try {
+    return db.prepare(`PRAGMA table_info(pending_approvals)`).all().some((c) => c.name === "agent")
+      ? "agent"
+      : "'claude-code' AS agent";
+  } catch (e) {
+    return "'claude-code' AS agent";
+  }
+}
+
 function listPending() {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind
+        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind, ${agentCol(db)}
          FROM pending_approvals WHERE status = 'pending' ORDER BY id ASC`
       )
       .all();
@@ -36,7 +47,7 @@ function listHistory(limit = 200) {
   return withDb((db) => {
     return db
       .prepare(
-        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind, resolved_at, resolved_via, resolved_value
+        `SELECT id, ts, session_id, tool_name, cwd, matched_rule, matched_value, risk, status, kind, resolved_at, resolved_via, resolved_value, ${agentCol(db)}
          FROM pending_approvals WHERE status != 'pending' ORDER BY id DESC LIMIT ?`
       )
       .all(limit);

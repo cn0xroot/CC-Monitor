@@ -375,7 +375,7 @@
       "Bash"
     ],
     "field": "command",
-    "pattern": "\\b(kill|pkill|killall)\\b[^\\n]*\\b(CC-Monitor-probe|CC-Monitor-hook|probe_linux\\.bt|probe_darwin\\.py|cc_monitor\\.probe|bpftrace)\\b"
+    "pattern": "\\b(kill|pkill|killall)\\b[^\\n]*\\b(CC-Monitor-probe|CC-Monitor-hook|probe_linux\\.bt|probe_darwin\\.py|cc_monitor\\.probe|cc-monitor\\.js|bpftrace)\\b"
   },
   {
     "id": "process_kill",
@@ -773,7 +773,7 @@
       "Bash"
     ],
     "field": "command",
-    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\$\\{?HISTFILE\\b|\\.claude/history\\.jsonl\\b|(^|[;&|(`])\\s*(history|fc\\s+-[a-zA-Z]*l[a-zA-Z]*)\\b(?!\\s*-c\\b)"
+    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\$\\{?HISTFILE\\b|\\.claude/history\\.jsonl\\b|@registry:history|(^|[;&|(`])\\s*(history|fc\\s+-[a-zA-Z]*l[a-zA-Z]*)\\b(?!\\s*-c\\b)"
   },
   {
     "id": "history_file_read",
@@ -788,7 +788,7 @@
       "Grep"
     ],
     "field": "file_path",
-    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\.claude/history\\.jsonl\\b"
+    "pattern": "\\.(bash|zsh|python|mysql|psql|node_repl|sqlite|irb)_history\\b|\\.zhistory\\b|\\.(zsh|bash)_sessions/|/\\.history\\b|\\.claude/history\\.jsonl\\b|@registry:history"
   },
   {
     "id": "db_destructive_command",
@@ -878,6 +878,22 @@
     ],
     "field": "file_path",
     "pattern": "(^|/)\\.claude/settings(\\.local)?\\.json$|(^|/)\\.claude/hooks/|(^|/)CLAUDE\\.md$|(^|/)\\.mcp\\.json$|(^|/)\\.claude/skills/"
+  },
+  {
+    "id": "agent_config_tamper",
+    "risk": "high",
+    "action": "confirm",
+    "title": "修改其它 AI agent 的配置 / hook 文件",
+    "desc": "改 Codex / Gemini CLI / Cursor / OpenCode 等 agent 的 hooks.json、settings.json、AGENTS.md、插件目录，能改变那家 agent 的权限和行为，甚至关掉 CC-Monitor 对它的监测。路径列表来自 cc_monitor/agents/*.json（@registry:config_tamper 在加载时展开）。",
+    "title_en": "Modify another AI agent's configuration / hook files",
+    "desc_en": "Editing hooks.json / settings.json / AGENTS.md / plugin dirs of Codex, Gemini CLI, Cursor, OpenCode etc. can change that agent's permissions and behavior — even disable CC-Monitor's hooks for it. Paths come from cc_monitor/agents/*.json (@registry:config_tamper is expanded at load time).",
+    "tools": [
+      "Write",
+      "Edit",
+      "NotebookEdit"
+    ],
+    "field": "file_path",
+    "pattern": "@registry:config_tamper"
   },
   {
     "id": "git_hooks_file_write",
