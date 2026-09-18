@@ -119,6 +119,19 @@ const WORKING_THRESHOLD_MS = 5 * 60 * 1000;
 // 返回的不只是三态本身，还有 agoMs（距上次活跃过了多少毫秒）——working 状态下前端要
 // 拿这个算"心跳有多深"：5 分钟内越新鲜颜色越深、心电图波形摆动越大，快到 5 分钟
 // 边界时逐渐收敛成最浅的红，而不是一到 5 分钟就从"最深红"直接跳成"灰"。
+// 会话活着吗：优先用 sessions 表里 hook 登记的根进程 pid（+ 启动时刻，防 pid 复用）直接看进程
+// 在不在——这是精确答案；老记录 / 老库没有登记的才退回"这个 cwd 下还有没有一个 agent 进程在跑"
+// 的猜法（同一目录开两个会话、或者会话 cd 走了都会猜错）。
+function sessionLivenessChecker(liveProcs, liveCwds, cwdCache) {
+  const roots = audit.sessionRoots();
+  const psPids = new Set(liveProcs.map((p) => p.pid));
+  return (r) => {
+    const root = roots.get(r.session_id);
+    if (root && root.rootPid) return processScan.pidAlive(root.rootPid, root.rootStart, psPids);
+    return r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false;
+  };
+}
+
 function vitalStatus(hasLiveProcess, lastTs) {
   if (!hasLiveProcess) return { status: "dead", agoMs: null };
   const agoMs = lastTs ? Date.now() - new Date(lastTs).getTime() : null;
@@ -523,6 +536,7 @@ app.get("/api/drilldown/sessions", async (req, res) => {
   const cwdCache = new Map();
   const liveProcs = await processScan.scanClaudeProcesses();
   const liveCwds = new Set(liveProcs.map((p) => normCwd(p.cwd, cwdCache)).filter(Boolean));
+  const isLive = sessionLivenessChecker(liveProcs, liveCwds, cwdCache);
   const rows = audit.listSessions().map((r) => ({
     sessionId: r.session_id,
     cwd: r.cwd,
@@ -535,9 +549,10 @@ app.get("/api/drilldown/sessions", async (req, res) => {
     // 模型的输入/输出/缓存 token 用量——从这个会话的 transcript 里算（跟"状态信息"页
     // 那张模型用量表同一个 getTokenStats），会话列表里直接能看到每个会话烧了多少。
     tokenStats: r.transcript_path ? transcript.getTokenStats(r.transcript_path) : null,
-    active: r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false,
+    active: isLive(r),
+    agent: r.agent,
     ...(() => {
-      const v = vitalStatus(r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false, r.last_ts);
+      const v = vitalStatus(isLive(r), r.last_ts);
       return { status: v.status, statusAgoMs: v.agoMs };
     })(),
   }));
@@ -840,10 +855,11 @@ app.get("/api/status", async (req, res) => {
       })(),
     };
   });
+  const isLive = sessionLivenessChecker(liveProcs, liveCwds, cwdCache);
   const auditSessions = audit.listSessions(50).map((r) => {
     const g = status.gitInfo(r.cwd);
     const tokenStats = r.transcript_path ? transcript.getTokenStats(r.transcript_path) : null;
-    const hasLiveProcess = r.cwd ? liveCwds.has(normCwd(r.cwd, cwdCache)) : false;
+    const hasLiveProcess = isLive(r);
     return {
       kind: "audit",
       sessionId: r.session_id,

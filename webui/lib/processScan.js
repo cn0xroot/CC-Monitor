@@ -135,6 +135,21 @@ async function scanClaudeProcesses() {
   return procs;
 }
 
+// 某个根进程还活着吗。Linux 直接看 /proc/<pid>/stat，并比对启动时刻（第 22 个字段，jiffies）防
+// pid 复用；macOS 没有 /proc，退回"pid 在不在 ps 快照里"。
+function pidAlive(pid, startTicks, psPids) {
+  if (!pid) return false;
+  if (os.platform() !== "linux") return psPids ? psPids.has(Number(pid)) : false;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    if (startTicks === null || startTicks === undefined) return true;
+    const rest = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    return Number(rest[19]) === Number(startTicks);
+  } catch (e) {
+    return false;
+  }
+}
+
 function summarize(procs, currentUser) {
   const byUser = {};
   for (const p of procs) {
@@ -151,4 +166,5 @@ function summarize(procs, currentUser) {
   };
 }
 
-module.exports = { scanClaudeProcesses, summarize, parseLsofCwds };
+module.exports = {
+  pidAlive, scanClaudeProcesses, summarize, parseLsofCwds };

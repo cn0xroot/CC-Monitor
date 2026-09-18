@@ -205,3 +205,51 @@ class TestRunBinding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSessionAttribution(unittest.TestCase):
+    """hook 沿父链登记 会话↔根进程，探针按根 pid 反查会话；基础设施噪音不落库。"""
+
+    def test_find_agent_ancestor_finds_running_agent_or_none(self):
+        # 在 Claude Code 里跑测试时能找到 claude 根；在裸终端里找不到——两种都合法，但返回形状要对
+        root, start, agent = procscan.find_agent_ancestor(os.getpid())
+        if agent:
+            self.assertIsInstance(root, int)
+            self.assertIn(agent, ("claude-code", "antigravity-cli", "codex", "gemini-cli", "opencode", "zcode", "grok-cli", "cursor", "aider", "generic"))
+        else:
+            self.assertEqual((root, start), (None, None))
+
+    def test_touch_session_and_lookup_by_root(self):
+        storage.touch_session("codex", "sess-A", root_pid=424242, root_start=777, cwd="/p")
+        storage.touch_session("codex", "sess-A", transcript_path="/t.jsonl")  # 第二次只补字段
+        self.assertEqual(storage.session_for_root(424242), "sess-A")
+        self.assertEqual(storage.session_for_root(424242, root_start=777), "sess-A")
+        self.assertIsNone(storage.session_for_root(424242, root_start=778), "pid 复用后启动时刻不同就不算")
+        self.assertIsNone(storage.session_for_root(424242, agent="gemini-cli"))
+        row = [r for r in storage.list_sessions_with_roots() if r[1] == "sess-A"][0]
+        self.assertEqual((row[0], row[2], row[3], row[4]), ("codex", 424242, 777, "/p"))
+
+    def test_probe_events_carry_session_id(self):
+        storage.touch_session("claude-code", "sess-B", root_pid=515151, root_start=None)
+        probe._session_cache.clear()
+        probe.ROOTS.set(515151, "claude-code")
+        cap = _Capture()
+        with mock.patch.object(storage, "log_event", cap), \
+             mock.patch.object(storage, "fetch_recent_shell_commands", return_value=[]), \
+             mock.patch.object(procscan, "proc_start", return_value=None):
+            probe._handle_exec_line(["EXEC", "515160", "0", "bash", "515151", "bash -c ls"])
+            probe._handle_bind_line(["BIND", "515160", "0", "python3", "515151", "4", "127.0.0.1", "9"])
+            probe._handle_listen_line(["LISTEN", "515160", "0", "python3", "515151", "4"])
+        self.assertEqual([e["session_id"] for e in cap.events], ["sess-B", "sess-B"])
+
+    def test_infra_noise_is_not_logged_at_all(self):
+        probe.ROOTS.set(616161, "claude-code")
+        cap = _Capture()
+        with mock.patch.object(storage, "log_event", cap), \
+             mock.patch.object(storage, "fetch_recent_shell_commands", return_value=[]):
+            for argv in ('sh -c "/x/bin/CC-Monitor-hook" pre', "/bin/sh -c ps -o tty= -p 1", "node /usr/local/bin/ccstatusline",
+                         "git rev-parse --is-inside-work-tree", "jj root"):
+                probe._handle_exec_line(["EXEC", "616170", "0", "sh", "616161", argv])
+            self.assertEqual(cap.events, [])
+            probe._handle_exec_line(["EXEC", "616171", "0", "sh", "616161", "bash -c git push --force"])
+        self.assertEqual(len(cap.events), 1)

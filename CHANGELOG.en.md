@@ -59,6 +59,16 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
     when bpftrace is available.
   - Design document `DESIGN-multi-agent.md` (Chinese; includes the agentsight analysis and the
     list of what was borrowed).
+- **System-layer events attributed to sessions**: new `sessions` table — the hook process walks the
+  `/proc` parent chain to the agent root (Claude Code: hook ← sh ← claude) and records
+  `(agent, session_id) → (root_pid, root_start, cwd)`; the probe looks sessions up by root pid, so
+  `os_exec` / `os_net` / `os_file` / `os_listen` now carry `session_id`, the Web UI session filter
+  shows kernel-observed events, and session liveness is decided by "is the root pid (+ start time)
+  still alive" instead of guessing by cwd. Sessions started via `CC-Monitor run --` land in the same table.
+- **Probe noise and indexes**: the agent's own infrastructure commands (the hook invocation itself,
+  the status line's `ps`/`stty`/`jj root`/`git rev-parse`) are no longer logged at all — 68 % of
+  `os_exec` rows in a real database were these; `events` / `pending_approvals` gain indexes (there
+  were none).
 - **Antigravity CLI (`agy`) and Grok CLI integrations (experimental)**: Antigravity's hooks.json is
   grouped by hook name, its stdin is `toolCall {name, args}` with PascalCase args and it answers
   with `{"decision": "deny"}` — exercised end-to-end once on 1.2.6 here (block / approval-desk allow /

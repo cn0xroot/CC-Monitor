@@ -171,6 +171,27 @@ class RootTable(object):
 
 ROOTS = RootTable()
 
+_session_cache = {}  # root_pid -> (session_id, ts)
+SESSION_CACHE_TTL_SEC = 10
+
+
+def _session_for(root, agent=None):
+    """根进程 → 会话 id（sessions 表由 hook 进程沿父链登记，见 hook.record_session）。找不到返回空串；
+    没找到的也缓存 10 秒，免得每条事件都查一次库。"""
+    try:
+        root_i = int(root)
+    except (TypeError, ValueError):
+        return ""
+    now = time.time()
+    hit = _session_cache.get(root_i)
+    if hit and now - hit[1] < SESSION_CACHE_TTL_SEC:
+        return hit[0]
+    if len(_session_cache) > 2000:
+        _session_cache.clear()
+    sid = storage.session_for_root(root_i, root_start=procscan.proc_start(root_i), agent=agent) or ""
+    _session_cache[root_i] = (sid, now)
+    return sid
+
 
 def _handle_root_line(fields):
     # ROOT \t pid \t uid \t comm
@@ -192,7 +213,14 @@ def _handle_exec_line(fields):
         return
 
     agent = ROOTS.agent_of(root)
+    # agent 自己的基础设施命令（hook 调用本身、状态栏刷新、终端尺寸探测……）整条不落库：
+    # 每次 hook 调用会派生 sh → CC-Monitor-hook → python 三个 exec，Claude Code 的状态栏每几秒
+    # 跑一遍 ps/stty，真机库里 68% 的 os_exec 都是这些，没有任何审计价值。
+    if _is_infra_noise(argv_line, agent):
+        return
     shell_cmd = _extract_shell_command(argv_line, agent)
+    if shell_cmd and _is_infra_noise(shell_cmd, agent):
+        return
     matched = _find_matching_hook_command(shell_cmd, now, agent=agent)
 
     rule, matched_value = (None, None)
@@ -203,7 +231,7 @@ def _handle_exec_line(fields):
     note = "命令与 hook 记录对不上，可能绕过了监测" if not matched else None
 
     storage.log_event(
-        session_id="",
+        session_id=_session_for(root, agent),
         source="os_exec",
         tool_name=comm,
         detail={
@@ -245,7 +273,7 @@ def _handle_connect_line(fields):
     host = dns_query_host or _reverse_dns(ip)
     target = "{} ({})".format(ip, host) if host else ip
     storage.log_event(
-        session_id="",
+        session_id=_session_for(root, agent),
         source="os_net",
         tool_name=comm,
         detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "ip": ip, "port": port, "host": host},
@@ -442,7 +470,7 @@ class _FileAggregator(object):
         if count <= 1:
             return
         storage.log_event(
-            session_id="", source="os_file", tool_name=comm,
+            session_id=_session_for(root, agent), source="os_file", tool_name=comm,
             detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "op": op, "path": path,
                     "count": count, "window_sec": FILE_AGG_WINDOW_SEC, "aggregated": True},
             cwd="", risk="info", matched_rule=None, decision="observed",
@@ -521,7 +549,7 @@ def _handle_file_line(fields):
     risk = rule["risk"] if rule else ("high" if bypass else "info")
     note = "agent 进程直接写入文件但 hook 层没有对应的 Write/Edit 记录，可能绕过了监测" if bypass else None
     storage.log_event(
-        session_id="", source="os_file", tool_name=comm,
+        session_id=_session_for(root, agent), source="os_file", tool_name=comm,
         detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "op": op, "flags": flags,
                 "path": path, "path2": path2, "by_agent_process": is_self, "agent_state": state_path,
                 "hook_matched": hook_matched, "matched_rule": rule["id"] if rule else None,
@@ -561,7 +589,7 @@ def _handle_listen_line(fields):
     agent = ROOTS.agent_of(root)
     exposed = ip in ("0.0.0.0", "::")
     storage.log_event(
-        session_id="", source="os_listen", tool_name=comm,
+        session_id=_session_for(root, agent), source="os_listen", tool_name=comm,
         detail={"pid": pid, "uid": uid, "root_pid": root, "agent": agent, "ip": ip, "port": port,
                 "exposed": exposed,
                 "note": "监听在所有网卡上，局域网/公网可达" if exposed else None},

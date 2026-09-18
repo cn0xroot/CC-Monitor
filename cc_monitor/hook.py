@@ -9,7 +9,7 @@ import json
 import os
 import sys
 
-from . import adapters, audit_state, notify, policy, registry, rematch, storage
+from . import adapters, audit_state, notify, policy, procscan, registry, rematch, storage
 
 
 def read_hook_input():
@@ -273,6 +273,24 @@ HANDLERS = {
 }
 
 
+def record_session(ev):
+    """把"这个会话 ↔ 哪个 agent 根进程"记进 sessions 表。hook 进程是 agent 派生的，沿父进程链往上
+    第一个认得出的 agent 进程就是根（Claude Code：hook ← sh ← claude）。探针拿 root_pid 反查，
+    系统层事件就能带上 session_id；Web UI 用 root_pid 是否还活着判断会话生死，比按 cwd 猜准。
+    任何一步出错都不影响主流程。"""
+    if not ev.get("session_id") or audit_state.get_state() == "stopped":
+        return
+    try:
+        root_pid, root_start, found_agent = procscan.find_agent_ancestor(os.getppid())
+        if found_agent and found_agent != ev["agent"] and ev["agent"] != registry.DEFAULT_AGENT:
+            # 命令行说是 codex、父链上认出来的却是别家——以命令行为准，但根 pid 仍然可信
+            pass
+        storage.touch_session(ev["agent"], ev["session_id"], root_pid=root_pid, root_start=root_start,
+                              cwd=ev.get("cwd"), transcript_path=ev.get("transcript_path"))
+    except Exception:
+        pass
+
+
 def main():
     mode, agent = parse_args(sys.argv)
     try:
@@ -282,6 +300,8 @@ def main():
         data = read_hook_input()
         adapter = adapters.for_agent(agent)
         ev = adapter.parse(mode, data, agent=agent)
+        if ev.get("mode", mode) != "noop":
+            record_session(ev)
         # 适配器可能把模式改掉（Cursor 的 beforeSubmitPrompt 不管挂在哪个事件下都是 prompt）
         HANDLERS.get(ev.get("mode", mode), handler)(ev, adapter)
     except SystemExit:

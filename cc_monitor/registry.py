@@ -141,10 +141,14 @@ def classify_process(comm, argv, exe=None):
     return None
 
 
+# 所有 agent 共有的基础设施噪音：CC-Monitor 自己的 hook / rematch 调用
+_COMMON_INFRA_NOISE = [re.compile(r"CC-Monitor-hook"), re.compile(r"CC-Monitor rematch"), re.compile(r"cc_monitor\.hook")]
+
+
 def infra_noise_patterns(agent_id=None):
-    """agent 自己的基础设施命令（hook 执行本身、状态栏刷新之类），探针的绕过判定要排除。
-    不传 agent_id 就合并所有家的（探针刚起来、还没把进程归到某家时用）。"""
-    pats = []
+    """agent 自己的基础设施命令（hook 执行本身、状态栏刷新之类），探针的绕过判定要排除、
+    事件也不落库。不传 agent_id 就合并所有家的（探针刚起来、还没把进程归到某家时用）。"""
+    pats = list(_COMMON_INFRA_NOISE)
     specs = [get(agent_id)] if agent_id else load_all().values()
     for spec in specs:
         if not spec:

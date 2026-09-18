@@ -49,6 +49,14 @@
     探针渲染与嵌套 agent 归属），`test_platform_caps.py` 改为检查渲染后的脚本并在有 bpftrace 时
     真的 `-d` dry-run 一遍。
   - 技术方案 `DESIGN-multi-agent.md`（含对 agentsight 的分析与借鉴清单）。
+- **系统层事件归到会话**：新增 `sessions` 表——hook 进程沿 `/proc` 父进程链找到 agent 根进程
+  （Claude Code：hook ← sh ← claude），把 `(agent, session_id) → (root_pid, root_start, cwd)` 登记
+  进去；探针按根 pid 反查，`os_exec` / `os_net` / `os_file` / `os_listen` 都带上 `session_id`，
+  Web UI 按会话过滤能看到内核层观测，会话生死改按"根 pid（+启动时刻）在不在"判断而不是按 cwd 猜。
+  `CC-Monitor run --` 登记的会话同样进这张表。
+- **探针噪音与索引**：agent 自己的基础设施命令（hook 调用本身、状态栏的 `ps`/`stty`/`jj root`/
+  `git rev-parse`）整条不落库，真机库里 68% 的 `os_exec` 是这些；`events` / `pending_approvals`
+  加索引（以前一个都没有）。
 - **Antigravity CLI（`agy`）与 Grok CLI 接入（实验性）**：Antigravity 的 hooks.json 按 hook 名分组、
   stdin 是 `toolCall {name, args}` 加 PascalCase 入参、输出 `{"decision": "deny"}`——本机 1.2.6 做过
   一轮端到端（拦截 / 审批台放行 / 探针归属与交叉验证）；Grok CLI 按其 `src/hooks/` 源码实现（退出码 2

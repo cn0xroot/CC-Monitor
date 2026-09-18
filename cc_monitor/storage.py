@@ -119,6 +119,30 @@ def _connect():
             conn.execute(stmt)
         except sqlite3.OperationalError:
             pass  # 列已经存在
+    # 会话 ↔ 根进程：hook 进程沿父进程链找到 agent 根进程记在这里，探针拿 root_pid 反查会话，
+    # 系统层事件就能带上 session_id。root_start 是 /proc/<pid>/stat 里的启动时刻（jiffies），
+    # 防 pid 被复用后张冠李戴。
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        agent TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        root_pid INTEGER,
+        root_start INTEGER,
+        cwd TEXT,
+        transcript_path TEXT,
+        first_seen TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        PRIMARY KEY (agent, session_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_root ON sessions(root_pid, last_seen);
+    -- events 表以前一个索引都没有：按会话/agent/来源过滤、按时间排序全是全表扫，
+    -- 几万条之后 Web UI 每次轮询都要几十毫秒起步。
+    CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, id);
+    CREATE INDEX IF NOT EXISTS idx_events_agent_id ON events(agent, id);
+    CREATE INDEX IF NOT EXISTS idx_events_source_tool ON events(source, tool_name, id);
+    CREATE INDEX IF NOT EXISTS idx_events_rule ON events(matched_rule);
+    CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_approvals(status, id);
+    """)
     return conn
 
 
@@ -258,6 +282,62 @@ def fetch_last(limit=200):
             (limit,),
         )
         return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, transcript_path=None):
+    """hook 每次调用顺手 UPSERT 一行：会话第一次出现就插入，之后只更新 last_seen 和拿到了的字段
+    （root_pid 第一次没找到、后来找到了也能补上）。"""
+    if not session_id:
+        return
+    conn = _connect()
+    try:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        with conn:
+            conn.execute(
+                "INSERT INTO sessions (agent, session_id, root_pid, root_start, cwd, transcript_path, first_seen, last_seen) "
+                "VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(agent, session_id) DO UPDATE SET "
+                "root_pid = COALESCE(excluded.root_pid, sessions.root_pid), "
+                "root_start = COALESCE(excluded.root_start, sessions.root_start), "
+                "cwd = COALESCE(excluded.cwd, sessions.cwd), "
+                "transcript_path = COALESCE(excluded.transcript_path, sessions.transcript_path), "
+                "last_seen = excluded.last_seen",
+                (agent or DEFAULT_AGENT, session_id, root_pid, root_start, cwd or None, transcript_path or None, now, now),
+            )
+    finally:
+        conn.close()
+
+
+def session_for_root(root_pid, root_start=None, agent=None):
+    """探针用：这个根进程 pid 对应哪个会话。同一个 pid 可能先后被不同进程用过，带 root_start 时
+    只认启动时刻一致的；没带就取最近活跃的那条。返回 session_id 或 None。"""
+    if not root_pid:
+        return None
+    conn = _connect()
+    try:
+        sql = "SELECT session_id, root_start FROM sessions WHERE root_pid = ?"
+        params = [int(root_pid)]
+        if agent:
+            sql += " AND agent = ?"
+            params.append(agent)
+        sql += " ORDER BY last_seen DESC LIMIT 5"
+        for sid, start in conn.execute(sql, params).fetchall():
+            if root_start is None or start is None or int(start) == int(root_start):
+                return sid
+        return None
+    finally:
+        conn.close()
+
+
+def list_sessions_with_roots(limit=500):
+    """Web UI 用：(agent, session_id, root_pid, root_start, cwd, last_seen)。"""
+    conn = _connect()
+    try:
+        return conn.execute(
+            "SELECT agent, session_id, root_pid, root_start, cwd, last_seen FROM sessions ORDER BY last_seen DESC LIMIT ?",
+            (limit,)).fetchall()
     finally:
         conn.close()
 

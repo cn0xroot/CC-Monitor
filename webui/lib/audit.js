@@ -836,6 +836,20 @@ function listSessions(limit = 200, { agent = null } = {}) {
   }, []);
 }
 
+// sessions 表（hook 进程沿父进程链登记的"会话 ↔ agent 根进程"）：{session_id → {agent, rootPid, rootStart, cwd}}。
+// 老库没有这张表就返回空 Map，调用方退回按 cwd 猜的老办法。
+function sessionRoots() {
+  return withDb((db) => {
+    const has = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'`).get();
+    if (!has) return new Map();
+    const out = new Map();
+    for (const r of db.prepare(`SELECT agent, session_id, root_pid, root_start, cwd FROM sessions`).all()) {
+      out.set(r.session_id, { agent: r.agent, rootPid: r.root_pid, rootStart: r.root_start, cwd: r.cwd });
+    }
+    return out;
+  }, new Map());
+}
+
 // 每家 agent 的汇总：事件数、会话数、拦截数、疑似绕过数——首页"活跃 agent"卡和 /api/agents 用。
 function agentStats() {
   return withDb((db) => {
@@ -1558,6 +1572,7 @@ function blockedDetails(limit = 200) {
 
 module.exports = {
   agentStats,
+  sessionRoots,
   hasAgentColumn,
   listSessions,
   queryEvents,

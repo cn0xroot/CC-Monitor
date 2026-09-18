@@ -193,6 +193,9 @@ agent（Gemini CLI、Aider）会打印"发现新的 agent 根进程 …，重启
 - 绕过交叉验证扩到文件：agent **进程自己**（不是子进程）直接写了一个文件、hook 层 15 秒内却没有
   指向同一路径的 Write/Edit 记录 → `hook_bypass_suspected`。agent 写自己的状态目录
   （`~/.claude/…`、`~/.codex/…`）不算。
+- `os_exec` 噪音：agent 自己的基础设施命令（每次 hook 调用派生的 `sh → CC-Monitor-hook → python`、
+  Claude Code 状态栏每几秒的 `ps` / `stty` / `jj root` / `git rev-parse`）整条不落库——真机库里 68% 的
+  `os_exec` 是这些。模式来自注册表 `process.infra_noise`，对原始 argv 和剥出来的 `-c` 命令各查一遍。
 - 噪音控制：`/proc` `/sys` `/dev` 在内核里就丢；`.git/`、`node_modules/`、`__pycache__/`、
   各种 cache/build 目录、`/tmp`、agent 状态目录、`.pyc/.swp/~` 等在 probe.py 里排除；同一
   (根进程, 路径, 操作) 60 秒内只落一条、到期补一条汇总计数；一个根进程一秒超过 200 条文件事件
@@ -440,8 +443,19 @@ ALTER TABLE pending_approvals ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude-cod
 是否存在，老库（还没跑过新版 hook）一切按 `claude-code` 处理。`session_always_allow` 没加
 agent：session id 是各家自己生成的 UUID / 长 id，跨 agent 撞车的概率可以忽略。
 
-`os_exec` / `os_net` 事件的 `detail` 新增 `root_pid` 和 `agent` 两个键；`session_id` 仍为空
-（系统层事件到会话的归属属于未做的 Phase C）。新增两种 `source`：`os_file`（`detail`：`op`
+`os_exec` / `os_net` / `os_file` / `os_listen` 事件的 `detail` 带 `root_pid` 和 `agent`，`session_id`
+由探针按根 pid 反查 `sessions` 表填上（见下）。
+
+**`sessions` 表**（会话 ↔ agent 根进程，Phase C 里"带证据的匹配"的第一种、也是置信度最高的证据）：
+hook 进程是 agent 派生的，`hook.record_session()` 从 `os.getppid()` 沿 `/proc` 父进程链往上找第一个
+认得出的 agent 进程（Claude Code：hook ← sh ← claude；显式登记的 `run --` pid 优先），把
+`(agent, session_id) → (root_pid, root_start, cwd, transcript_path)` UPSERT 进去；`root_start` 是
+`/proc/<pid>/stat` 的启动时刻，pid 复用后不会张冠李戴。探针每条系统层事件按 `root_pid` 查
+`storage.session_for_root()`（10 秒缓存）得到 `session_id`；Web UI 判断会话生死改成"根 pid（+启动
+时刻）还在不在"，比按 cwd 猜准。macOS 没有 `/proc`，父链用一次 `ps -axo` 快照走，没有启动时刻。
+
+`events` 表加了索引（`session_id,id` / `agent,id` / `source,tool_name,id` / `matched_rule`），
+`pending_approvals(status,id)` 也加了——以前一个索引都没有，几万条之后每次轮询都是全表扫。新增两种 `source`：`os_file`（`detail`：`op`
 write/unlink/rename/mkdir/storm、`path`、`path2`、`flags`、`by_agent_process`、`agent_state`、
 `hook_matched`、`count`/`window_sec`/`aggregated`）和 `os_listen`（`ip`、`port`、`exposed`）。
 显式绑定的登记文件在 `~/.cc-monitor/run/<pid>.json`。
@@ -680,13 +694,13 @@ cd webui && npm test                # 30 个用例
 
 按 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) 的分期：
 
-- **Phase B 后半（已完成）**：文件级探点、监听端口、`CC-Monitor run --` 显式绑定都已实现（见 2.7 /
-  2.10 / 3.5）。剩余：`os_*` 事件带上 `CC_MONITOR_SESSION` 作为 `session_id`（登记文件里有 session，
-  探针还没把它写进事件）；文件事件的 Web UI 专属卡片/下钻（现在只在 Log 审计和事件类型分布里）。
+- **Phase B 后半（已完成）**：文件级探点、监听端口、`CC-Monitor run --` 显式绑定、系统层事件的
+  会话归属（`sessions` 表）都已实现。剩余：文件事件的 Web UI 专属卡片/下钻（现在只在 Log 审计和
+  事件类型分布里）。
 - **Phase C**：其它 agent 的会话文件解析（Codex `rollout-*.jsonl`、Gemini `chats/session-*.json`、
-  Cursor `agent-transcripts`），Tap 页目前仍只解析 Claude Code；`sessions` / `processes` 表；
-  带证据类型和置信度的会话↔进程匹配（现在 `os_*` 事件的 `session_id` 为空）；`staleSessions.js`
-  仍只扫 `~/.claude/projects`。
+  Cursor `agent-transcripts`），Tap 页目前仍只解析 Claude Code；`processes` 表；会话↔进程匹配目前
+  只有 hook 父链这一种证据（最准的一种），探针启动前就结束了 hook 活动的老会话没有 `root_pid`，
+  退回按 cwd 猜；`staleSessions.js` 仍只扫 `~/.claude/projects`。
 - **Phase D**：TLS 元数据可选层、OpenTelemetry 导出、`docker://` 绑定、探针后端换 BCC/libbpf
   消除重启窗口。
 - **小项**：`install.py --uninstall`；首页统计卡随 agent 过滤器变化；额度卡对非 Claude agent

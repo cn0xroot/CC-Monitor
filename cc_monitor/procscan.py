@@ -126,6 +126,84 @@ def classify_pid(pid):
     return registry.classify_process(comm, argv, exe)
 
 
+def _proc_info(pid):
+    """(ppid, starttime, comm, argv, exe)；读不到返回 None。"""
+    ppid, start = _stat_fields(pid)
+    if ppid is None:
+        return None
+    comm = _read("{}/{}/comm".format(PROC, pid)).strip()
+    argv = _read("{}/{}/cmdline".format(PROC, pid)).replace("\0", " ").strip()
+    try:
+        exe = os.readlink("{}/{}/exe".format(PROC, pid))
+    except OSError:
+        exe = ""
+    return ppid, start, comm, argv, exe
+
+
+def _ps_snapshot():
+    """macOS 没有 /proc：一次 ps 拿全表 {pid: (ppid, comm, args)}。starttime 拿不到，返回 None。"""
+    import subprocess
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,ppid=,comm=,args="], capture_output=True, text=True,
+                             timeout=5, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    procs = {}
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) < 3:
+            continue
+        try:
+            procs[int(parts[0])] = (int(parts[1]), parts[2].rsplit("/", 1)[-1], parts[3] if len(parts) > 3 else "")
+        except ValueError:
+            continue
+    return procs
+
+
+def find_agent_ancestor(pid, registrations=None, max_hops=32):
+    """从 pid 往上找最近的 agent 根进程：返回 (root_pid, root_start, agent_id)，找不到 (None, None, None)。
+    hook 进程调用时 pid 是它自己的父进程：Claude Code 的 hook 命令经 `sh -c` 起，父是 sh、祖父是
+    claude；Antigravity 类似。显式登记（CC-Monitor run --）的 pid 优先。"""
+    if registrations is None:
+        try:
+            from . import run as _run
+            registrations = _run.load_registrations()
+        except Exception:
+            registrations = {}
+    if os.path.isdir(PROC):
+        cur = pid
+        for _ in range(max_hops):
+            if not cur or cur <= 1:
+                break
+            info = _proc_info(cur)
+            if info is None:
+                break
+            ppid, start, comm, argv, exe = info
+            aid = registrations.get(cur) or registry.classify_process(comm, argv, exe)
+            if aid:
+                return cur, start, aid
+            cur = ppid
+        return None, None, None
+    procs = _ps_snapshot()
+    cur = pid
+    for _ in range(max_hops):
+        info = procs.get(cur)
+        if not info or cur <= 1:
+            break
+        ppid, comm, argv = info
+        aid = registrations.get(cur) or registry.classify_process(comm, argv, None)
+        if aid:
+            return cur, None, aid
+        cur = ppid
+    return None, None, None
+
+
+def proc_start(pid):
+    """/proc/<pid>/stat 的 starttime（jiffies）；拿不到返回 None。"""
+    _ppid, start = _stat_fields(pid)
+    return start
+
+
 _SAFE_COMM = re.compile(r"^[A-Za-z0-9._+-]{1,15}$")
 
 

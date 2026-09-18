@@ -27,8 +27,10 @@
       "open-island-hook\\.js",
       "ccstatusline",
       "herdr-agent-state\\.sh",
-      "^ps -o (ppid|tty)=",
-      "^stty -F \\S+ size"
+      "(^|-c )ps -o (ppid|tty)=",
+      "(^|-c )stty -F \\S+ size",
+      "^awk \\{print \\$2\\}$",
+      "^(jj|git) (root|rev-parse)"
     ]
   },
   "hooks": {

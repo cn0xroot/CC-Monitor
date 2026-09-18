@@ -99,6 +99,11 @@ def main(argv=None):
     session = str(uuid.uuid4())
     exe = resolve_binary(argv[0])
     register(os.getpid(), agent, session, argv, exe)
+    try:
+        from . import procscan
+        storage.touch_session(agent, session, root_pid=os.getpid(), root_start=procscan.proc_start(os.getpid()), cwd=os.getcwd())
+    except Exception:
+        pass
     env = dict(os.environ)
     env["CC_MONITOR_AGENT"] = agent
     env["CC_MONITOR_SESSION"] = session
