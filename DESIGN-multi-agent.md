@@ -21,7 +21,7 @@
 3. **工具词汇**：86 条规则的 `tools` 字段、`workdir.py` 的读写工具表、`webui/lib/audit.js` 里几十处 SQL 字面量，
    全部用的是 Claude Code 的工具名（`Bash` / `Read` / `Write` / `Edit` / `WebFetch` / `mcp__*`）。
 
-外加两条次要耦合：会话记录路径（`~/.claude/projects/**/*.jsonl`，Claude Tap 的数据源）和账号/额度
+外加两条次要耦合：会话记录路径（`~/.claude/projects/**/*.jsonl`，AI Tap 的数据源）和账号/额度
 （`~/.claude/.credentials.json`、`api.anthropic.com/api/oauth/usage`）。
 
 **AgentSight 给我们的核心启发**（不是照搬它的代码，而是它的几条设计决策）：
@@ -30,7 +30,7 @@
 |---|---|
 | **边界观测（boundary tracing）**：只在内核系统调用边界和 TLS 库边界看，不改 agent 一行代码，所以天然 agent 无关 | 我们的系统层探针本来就是这个思路，只是根进程识别写死了；把"识别谁是 agent"从 `.bt` 脚本里抽出来变成注册表，就是 agent 无关的 |
 | **AgentRegistry + AgentSession + ProcessTree + SessionProcessMatch** 四个对象的最小模型，agent 差异全部收敛在 registry 里（`docs/design/view-session-process-model.md`） | 直接借用这套对象模型来组织新增代码，避免为每个 agent 复制一份 probe/hook/parser |
-| **agent-native session 解析**：读 Claude / Codex / Gemini / Cursor 各自落盘的会话文件（`ext/session` crate），不抓包，macOS/Windows 也能用 | 这正是 Claude Tap 的路线，直接泛化成"每个 agent 一个 transcript parser" |
+| **agent-native session 解析**：读 Claude / Codex / Gemini / Cursor 各自落盘的会话文件（`ext/session` crate），不抓包，macOS/Windows 也能用 | 这正是 AI Tap 的路线，直接泛化成"每个 agent 一个 transcript parser" |
 | **会话↔进程关联带证据和置信度**（`proc_fd` / `ebpf_file` / `cwd_recent` / `sticky`） | 我们目前靠 hook 里的 `cwd` 硬对 live 进程 cwd（`server.js:92-102`），多 agent 后要升级成这套带证据的匹配 |
 | **文件变更类系统调用**（`unlinkat` / `renameat2` / `mkdirat` / `ftruncate` / `write` / `bind` / `listen`）+ 内核侧去重聚合 | 我们目前只有 `execve` / `connect`，对"不经 shell 直接写文件"的 agent（如 IDE 内置 agent、纯 API 写文件的 Python agent）是盲区 |
 | **TLS 明文抓取**（`sslsniff`：`SSL_read/SSL_write` uprobe + 静态链接 BoringSSL/rustls 的字节模式匹配） | 可选、Linux only、高维护成本；作为"没有 hooks 也没有会话文件的 agent"的最后手段，而不是主路线 |
@@ -146,7 +146,7 @@
 
 **(b) 会话文件优先于抓包。** 文档里明确写 Cursor 这类 Electron IDE 三重不可行（平台、attach 到 Electron Framework、Connect/protobuf
 载荷不是 JSON），于是走"agent-native session path"——读 IDE 自己写的会话文件。这条路"不需要 eBPF、不需要 sudo、macOS/Windows 都能用"。
-我们的 Claude Tap 就是这条路，只是只写了 Claude 一种格式。
+我们的 AI Tap 就是这条路，只是只写了 Claude 一种格式。
 
 **(c) 会话↔进程匹配带证据类型和置信度。** `SessionProcessMatch { session_id, process_tree_id, confidence, evidence_type }`，
 证据类型：`proc_fd`（`/proc/<pid>/fd` 里打开着会话文件）> `ebpf_file`（eBPF 看到进程写过会话文件）> `cwd_recent`（cwd 相同且时间接近）> `sticky`（上次高置信绑定仍有效）。
@@ -169,7 +169,7 @@ PID 复用靠 `pid + starttime_ticks` 做身份。
 只有 `.symtab` 里 1234 个导入符号。要 attach 只能走 AgentSight 那种"函数序言字节模式"，而它的模式注明"derived from Bun v1.3.x profile builds"，
 Codex 的 rustls 模式注明"rustc 1.92"——**每次 Bun / rustc 升级都可能失效**，这是持续维护负担。
 
-而我们已经有不抓包的等价物：Claude Tap 从会话文件重建完整对话（含 tool_use / tool_result / usage / model），Codex / Gemini / Cursor 也都有会话文件。
+而我们已经有不抓包的等价物：AI Tap 从会话文件重建完整对话（含 tool_use / tool_result / usage / model），Codex / Gemini / Cursor 也都有会话文件。
 TLS 抓取只在两种情况下有独立价值：(1) agent 不落盘会话（自研 Python agent、容器里的 agent）；(2) 要抓"agent 声称的"和"实际发出的" API 请求不一致（例如被注入后偷偷带走的数据在 request body 里）。
 
 **结论：TLS 层做成可选插件（Phase D），Linux only，默认关闭，且只保留元数据（域名、路径、方法、大小、模型名、token 数），不默认落明文 prompt。**
@@ -537,7 +537,7 @@ CREATE INDEX IF NOT EXISTS idx_events_agent_session_ts ON events(agent, session_
 | **兼容性漂移**：各家 hook 协议都是 2026 年才稳定的东西，字段会变 | Codex 还有 feature flag；Gemini `BeforeTool` 可改写入参 | 适配器全部 fail-open（沿用 `hook.py:325-327` 的原则），未知字段进 `native_input`；每个适配器带"协议版本"字段并在 `CC-Monitor verify` 里做一次自检（发一个假事件看输出是否被 agent 接受） |
 | **性能**：文件探点数量级远大于 exec | AgentSight 报告去重后仍需 80–95% 的削减 | 只报写、路径排除、内核侧只对 `@watch` 树生效、60 s 聚合；给 `probe.py` 加事件速率熔断（每秒超过 N 条自动降级为只计数） |
 | **bpftrace 重启窗口** | 第 3 路根发现要重启 bpftrace | 大多数场景根进程通过 `comm` 白名单或 BEGIN 播种就能覆盖，重启只在"探针先启动、后开了 node/python 托管的 agent"时发生；Phase D 换 BCC 彻底消除 |
-| **隐私**：会话文件解析会把其它 agent 的完整对话读进 Web UI | 现有 Claude Tap 已如此，只是范围扩大 | 沿用现有的本地绑定（`127.0.0.1`）+ 远程访问开关；TLS 层默认不落明文 |
+| **隐私**：会话文件解析会把其它 agent 的完整对话读进 Web UI | 现有 AI Tap 已如此，只是范围扩大 | 沿用现有的本地绑定（`127.0.0.1`）+ 远程访问开关；TLS 层默认不落明文 |
 | **绕过面变大**：每多接一家 agent 就多一个可篡改的 hook 配置文件 | 见 §4.8 `agent_config_tamper` | 探针的 `os_file` 事件对这些配置路径的写入直接标 high，与 hook 层互证 |
 | **规则语义偏差**：Claude 词汇映射后，某些规则对其它 agent 的语义不完全一致（例如 Codex `apply_patch` 映射到 `Edit` 时 `content` 是 patch 文本） | 少数 `field=="content"` 规则可能误报 / 漏报 | 适配器拆 patch 为逐文件事件；对映射产生的事件在 `detail` 里标 `mapped_from`，方便用现有 `rematch` 机制回溯修正 |
 | **macOS 能力不对称** | 系统层仍只有网络 | 会话层（§4.5）不依赖 root，是 macOS 上扩面的主要收益；文档如实标注 |

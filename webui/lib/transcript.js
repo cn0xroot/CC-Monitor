@@ -1,5 +1,5 @@
 "use strict";
-// Claude Tap：JS 版的 cc_monitor/transcript.py 端口。解析 Claude Code 本地 transcript
+// AI Tap：JS 版的 cc_monitor/transcript.py 端口。解析 Claude Code 本地 transcript
 // (~/.claude/projects/.../<session>.jsonl)，把发给/收到模型的完整对话内容转成
 // HTML（用 CSS class 上色），供 Web UI 渲染。不是抓包，读的是 Claude Code 自己
 // 已经写在本地磁盘上的文件。

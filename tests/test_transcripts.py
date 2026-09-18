@@ -1,4 +1,4 @@
-"""Claude Tap 多格式解析：Claude Code / Antigravity CLI / Codex 三种 JSONL 行进同一个 describe_entry，
+"""AI Tap 多格式解析：Claude Code / Antigravity CLI / Codex 三种 JSONL 行进同一个 describe_entry，
 输出结构一致。Antigravity 的样例是真机 agy 1.2.6 写的行；Codex 的按公开资料构造。
 
 直接跑：python3 -m unittest tests/test_transcripts.py

@@ -785,7 +785,7 @@ logFilter.addEventListener("change", () => {
 
 // 自动滚动到最新的开关：关掉之后新内容还是会照常拼进列表（不影响记录/实时刷新），
 // 只是不再把滚动条拽到底部，方便往上翻看历史内容时不被每次轮询打断。开关状态记在
-// localStorage 里，跟语言/主题一个存法。Log 审计和 Claude Tap 各有一个独立开关。
+// localStorage 里，跟语言/主题一个存法。Log 审计和 AI Tap 各有一个独立开关。
 function setupAutoscrollToggle(elementId, storageKey) {
   const el = document.getElementById(elementId);
   try {
@@ -874,7 +874,7 @@ async function pollLogs() {
   if (logAutoscrollToggle.checked) list.scrollTop = list.scrollHeight;
 }
 
-// ---------- Claude Tap：发给/收到模型的完整对话内容 ----------
+// ---------- AI Tap：发给/收到模型的完整对话内容 ----------
 const tapSelect = document.getElementById("tap-session-select");
 const tapMeta = document.getElementById("tap-meta");
 const TAP_ALL_SESSIONS = "__all__";

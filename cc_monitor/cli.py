@@ -332,7 +332,7 @@ def main():
     p_workdir.add_argument("--limit", type=int, default=100, help="最多显示多少条（默认 100）")
     p_workdir.set_defaults(func=cmd_workdir)
 
-    p_tap = sub.add_parser("tap", help="Claude Tap：查看某个 session 发给/收到模型的完整对话内容")
+    p_tap = sub.add_parser("tap", help="AI Tap：查看某个 session 发给/收到模型的完整对话内容")
     p_tap.add_argument("--session", help="session id（不指定则用最近一次监测到的 session）")
     p_tap.add_argument("--limit", type=int, default=200, help="非 -f 模式下最多显示多少条")
     p_tap.add_argument("-f", "--follow", action="store_true", help="像 tail -f 一样持续追踪新内容")

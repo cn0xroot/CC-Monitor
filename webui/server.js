@@ -332,7 +332,7 @@ app.get("/api/log-sessions", (req, res) => {
   res.json(rows);
 });
 
-// ---- REST API: Claude Tap（发给/收到模型的完整对话内容） ----
+// ---- REST API: AI Tap（发给/收到模型的完整对话内容） ----
 
 app.get("/api/transcript", (req, res) => {
   const sessionId = req.query.session_id;
@@ -370,7 +370,7 @@ app.get("/api/transcript", (req, res) => {
   });
 });
 
-// Claude Tap"全部会话"合并视图：每个有 transcript 的 session 各取最近若干条，
+// AI Tap"全部会话"合并视图：每个有 transcript 的 session 各取最近若干条，
 // 按时间戳合并排序、打上是哪个 session 的标签。不做增量轮询游标（每次都是重新读一遍
 // 每个 session 的尾部）——session 数量对个人监测工具来说通常是个位数到十几个，
 // 简单直接比维护一套多文件的增量游标划算得多。

@@ -65,6 +65,7 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `os_exec` / `os_net` / `os_file` / `os_listen` now carry `session_id`, the Web UI session filter
   shows kernel-observed events, and session liveness is decided by "is the root pid (+ start time)
   still alive" instead of guessing by cwd. Sessions started via `CC-Monitor run --` land in the same table.
+- **Claude Tap renamed to AI Tap**: navigation, page title, CLI help, README and site copy; the tip now says it reads every agent's session files.
 - **Claude Tap understands more transcript formats**: `describe_entry` (Python and JS kept in sync)
   detects by line shape — Claude Code / Antigravity CLI (the real agy 1.2.6 `step_index/source/type`
   format, `<USER_REQUEST>` unwrapped, the extra JSON-quoting layer on tool args removed) / Codex

@@ -54,6 +54,7 @@
   进去；探针按根 pid 反查，`os_exec` / `os_net` / `os_file` / `os_listen` 都带上 `session_id`，
   Web UI 按会话过滤能看到内核层观测，会话生死改按"根 pid（+启动时刻）在不在"判断而不是按 cwd 猜。
   `CC-Monitor run --` 登记的会话同样进这张表。
+- **Claude Tap 更名为 AI Tap**：导航、页面标题、CLI 帮助、README/官网文案全部改名，提示文案改为"读各家 agent 的会话文件"。
 - **Claude Tap 认多种会话格式**：`describe_entry`（Python 与 JS 两份同步）按行形状自动识别 Claude Code /
   Antigravity CLI（真机 agy 1.2.6 的 `step_index/source/type` 格式，`<USER_REQUEST>` 剥壳、工具入参拆掉
   多套的一层 JSON 引号）/ Codex `rollout-*.jsonl`（按公开资料）；Tap 页助手消息按 agent 显示名；

@@ -1,4 +1,4 @@
-"""Claude Tap：解析各家 agent 本地写的 transcript，把它实际发给模型 / 从模型收到的完整对话内容
+"""AI Tap：解析各家 agent 本地写的 transcript，把它实际发给模型 / 从模型收到的完整对话内容
 （文本、思考、工具调用、工具结果、token 用量）转成结构化的"轮次"数据，供 CLI (`CC-Monitor tap`)
 和 Web UI 渲染。
 

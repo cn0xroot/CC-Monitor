@@ -21,7 +21,7 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 - **跨工作目录行为检测**：正则规则看不见 cwd，这一层专门补上——把每次工具调用要碰的路径（文件类工具的 `file_path`、Bash 命令按子命令拆开认路径、跟踪 `cd`、识别重定向和 `rm`/`cp`/`tee` 等写操作）解析成绝对路径跟当前项目目录比对，跑到项目外的按位置分档（家目录隐藏配置/凭据、别的用户的家目录、系统目录、其它项目目录）× 读/写：往敏感位置写弹确认，其余只记录；`CC-Monitor workdir` 和首页"跨工作目录操作"卡片可以回看。
 - **文件级与监听端口观测（Linux）**：探针还看写打开 / 删除 / 重命名 / 建目录和 `bind`+`listen`——agent 派生的 pip/npm/脚本写了 `~/.ssh`、起了对外监听端口，hook 层看不见、这里看得见；目录 fd 跟踪让 `rm -r` / `shutil.rmtree` 这类相对路径也能解析成绝对路径。`CC-Monitor run -- <命令>` 可以把任何进程显式绑定成某家 agent 的根。
 - **网络层可视化**：eBPF 直抓 `connect()` 目标 IP:port，不解密 TLS、不装 CA 证书，Web UI 有连接明细表 + GeoIP 归属地 + WebGL2 世界地图。
-- **Web UI 全景仪表盘**：首页统计卡片、AI 审批台（网页/终端/桌面通知三处同步确认）、Claude Tap（还原完整对话，不抓包）、账号额度实时展示，一个网页看全部。
+- **Web UI 全景仪表盘**：首页统计卡片、AI 审批台（网页/终端/桌面通知三处同步确认）、AI Tap（还原完整对话，不抓包）、账号额度实时展示，一个网页看全部。
 - **跨平台**：Linux 和 macOS（含 Apple Silicon M4 实机验证）都能用，核心功能两边一致。
 - **多 agent（实验性）**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode、ZCode、
   Antigravity CLI、Grok CLI 可以通过各自的 hook / 插件接入同一套规则、审批台和审计日志；系统层
@@ -236,9 +236,9 @@ node server.js          # 默认监听 http://127.0.0.1:9999，只绑定 localho
     按量付费、已经花了多少）。
   - **数据管理**：把当前事件数据持久化归档（SQLite `backup()` API 做完整快照）或者
     清空重新统计；日志类型与风险等级分布图。
-- **Log 审计**：全宽的实时审计日志查看（按会话过滤，会话下拉框显示"文件夹 · 模型 · 短ID"而不是一串看不出区别的 ID），复用 CLI 那套把事件翻译成通俗说明的逻辑。数据来自 `events.db`（CC-Monitor 的 hooks 抓到、经过策略引擎判定后写入），内容按隐私原则**故意脱敏**——Write/Edit 只显示"路径 (N 字节)"、TodoWrite 只显示任务条数、截屏只显示元数据，从不展示实际读写内容。回答的是"发生了什么操作、风险等级/放行拦截结果"这个安全审计问题；想看某个会话完整聊了什么，去下面的 **Claude Tap**。
+- **Log 审计**：全宽的实时审计日志查看（按会话过滤，会话下拉框显示"文件夹 · 模型 · 短ID"而不是一串看不出区别的 ID），复用 CLI 那套把事件翻译成通俗说明的逻辑。数据来自 `events.db`（CC-Monitor 的 hooks 抓到、经过策略引擎判定后写入），内容按隐私原则**故意脱敏**——Write/Edit 只显示"路径 (N 字节)"、TodoWrite 只显示任务条数、截屏只显示元数据，从不展示实际读写内容。回答的是"发生了什么操作、风险等级/放行拦截结果"这个安全审计问题；想看某个会话完整聊了什么，去下面的 **AI Tap**。
 - **终端会话**：直接在浏览器里开一个 Claude Code 终端对话（node-pty 起 PTY），不用再切到本地终端软件；用 `xterm.js` + WebGL 插件渲染，有 GPU 就用 GPU 加速，没有自动退化成 Canvas。侧边栏可以切换到**网格视图**（herdr 风格），同屏显示所有进行中的会话，点哪个面板就给哪个发键盘输入。
-- **Claude Tap**：查看某个会话发给/收到模型的**完整对话内容**（不只是"调用了哪个工具"）——文本、思考、工具调用、工具结果、token 用量，按字段分色渲染，**不做脱敏**，包括 Log 审计完全看不到的模型思考过程（hooks 机制本身在 `PreToolUse`/`PostToolUse` 这个边界上看不到思考过程，只有 transcript 文件里才有）。必须先选一个具体会话（没有"全部会话"合并视图），回答的是"这个会话具体聊了什么、Claude 当时怎么想的"这个调试/复盘问题——跟 Log 审计是两套独立数据源、两种不同克制程度的视角，不是同一份数据的两种展示方式。数据来源是 Claude Code 自己写在本地的 transcript JSONL 文件（hook payload 里的 `transcript_path`），不是抓包/MITM。CLI 等价命令：`CC-Monitor tap [--session ID] [-f]`。
+- **AI Tap**：查看某个会话发给/收到模型的**完整对话内容**（不只是"调用了哪个工具"）——文本、思考、工具调用、工具结果、token 用量，按字段分色渲染，**不做脱敏**，包括 Log 审计完全看不到的模型思考过程（hooks 机制本身在 `PreToolUse`/`PostToolUse` 这个边界上看不到思考过程，只有 transcript 文件里才有）。必须先选一个具体会话（没有"全部会话"合并视图），回答的是"这个会话具体聊了什么、Claude 当时怎么想的"这个调试/复盘问题——跟 Log 审计是两套独立数据源、两种不同克制程度的视角，不是同一份数据的两种展示方式。数据来源是 Claude Code 自己写在本地的 transcript JSONL 文件（hook payload 里的 `transcript_path`），不是抓包/MITM。CLI 等价命令：`CC-Monitor tap [--session ID] [-f]`。
 - **AI 审批台**：把 Claude Code 的"是否允许执行"确认框同步到网页上——效果类似 Mac 平台
   [Vibe Island](https://vibeisland.app/) 在灵动岛里弹卡片让你点 Allow/Deny，区别是跨平台
   （网页而不是 Mac 专属 UI）。两类询问都会出现在这里：
@@ -399,7 +399,7 @@ CC-Monitor 是双层监测架构：
   这个标记沿着进程树一路传给它 fork 出来的所有子进程——不管子进程改名叫什么都跟得上。
   `CC-Monitor verify` 拿探针观测到的命令去匹配同一时间窗口内 hook 记录的命令文本（做了引号归一化，
   兼容 zsh 快照包装命令时对引号的转义），标出"探针看到了、hook 却没记录"的可疑差异。
-- **Claude Tap**：hook 的 JSON payload 里有个 `transcript_path` 字段，指向 Claude Code 自己写在本地
+- **AI Tap**：hook 的 JSON payload 里有个 `transcript_path` 字段，指向 Claude Code 自己写在本地
   的对话 transcript JSONL 文件。直接读这个文件、解析里面的 `user`/`assistant`/`tool_use`/`tool_result`
   等条目就能还原完整对话——不抓包、不用装 CA 证书、不需要中间人代理。
 - **账号额度显示**：读 Claude Code 自己保存的 OAuth token（Linux 在 `~/.claude/.credentials.json`，
@@ -749,7 +749,7 @@ git hooks/config 持久化攻击面（`core.hooksPath`、`url....insteadOf`）�
   是空的，不是 bug；配了以后精度也只到 GeoLite2 免费版本身的精度（比付费的 GeoIP2
   数据库粗一些，尤其是移动网络/CDN 出口 IP 经常定位到运营商机房而不是用户实际位置，
   这是 IP 地理定位技术本身的局限，不是 CC-Monitor 能修的）。
-- Claude Tap 的"思考"内容在部分模型下永远是空的——这是 Anthropic API 的 `display`
+- AI Tap 的"思考"内容在部分模型下永远是空的——这是 Anthropic API 的 `display`
   参数决定的，不是 CC-Monitor 的问题：Sonnet 5 / Opus 5 / Opus 4.8 / Opus 4.7 这些
   较新模型默认 `display: "omitted"`，思考正文根本不会出现在 API 响应里，Claude Code
   本地 transcript 里对应的 `thinking` 字段自然也是空的（只留一个用于多轮校验的
@@ -818,4 +818,4 @@ Web UI（`webui/`）构建在下面这些开源项目之上：
 - [slowmist-agent-security](https://github.com/evilcos/slowmist-agent-security)（慢雾科技）—— 一份面向 AI Agent/MCP server/skill 的人工安全审查清单，不是规则库；翻读之后发现了几条值得加进 `default_rules.json` 的策略引擎规则思路（凭据搜刮式 `grep` 扫描、`npx`/`pipx run` 一次性执行、读取其它进程的 `/proc/<pid>/environ`/`cmdline`、浏览器 Cookie/登录态文件访问、写入内容里出现 `eval(`/`exec(`/`os.system(` 这类动态执行代码），已经全部落地为 `credential_grep_scan`/`npx_pipx_ephemeral_run`/`proc_env_read`/`browser_credential_read`(`_bash`)/`dynamic_exec_in_write` 这几条规则（详见 CHANGELOG）
 - [suricata-rules](https://github.com/al0ne/suricata-rules)（al0ne）—— 一份网络流量层面的 Suricata IDS 规则集（检测 CobaltStrike/MSF/Empire/DNS 隧道/挖矿/webshell 等），跟 CC-Monitor 不是同一层面的检测（那边看的是网络包内容，这边看的是 Claude Code 自己发起的工具调用），规则本身不能直接照搬，但按它的分类思路提取了几个此前完全没覆盖的攻击技术类别，落地为 `crypto_miner_pool_domain_command`(`_write`)（矿池域名/`stratum://`协议）、`db_arbitrary_file_write`(`_content`)（MySQL 日志与导出功能被滥用成任意文件写入、落地 webshell）、`webshell_pattern_in_write`（菜刀/冰蝎/Weevely 风格的一句话马代码特征）、`curl_download_then_exec`（`curl_pipe_shell` 的分步下载再执行变体）、`c2_framework_execution`/`pentest_recon_tool_execution`（渗透测试/C2 框架工具调用）、`covert_tunnel_tool_execution`（DNS/ICMP 隧道工具调用）这 9 条规则
 - [GTFOBins](https://github.com/GTFOBins/GTFOBins.github.io) —— 安全圈公认的权威参考，收录了几十个 Unix 常见二进制"如何被用来绕过限制/提权/生成 shell"的具体命令写法。跟 CC-Monitor 的正则匹配模型天生契合，戳中了一个此前完全没覆盖的类别——不是"调用了什么危险工具"，而是"用一个看起来完全无害的日常工具，靠它自带的执行命令功能逃出去生成一个 shell"，落地为 `shell_escape_via_utility` 一条规则（覆盖 `find -exec`、`awk system()`、`perl exec`、`python pty.spawn`/`os.system`、`tar --checkpoint-action=exec`、`vim -c ':!sh'`、`zip --unzip-command`、`script -c`、`ssh ProxyCommand` 这几种经典手法）
-- [AgentSight](https://github.com/eunomia-bpf/agentsight)（eunomia-bpf，[论文 arXiv:2508.02736](https://arxiv.org/abs/2508.02736)）—— 用 eBPF 在系统调用边界和 TLS 库边界观测 AI agent 的"边界追踪"框架，Rust / C / TypeScript 实现，定位是观测与归因、不做拦截。`dev` 分支的多 agent 支持和探针增强直接借鉴了它的几条设计决策（不共享代码）：把"谁是 agent"做成注册表数据而不是写死在探针里（它的 `-c` comm 列表和 `record -- <cmd>` 自动推导 → 这里的 `cc_monitor/agents/*.json` 和 `CC-Monitor run --`）；优先读各家 agent 自己落盘的会话文件而不是抓包（它的 `agent-session` crate → Claude Tap 的路线）；文件级系统调用探点集（它的 `bpf/process_ext`：`unlinkat`/`renameat2`/`mkdirat`/`bind`/`listen` → 这里的 `os_file`/`os_listen`）和"首次立刻报、60 秒窗口内聚合"的去重策略；会话↔进程按证据类型和置信度匹配的模型（尚未实现）。它没做、这里补上的：目录 fd 跟踪让 `rm -r`/`shutil.rmtree` 的相对路径解析成绝对路径；文件路径规则对内核层写入生效；agent 直写文件与 hook 记录的交叉验证。没有采用它的 TLS 明文抓取（静态链接 BoringSSL/rustls 的字节模式匹配随 Bun/rustc 版本漂移，且会话文件已能重建对话）和纯观测模式（CC-Monitor 的差异化正是拦截与审批）。对比分析见 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) 第 2 节
+- [AgentSight](https://github.com/eunomia-bpf/agentsight)（eunomia-bpf，[论文 arXiv:2508.02736](https://arxiv.org/abs/2508.02736)）—— 用 eBPF 在系统调用边界和 TLS 库边界观测 AI agent 的"边界追踪"框架，Rust / C / TypeScript 实现，定位是观测与归因、不做拦截。`dev` 分支的多 agent 支持和探针增强直接借鉴了它的几条设计决策（不共享代码）：把"谁是 agent"做成注册表数据而不是写死在探针里（它的 `-c` comm 列表和 `record -- <cmd>` 自动推导 → 这里的 `cc_monitor/agents/*.json` 和 `CC-Monitor run --`）；优先读各家 agent 自己落盘的会话文件而不是抓包（它的 `agent-session` crate → AI Tap 的路线）；文件级系统调用探点集（它的 `bpf/process_ext`：`unlinkat`/`renameat2`/`mkdirat`/`bind`/`listen` → 这里的 `os_file`/`os_listen`）和"首次立刻报、60 秒窗口内聚合"的去重策略；会话↔进程按证据类型和置信度匹配的模型（尚未实现）。它没做、这里补上的：目录 fd 跟踪让 `rm -r`/`shutil.rmtree` 的相对路径解析成绝对路径；文件路径规则对内核层写入生效；agent 直写文件与 hook 记录的交叉验证。没有采用它的 TLS 明文抓取（静态链接 BoringSSL/rustls 的字节模式匹配随 Bun/rustc 版本漂移，且会话文件已能重建对话）和纯观测模式（CC-Monitor 的差异化正是拦截与审批）。对比分析见 [DESIGN-multi-agent.md](./DESIGN-multi-agent.md) 第 2 节
