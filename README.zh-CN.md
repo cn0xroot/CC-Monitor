@@ -22,7 +22,7 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 - **网络层可视化**：eBPF 直抓 `connect()` 目标 IP:port，不解密 TLS、不装 CA 证书，Web UI 有连接明细表 + GeoIP 归属地 + WebGL2 世界地图。
 - **Web UI 全景仪表盘**：首页统计卡片、AI 审批台（网页/终端/桌面通知三处同步确认）、Claude Tap（还原完整对话，不抓包）、账号额度实时展示，一个网页看全部。
 - **跨平台**：Linux 和 macOS（含 Apple Silicon M4 实机验证）都能用，核心功能两边一致。
-- **多 agent**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode 通过各自的 hook /
+- **多 agent**：不只 Claude Code。Codex CLI、Gemini CLI、Cursor、OpenCode、ZCode 通过各自的 hook /
   插件接入同一套规则、审批台和审计日志；系统层探针按 Agent 注册表认所有 agent 的进程树，
   Aider 这类没有 hook 的 agent 也能在系统层观测到。见下面["支持的 AI agent"](#支持的-ai-agent)。
 
@@ -35,6 +35,7 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 | Gemini CLI | ✅ `~/.gemini/settings.json` 的 `hooks` 块（`run_shell_command` 等工具名映射成 Claude Code 词汇） | ✅ 扫 `/proc` 按 argv 认（node 托管） | `python3 install.py --agent gemini-cli` |
 | Cursor | ✅ `~/.cursor/hooks.json`（`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile` 可拦，`afterFileEdit` 只记不拦） | ➖ Electron IDE 不适用 | `python3 install.py --agent cursor` |
 | OpenCode | ✅ 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | ✅ 按 `comm` 认 | `python3 install.py --agent opencode` |
+| ZCode（Z.ai / GLM） | ✅ `~/.zcode/cli/config.json` 的 `hooks.events`（协议与 Claude Code 同构，`type: process`） | ✅ 桌面版按 argv 认内置运行时，`zcode` CLI 按 `comm` 认 | `python3 install.py --agent zcode` |
 | Aider / 自研脚本 | ➖ 没有 hook | ✅ 扫 `/proc` 按 argv 认 | 无需配置 |
 
 `python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents`
@@ -49,7 +50,8 @@ Claude Code 在本机的文件读写、命令执行、网络访问等操作，�
 
 > 各家 hook 协议以官方文档为准实现，实施时本机只有 Claude Code 可实测；Codex 的
 > `[features] hooks` 开关默认值、Gemini `{"decision":"allow"}` 是否跳过其原生确认、Cursor CLI
-> 是否本地执行 hook、OpenCode 的会话目录，都还需要在装了对应 agent 的机器上验证。
+> 是否本地执行 hook、OpenCode 的会话目录、ZCode 桌面版内置运行时的进程名，都还需要在装了
+> 对应 agent 的机器上验证。
 
 ## 截图
 
@@ -85,7 +87,7 @@ python3 install.py
 
 这一步只做一件事——把 hooks 注册进 Claude Code 的 `~/.claude/settings.json`，不装
 任何 npm/Python 依赖（`cc_monitor/` 本身只用 Python 标准库）。要同时接入 Codex / Gemini CLI /
-Cursor / OpenCode，加 `--agent <id>` 或 `--agent all`（见["支持的 AI agent"](#支持的-ai-agent)）。装完 `CC-Monitor tail`
+Cursor / OpenCode / ZCode，加 `--agent <id>` 或 `--agent all`（见["支持的 AI agent"](#支持的-ai-agent)）。装完 `CC-Monitor tail`
 /`rules`/`stats`/`verify` 这些 CLI 命令已经能直接用，Web UI 是完全独立的可选项，
 随时可以后补装。两种装法的详细参数、`install.sh` 具体做了哪 5 步、以及装到系统路径
 （`make install`）的方式，见下面["安装"](#安装)一节。

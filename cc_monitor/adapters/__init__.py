@@ -23,7 +23,7 @@ import importlib
 
 from .. import registry
 
-_PROTOCOLS = {}
+_PROTOCOLS = {}  # 已知协议：claude / codex / gemini / cursor / opencode / zcode
 
 
 def for_agent(agent_id):

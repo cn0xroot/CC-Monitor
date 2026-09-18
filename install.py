@@ -6,6 +6,7 @@
     python3 install.py --agent gemini-cli     # Gemini CLI：~/.gemini/settings.json 的 hooks 块
     python3 install.py --agent cursor         # Cursor：~/.cursor/hooks.json
     python3 install.py --agent opencode       # OpenCode：~/.config/opencode/plugins/cc-monitor.js
+    python3 install.py --agent zcode          # ZCode：~/.zcode/cli/config.json 的 hooks.events 块
     python3 install.py --agent all            # 上面全部（只装本机检测到已安装的那些，--force-all 不做检测）
     python3 install.py --list                 # 列出认识的 agent 和各自的配置文件路径
     python3 install.py --project DIR          # 装到项目级配置（各家 agent 的项目级路径见 --list）
@@ -31,15 +32,24 @@ HOOK_BIN = REPO_ROOT / "bin" / "CC-Monitor-hook"
 # ---- 通用合并 ----
 
 def _entry_commands(entry):
-    """一个 hooks 条目里所有 command 字符串——Claude/Codex/Gemini 是 entry.hooks[].command，
-    Cursor 是 entry.command。"""
+    """一个 hooks 条目里所有"命令身份"字符串——Claude/Codex/Gemini 是 entry.hooks[].command，
+    Cursor 是 entry.command，ZCode 的 process 类型是 command + args 拼起来（同一个可执行文件
+    带不同参数挂在不同事件下，不能只看 command）。"""
     cmds = []
+
+    def ident(h):
+        cmd = h.get("command")
+        if not isinstance(cmd, str):
+            return None
+        args = h.get("args")
+        return cmd + " " + " ".join(map(str, args)) if isinstance(args, list) else cmd
+
     if isinstance(entry, dict):
-        if isinstance(entry.get("command"), str):
-            cmds.append(entry["command"])
+        if ident(entry):
+            cmds.append(ident(entry))
         for h in entry.get("hooks") or []:
-            if isinstance(h, dict) and isinstance(h.get("command"), str):
-                cmds.append(h["command"])
+            if isinstance(h, dict) and ident(h):
+                cmds.append(ident(h))
     return cmds
 
 
@@ -160,7 +170,16 @@ def install_agent(agent_id, args):
     settings = _read_json(target)
     if kind == "cursor-hooks":
         settings.setdefault("version", 1)
-    added = merge_hook_entries(settings.setdefault("hooks", {}), new_hooks)
+    if kind == "zcode-config":
+        # ZCode：hooks 是 {"enabled": true, "events": {...}}，事件挂在 events 下；enabled 不为 true
+        # 一个 hook 都不会跑。用户可能已经有别的插件 hook，同样只追加不覆盖。
+        hooks_block = settings.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = settings["hooks"] = {}
+        hooks_block["enabled"] = True
+        added = merge_hook_entries(hooks_block.setdefault("events", {}), new_hooks)
+    else:
+        added = merge_hook_entries(settings.setdefault("hooks", {}), new_hooks)
 
     statusline_configured = False
     if kind == "claude-settings" and not args.skip_statusline:
@@ -185,6 +204,8 @@ def install_agent(agent_id, args):
         print("重启 gemini 后生效。")
     elif kind == "cursor-hooks":
         print("Cursor 会自动重新加载 hooks.json；Cursor CLI（cursor-agent）是否本地执行 hook 以实测为准。")
+    elif kind == "zcode-config":
+        print("重启 ZCode（桌面版或 zcode CLI）后生效。注意 ZCode 当前版本忽略项目级 .zcode/config.json 里的 hooks，只认用户级。")
 
 
 def _check_codex_feature_flag(config_toml):

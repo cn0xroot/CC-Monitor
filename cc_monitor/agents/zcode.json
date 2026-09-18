@@ -1,0 +1,31 @@
+{
+  "id": "zcode",
+  "display": "ZCode",
+  "process": {
+    "comm": ["zcode", "ZCode"],
+    "comm_prefix": [],
+    "exe_basename": ["zcode", "ZCode", "zcode-cli"],
+    "argv_patterns": ["(^|/)ZCode(\\.app|-[^ ]*\\.AppImage)?( |$)", "/resources/glm/", "@zcode/", "(^|/)zcode( |$)"],
+    "shell_comms": ["sh", "bash", "zsh", "dash", "ksh"],
+    "infra_noise": ["CC-Monitor-hook", "^git (rev-parse|status|diff|log|ls-files)"]
+  },
+  "hooks": {
+    "protocol": "zcode",
+    "config": {"kind": "zcode-config", "user_path": "~/.zcode/cli/config.json", "project_path": ".zcode/config.json"},
+    "events": {
+      "PreToolUse": "pre", "PostToolUse": "post", "PostToolUseFailure": "post", "PermissionRequest": "permission",
+      "UserPromptSubmit": "prompt", "SessionStart": "session_start", "Stop": "stop"
+    }
+  },
+  "tools": {"Agent": "Task"},
+  "sessions": {"glob": "~/.zcode/cli/log/zcode-*.jsonl", "format": "zcode_log"},
+  "home_ignore": [".zcode/cli/log", ".zcode/v2", ".zcode/cli/cache"],
+  "project_markers": [".zcode", "zcode.json"],
+  "config_tamper_paths": [
+    "(^|/)\\.zcode/cli/(config|setting)\\.json$", "(^|/)\\.zcode/config\\.json$", "(^|/)zcode\\.json$",
+    "(^|/)\\.zcode/(hooks|plugins|rules|agents|commands)/", "(^|/)\\.zcode/v2/provider_config\\.json$"
+  ],
+  "history_paths": ["\\.zcode/cli/log/"],
+  "launch_command": "zcode",
+  "env_strip_prefixes": ["ZCODE_"]
+}

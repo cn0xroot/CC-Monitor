@@ -9,7 +9,11 @@
 
 ### 新增
 - **多 agent 支持（dev 分支）**：检测面从"只有 Claude Code"扩到 Codex CLI、Gemini CLI、
-  Cursor、OpenCode（应用层 hook / 插件 + 系统层探针）和 Aider（仅系统层）。
+  Cursor、OpenCode、ZCode（应用层 hook / 插件 + 系统层探针）和 Aider（仅系统层）。
+  - ZCode（Z.ai 的 agentic 开发环境，GLM 模型）：hook 协议与 Claude Code 同构，适配器复用 Claude
+    协议，只处理 `Agent`→`Task` 别名和 `PostToolUseFailure`；配置写 `~/.zcode/cli/config.json` 的
+    `hooks.events`（`type: process`）并置 `hooks.enabled=true`，保留别的插件 hook；桌面版内置
+    Node 运行时按 argv（`/resources/glm/`）认，`zcode` CLI 按 comm 认。
   - 新增 Agent 注册表 `cc_monitor/agents/<id>.json` + `cc_monitor/registry.py`：每家 agent 的
     进程特征（comm / 可执行文件名 / argv 正则）、hook 协议与配置路径、工具名和入参字段映射、
     会话目录、家目录忽略路径、项目根标记、配置篡改路径全部数据化；代码里不再写死任何一家的

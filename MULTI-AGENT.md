@@ -27,7 +27,7 @@
 
 | 层 | master | dev |
 |---|---|---|
-| 应用层 hook | 只有 Claude Code 协议 | 五种协议适配器：Claude Code、Codex、Gemini CLI、Cursor、OpenCode（插件桥） |
+| 应用层 hook | 只有 Claude Code 协议 | 六种协议适配器：Claude Code、Codex、Gemini CLI、Cursor、OpenCode（插件桥）、ZCode |
 | 规则 / 越界检测 / 审批台 | 只认 Claude Code 工具名 | 不变。其它 agent 的工具名进引擎前翻译成 Claude Code 词汇 |
 | 系统层探针 | `comm == "claude"` 写死在 bpftrace 脚本里 | 脚本改模板，所有 agent 的 comm 渲染进去；node/python 托管的 agent 靠 `/proc` 扫描按 argv 认 |
 | 存储 | 事件不区分来源 | `events.agent` / `events.native_tool` / `pending_approvals.agent` |
@@ -46,6 +46,7 @@
 | Gemini CLI | ✅ settings.json hooks | ✅（`/proc` 扫描） | ❌ 按官方文档实现 |
 | Cursor（IDE） | ✅ hooks.json，改文件只能事后记录 | ➖ Electron 不适用 | ❌ 按官方文档实现 |
 | OpenCode | ✅ JS 插件桥 | ✅ | ❌ 按官方文档实现 |
+| ZCode（Z.ai，GLM 模型） | ✅ config.json hooks.events | ✅（桌面版按 argv，CLI 按 comm） | ❌ 按官方文档实现 |
 | Aider / 自研脚本 | ➖ 无 hook | ✅（`/proc` 扫描） | 部分（进程识别逻辑有单测） |
 
 ---
@@ -68,6 +69,7 @@ python3 install.py --agent codex          # 写 ~/.codex/hooks.json
 python3 install.py --agent gemini-cli     # 写 ~/.gemini/settings.json 的 hooks 块
 python3 install.py --agent cursor         # 写 ~/.cursor/hooks.json
 python3 install.py --agent opencode       # 复制插件到 ~/.config/opencode/plugins/cc-monitor.js
+python3 install.py --agent zcode          # 写 ~/.zcode/cli/config.json 的 hooks.events 块并置 hooks.enabled=true
 python3 install.py --agent all            # 本机检测到已安装的全部；--force-all 跳过检测全写
 ./install.sh --agent all                  # install.sh 把参数原样透传给 install.py
 ```
@@ -148,7 +150,7 @@ sqlite3 ~/.cc-monitor/events.db "select ts, tool_name, native_tool, decision, ma
   选择记在 localStorage，刷新不丢。首页那些统计卡（文件操作、GitHub 操作……）目前仍是全局数字。
 - **首页"被监测的 AI agent"卡**：每家一行，会话数 / 拦截数 / 疑似绕过数。
 - **徽标**：Log 审计每行、会话下拉的前缀、审批台每张卡、进程下钻表的 pid 旁边都标明来自哪家，
-  六家各一色（Claude Code 紫、Codex 绿、Gemini 蓝、Cursor 橙、OpenCode 青、Aider 品红）。
+  七家各一色（Claude Code 紫、Codex 绿、Gemini 蓝、Cursor 橙、OpenCode 青、ZCode 靛蓝、Aider 品红）。
   鼠标放在 Log 审计的工具名上能看到该 agent 的原始工具名（`run_shell_command` 之类）。
 - **AI 审批台**：其它 agent 的确认请求与 Claude Code 的排在同一列，卡片顶部带 agent 徽标，
   按钮语义相同（允许一次 / 拒绝 / 10 分钟 / 30 分钟 / 一直允许）。
@@ -244,7 +246,7 @@ flowchart LR
 | `cc_monitor/registry.py` | 读注册表（内置 + `~/.cc-monitor/agents/` 覆盖）；`classify_process()`、`map_tool()`、`map_fields()`、给探针/规则/越界检测用的汇总函数 |
 | `cc_monitor/adapters/__init__.py` | 按 agent 的 `hooks.protocol` 选适配器模块；不认识的退回 Claude 协议 |
 | `cc_monitor/adapters/base.py` | 规范事件/规范调用的构造器；`apply_patch` 解析与拆分 |
-| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
+| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode,zcode}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
 | `cc_monitor/adapters/opencode_plugin.js` | OpenCode 插件模板，install 时替换 hook 路径后复制过去 |
 | `cc_monitor/hook.py` | 重写：`parse_args` → 适配器 parse → `handle_*` → 适配器 emit；判定逻辑 `decide_call()` 与 master 的 `handle_pre` 中段等价 |
 | `cc_monitor/procscan.py` | `/proc` 扫描：`find_roots()`（嵌套 agent 归外层）、`seed_map()`、`comm_predicate()`、`seed_block()` |
@@ -283,7 +285,7 @@ flowchart LR
   "hooks": {                          // 没有应用层 hook 的 agent（aider）这里是 null
     "protocol": "gemini",             // 选 adapters/<protocol>.py
     "config": {
-      "kind": "gemini-settings",      // install.py 按 kind 决定文件形状：claude-settings / codex-hooks / gemini-settings / cursor-hooks / opencode-plugin
+      "kind": "gemini-settings",      // install.py 按 kind 决定文件形状：claude-settings / codex-hooks / gemini-settings / cursor-hooks / opencode-plugin / zcode-config
       "user_path": "~/.gemini/settings.json",
       "project_path": ".gemini/settings.json"
     },
@@ -384,7 +386,7 @@ agent：session id 是各家自己生成的 UUID / 长 id，跨 agent 撞车的�
 - `POST /api/sessions` 接受 `agent`，PTY 里自动敲注册表的 `launch_command`。
 - 前端：选了过滤器后所有 GET `/api/*` 自动带 `agent=` 参数（不认的接口忽略）；`multiAgent` 为真
   （库里 ≥2 家有记录）时才显示过滤器、首页卡和徽标。徽标颜色按 `agent-<id>` CSS 类，
-  六家各一色，新加的 agent 默认灰色。
+  七家各一色，新加的 agent 默认灰色。
 - 首页其它统计卡（文件操作、GitHub 操作……二十来张）**仍是全局数字**，不随过滤器变。
 
 ---
@@ -444,7 +446,35 @@ agent：session id 是各家自己生成的 UUID / 长 id，跨 agent 撞车的�
 - 拒绝：退出码 2（插件只看退出码）。没有"跳过原生确认"的语义。
 - **待实测**：插件里同步阻塞最长 100 秒是否会被 OpenCode 自己的超时打断；MCP 工具在插件里的命名；会话存储目录（注册表里写的 `~/.local/share/opencode/storage/session/` 待确认）。
 
-### 4.6 Aider（无适配器）
+### 4.6 ZCode（`adapters/zcode.py`）
+
+- ZCode 是 Z.ai（智谱）的 agentic 开发环境，跑 GLM 系列模型；主体是 Electron 桌面应用
+  （macOS / Windows / Linux beta），内置一个 Node 运行时（`resources/glm`）执行 agent；另有非官方
+  npm CLI `zcode`（kingsword09/zcode-cli）把同一个运行时当子进程拉起来。它的 hook 协议按官方文档
+  与 Claude Code 同构：同样的事件名、stdin 同时带 camelCase 和 Claude Code 的 snake_case 别名
+  （`session_id` / `transcript_path` / `cwd` / `tool_name` / `tool_input` / `tool_use_id`）、同样的工具名
+  （`Bash` / `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `WebFetch` / `Task`，`Agent` 是 `Task`
+  的别名）、同样的拒绝方式。所以解析和输出直接复用 Claude 适配器，只加了两处：`Agent`→`Task`
+  按注册表映射；`PostToolUseFailure` 记成 post 事件，`tool_response` 里放 `error` / `is_interrupt`。
+- 配置：`~/.zcode/cli/config.json`，形状是 `{"hooks": {"enabled": true, "events": {<事件>: [{"matcher": ".*",
+  "hooks": [{"type": "process", "command": "<CC-Monitor-hook>", "args": ["pre", "--agent", "zcode"],
+  "enabled": true, "timeoutMs": 100000}]}]}}}`。`type: process` 按 argv 执行不经 shell。install.py 会把
+  `hooks.enabled` 置为 `true`（不为 true 一个 hook 都不跑），已有的其它插件 hook 原样保留。
+  **项目级** `.zcode/config.json` 里的 hooks 当前版本被 ZCode 忽略（安全原因，日志里记
+  `config_project_hooks_ignored`），`--project` 装了也不会生效。
+- 事件只有七个：`SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PermissionRequest` / `PostToolUse` /
+  `PostToolUseFailure` / `Stop`——没有 `SessionEnd` / `PreCompact` / `SubagentStop`，`Stop` 的 stdin 多带
+  `last_assistant_message`（截 2000 字符存进 `extra`）。
+- 拒绝：`PreToolUse` 用 `hookSpecificOutput.permissionDecision=deny` 或 exit 2（我们用 exit 2，与 Claude
+  Code 一致）；`PermissionRequest` 用 `decision.behavior=deny`。
+- 进程识别：CLI 的 `comm` 是 `zcode`；桌面版的 agent 运行时是 node 子进程，靠 argv 里的
+  `/resources/glm/` 或 `ZCode-*.AppImage` / `ZCode.app` 认，Electron 主进程 comm 可能是 `zcode` 或
+  `ZCode`，两个都登记了。会话记录：`transcript_path` 指向 hook 结束后就清理的临时文件，长期只有
+  `~/.zcode/cli/log/zcode-<日期>.jsonl`。
+- **待实测**：桌面版内置运行时的真实进程名和 argv；`hooks.events` 里 `"matcher": ".*"` 对
+  `SessionStart`（按 source 过滤）是否被接受；`command` 类型与 `process` 类型的超时字段名。
+
+### 4.7 Aider（无适配器）
 
 只有注册表（`argv_patterns` 认 `aider`、`aider/main.py`、`-m aider`），系统层探针能观测它派生的命令和网络连接，规则只对探针看到的 `Bash`（exec）生效，没有审批，没有文件级可见性。
 
@@ -481,9 +511,9 @@ cd webui && npm test                # 30 个用例
 
 `tests/test_agents.py` 覆盖：注册表结构、`classify_process` 六种进程、工具/字段映射、
 `workdir` 是否吸收了各家的忽略路径和项目标记、`@registry:` 规则展开、`agents` 限定规则、
-四家适配器的 parse（含 `apply_patch` 拆分、Gemini MCP、Cursor 各事件、OpenCode camelCase）与 emit、
-五家 hook 端到端（子进程跑 `cc_monitor.hook`，查库）、Cursor 事后事件只记不拦、不带 `--agent` 的
-老命令行、installer 对四种配置形状的幂等写入、OpenCode 插件替换、探针 comm 条件、嵌套 agent 归属。
+五家适配器的 parse（含 `apply_patch` 拆分、Gemini MCP、Cursor 各事件、OpenCode camelCase、ZCode
+的 `Agent` 别名与 `PostToolUseFailure`）与 emit、五家 hook 端到端（子进程跑 `cc_monitor.hook`，查库）、Cursor 事后事件只记不拦、不带 `--agent` 的
+老命令行、installer 对四种配置形状的幂等写入、ZCode config.json 合并（保留别人的 hook、置 enabled）、OpenCode 插件替换、探针 comm 条件、嵌套 agent 归属。
 `tests/test_platform_caps.py` 现在检查渲染后的脚本，本机有 bpftrace 时真的 `bpftrace -d` dry-run 一遍。
 
 本机做过的非自动化验证：
@@ -518,7 +548,7 @@ cd webui && npm test                # 30 个用例
 
 | 现象 | 看哪里 |
 |---|---|
-| 某家 agent 装了 hook 但库里没记录 | `bin/CC-Monitor agents` 看 "hook" 列；Codex 检查 `config.toml` 的 `[features] hooks`；直接手动喂一条 stdin 试：`echo '{"session_id":"t","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \| bin/CC-Monitor-hook pre --agent codex; echo $?` |
+| 某家 agent 装了 hook 但库里没记录 | `bin/CC-Monitor agents` 看 "hook" 列；Codex 检查 `config.toml` 的 `[features] hooks`；ZCode 检查 `~/.zcode/cli/config.json` 的 `hooks.enabled` 且必须是用户级文件；直接手动喂一条 stdin 试：`echo '{"session_id":"t","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \| bin/CC-Monitor-hook pre --agent codex; echo $?` |
 | hook 触发了但 agent 没被拦 | 该协议的拒绝格式可能与实际版本不符（见第 4 节各家"待实测"）；`bin/CC-Monitor tail` 里 `decision=blocked` 说明我们这边判对了，问题在 emit 格式 |
 | 探针把事件归错 agent / `agent=?` | `python3 -m cc_monitor.probe --print-script` 看播种块；`ROOT` 行的 pid 在 `/proc` 里读不到时分类为 None。嵌套运行（Claude Code 里跑 codex）**故意**归外层 |
 | 探针频繁重启 | 某个进程的 argv 命中了 `argv_patterns` 但不是根（比如 `grep gemini`）。收紧该 agent 的正则，或在 `~/.cc-monitor/agents/<id>.json` 覆盖 |

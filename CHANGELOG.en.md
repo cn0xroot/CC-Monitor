@@ -9,8 +9,13 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ### Added
 - **Multi-agent support (dev branch)**: the detection surface grows from "Claude Code only" to
-  Codex CLI, Gemini CLI, Cursor and OpenCode (application-layer hooks / plugin + system-layer
-  probe) and Aider (system layer only).
+  Codex CLI, Gemini CLI, Cursor, OpenCode and ZCode (application-layer hooks / plugin +
+  system-layer probe) and Aider (system layer only).
+  - ZCode (Z.ai's agentic environment on GLM models): its hook protocol mirrors Claude Code's, so
+    the adapter reuses the Claude protocol and only handles the `Agent`→`Task` alias and
+    `PostToolUseFailure`; the installer writes `hooks.events` (`type: process`) into
+    `~/.zcode/cli/config.json`, sets `hooks.enabled=true` and keeps other plugins' hooks; the
+    desktop app's bundled Node runtime is recognised by argv (`/resources/glm/`), the `zcode` CLI by comm.
   - New agent registry `cc_monitor/agents/<id>.json` + `cc_monitor/registry.py`: each agent's
     process signature (comm / executable name / argv regex), hook protocol and config path, tool
     and field mappings, session directory, home-dir ignore paths, project-root markers and

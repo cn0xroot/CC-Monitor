@@ -18,7 +18,7 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
 from cc_monitor import adapters, audit_state, policy, procscan, registry  # noqa: E402
-from cc_monitor.adapters import codex, cursor, gemini, opencode  # noqa: E402
+from cc_monitor.adapters import codex, cursor, gemini, opencode, zcode  # noqa: E402
 
 # 同 test_audit_state.py：子进程要用进程内模块实际在用的 CONFIG_DIR。
 _TMP = str(audit_state.CONFIG_DIR)
@@ -51,7 +51,7 @@ class TestRegistry(unittest.TestCase):
             self.assertTrue(spec.get("display"))
             self.assertIn("process", spec)
             if spec.get("hooks"):
-                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode"))
+                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode", "zcode"))
                 self.assertTrue(spec["hooks"]["events"])
                 self.assertTrue(spec["hooks"]["config"]["user_path"])
 
@@ -65,6 +65,8 @@ class TestRegistry(unittest.TestCase):
         # node 托管的 agent：comm 是解释器名，只能靠 argv
         self.assertEqual(registry.classify_process("node", "node /usr/lib/node_modules/@google/gemini-cli/dist/index.js"), "gemini-cli")
         self.assertEqual(registry.classify_process("python3", "/usr/bin/python3 /home/u/.local/bin/aider --model x"), "aider")
+        self.assertEqual(registry.classify_process("node", "/opt/ZCode/resources/glm/index.js"), "zcode")
+        self.assertEqual(registry.classify_process("zcode", "node /usr/lib/node_modules/zcode-cli/bin/zcode"), "zcode")
         self.assertIsNone(registry.classify_process("bash", "bash -c ls"))
         self.assertIsNone(registry.classify_process("node", "node server.js"))
 
@@ -154,6 +156,19 @@ class TestAdapterParsing(unittest.TestCase):
         self.assertTrue(ev["extra"]["evaluate_in_post"])
         ev = cursor.parse("pre", {"conversation_id": "c1", "hook_event_name": "beforeSubmitPrompt", "prompt": "hi"})
         self.assertEqual(ev["mode"], "prompt")
+
+    def test_zcode_is_claude_protocol_with_failure_event_and_agent_alias(self):
+        ev = zcode.parse("pre", {"session_id": "z", "cwd": "/p", "hook_event_name": "PreToolUse",
+                                 "tool_name": "Agent", "tool_input": {"prompt": "x"}, "tool_use_id": "t"})
+        self.assertEqual((ev["calls"][0]["tool_name"], ev["calls"][0]["native_tool"]), ("Task", "Agent"))
+        ev = zcode.parse("post", {"session_id": "z", "cwd": "/p", "hook_event_name": "PostToolUseFailure",
+                                  "tool_name": "Bash", "tool_input": {"command": "ls"}, "error": "boom"})
+        self.assertEqual(ev["calls"][0]["tool_response"]["error"], "boom")
+        blocked = {"decision": "blocked", "handled_via_confirm": False, "reason": "no", "rule_id": "r"}
+        self.assertEqual(zcode.emit_pre(blocked), (None, 2))
+        cfg = zcode.hook_config_entries("/bin/h", "zcode", {"PreToolUse": "pre"})
+        self.assertEqual(cfg["PreToolUse"][0]["hooks"][0]["args"], ["pre", "--agent", "zcode"])
+        self.assertEqual(cfg["PreToolUse"][0]["hooks"][0]["type"], "process")
 
     def test_opencode_maps_camel_case(self):
         ev = opencode.parse("pre", {"session_id": "s", "cwd": "/p", "tool_name": "edit",
@@ -280,6 +295,22 @@ class TestInstaller(unittest.TestCase):
                 self.assertIn("command", first["hooks"]["beforeShellExecution"][0])
             else:
                 self.assertEqual(first["hooks"][next(iter(first["hooks"]))][0]["hooks"][0]["type"], "command")
+
+    def test_zcode_config_keeps_other_hooks_and_enables_hooks(self):
+        d = tempfile.mkdtemp(prefix="cc-monitor-install-")
+        target = os.path.join(d, "config.json")
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump({"hooks": {"enabled": False, "events": {"Stop": [{"matcher": ".*", "hooks": [
+                {"type": "process", "command": "python3", "args": ["/x/retain.py"]}]}]}}, "other": 1}, f)
+        self.assertEqual(self._install("zcode", target).returncode, 0)
+        self.assertEqual(self._install("zcode", target).returncode, 0)
+        cfg = json.load(open(target, encoding="utf-8"))
+        self.assertEqual(cfg["other"], 1)
+        self.assertTrue(cfg["hooks"]["enabled"])
+        self.assertEqual(set(cfg["hooks"]["events"]), set(registry.get("zcode")["hooks"]["events"]))
+        stop = cfg["hooks"]["events"]["Stop"]
+        self.assertEqual(len(stop), 2, "别人的 Stop hook 要保留，我们的只加一次")
+        self.assertEqual(stop[0]["hooks"][0]["command"], "python3")
 
     def test_opencode_writes_plugin_with_hook_path(self):
         d = tempfile.mkdtemp(prefix="cc-monitor-install-")
