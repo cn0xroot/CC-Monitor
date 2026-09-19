@@ -89,7 +89,7 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   2 blocks) and has never been run. Every non-Claude-Code agent now carries `status: experimental`
   in the registry; `install.py --list`, `CC-Monitor agents`, the install output and the Web UI badge
   (β mark) all say "experimental, not verified on a real install".
-- **OpenClacky integration (experimental)**: reads `~/.clacky/hooks.yml` (user-level only, there is no
+- **OpenClacky integration (experimental)** (contributed by [@leezii](https://github.com/leezii), PR #3): reads `~/.clacky/hooks.yml` (user-level only, there is no
   project file); one event may carry several hooks and the two events do not share a protocol —
   `before_tool_use` uses the rewrite protocol (`type: rewrite`), whose payload is Claude Code's
   PreToolUse shape, where exit code 2 blocks and the reason is read from stderr before stdout;

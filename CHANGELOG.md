@@ -72,7 +72,7 @@
   一轮端到端（拦截 / 审批台放行 / 探针归属与交叉验证）；Grok CLI 按其 `src/hooks/` 源码实现（退出码 2
   阻断），未运行过。所有非 Claude Code 的 agent 在注册表里标 `status: experimental`，`install.py --list`、
   `CC-Monitor agents`、install 输出和 Web UI 徽标（β 角标）都会标明"实验性、未真机验证"。
-- **OpenClacky 接入（实验性）**：读 `~/.clacky/hooks.yml`（只认用户级，没有项目级），同一个事件能挂多条
+- **OpenClacky 接入（实验性）**（贡献者 [@leezii](https://github.com/leezii)，PR #3）：读 `~/.clacky/hooks.yml`（只认用户级，没有项目级），同一个事件能挂多条
   hook，而且两个事件的协议不一样：`before_tool_use` 走 rewrite 协议（`type: rewrite`），payload 是 Claude
   Code PreToolUse 的形状、退出码 2 阻断且理由 stderr 优先于 stdout；`after_tool_use` 只能用 simple 协议，
   payload 是 `{event, tool: {name, arguments}, result}`、`arguments` 是 JSON 字符串。适配器按

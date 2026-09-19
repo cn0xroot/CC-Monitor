@@ -73,7 +73,7 @@ could be installed on the development machine). After enabling one, run the chec
 | OpenCode | 🧪 experimental | plugin bridge `~/.config/opencode/plugins/cc-monitor.js` (`tool.execute.before` calls the hook synchronously; exit 2 blocks) | by `comm` | `python3 install.py --agent opencode` |
 | ZCode (Z.ai / GLM) | 🧪 experimental | `hooks.events` in `~/.zcode/cli/config.json` (protocol mirrors Claude Code's; `type: process`) | desktop runtime by argv, `zcode` CLI by `comm` | `python3 install.py --agent zcode` |
 | Grok CLI (superagent-ai) | 🧪 experimental | `hooks` block in `~/.grok/user-settings.json` (implemented from its `src/hooks/` source; exit 2 blocks) | by `comm` | `python3 install.py --agent grok-cli` |
-| OpenClacky | 🧪 experimental (implemented from its gem's `shell_hook_loader.rb`; one end-to-end round here through the gem's own loader: rewrite-protocol blocking, tool/field mapping and shell-input handling all verified) | `~/.clacky/hooks.yml` (`before_tool_use` uses the rewrite protocol, exit 2 blocks; `after_tool_use` uses the simple protocol and is log-only; user-level only, there is no project file) | by argv (Ruby-hosted, `comm` is `ruby`) | `python3 install.py --agent openclacky` |
+| OpenClacky | 🧪 experimental (contributed by [@leezii](https://github.com/leezii), PR #3) (implemented from its gem's `shell_hook_loader.rb`; one end-to-end round here through the gem's own loader: rewrite-protocol blocking, tool/field mapping and shell-input handling all verified) | `~/.clacky/hooks.yml` (`before_tool_use` uses the rewrite protocol, exit 2 blocks; `after_tool_use` uses the simple protocol and is log-only; user-level only, there is no project file) | by argv (Ruby-hosted, `comm` is `ruby`) | `python3 install.py --agent openclacky` |
 | Aider / custom scripts | 🧪 experimental | ➖ no hooks | `/proc` scan by argv, or explicit `CC-Monitor run -- <cmd>` | nothing to configure |
 
 `python3 install.py --agent all` enables every agent detected on this machine; `CC-Monitor agents`
@@ -980,6 +980,9 @@ third-party packages. The Web UI (`webui/`) builds on these open-source projects
 - [sapics/ip-location-db](https://github.com/sapics/ip-location-db) — republishes [DB-IP](https://db-ip.com/) Lite data ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) as ready-to-use `.mmdb` files; `install.sh` downloads this by default for the Network tab's GeoIP lookups
 - [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) — the alternative, usually more accurate GeoIP database option, self-hosted by the user under MaxMind's own license
 - [Keep a Changelog](https://keepachangelog.com/) — the loosely-followed format for `CHANGELOG.md`/`CHANGELOG.en.md`
+
+**Contributors**
+- [@leezii](https://github.com/leezii) — the OpenClacky (Ruby gem) integration: the rewrite / simple dual-protocol adapter, `hooks.yml` generation in `install.py`, handling of the interactive shell-input bypass path (`session_id` + `input`), with real-machine verification ([PR #3](https://github.com/cn0xroot/CC-Monitor/pull/3))
 
 **Inspiration / prior art**
 - [ccstatusline](https://github.com/sirmalloc/ccstatusline) — CC-Monitor's account/usage display independently re-implements the same OAuth-credential lookup and Anthropic usage-API call ccstatusline uses (no code shared, no dependency on it); `install.sh` also offers to install and wire it up as a companion terminal statusline

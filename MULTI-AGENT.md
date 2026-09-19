@@ -53,7 +53,7 @@
 | OpenCode | 实验性 | JS 插件桥 | ✅ | ❌ 未装 |
 | ZCode（Z.ai，GLM 模型） | 实验性 | config.json hooks.events | ✅（桌面版按 argv，CLI 按 comm） | ❌ 未装 |
 | Grok CLI（superagent-ai，Bun） | 实验性 | user-settings.json hooks（按源码实现） | ✅ | ❌ 未装 |
-| OpenClacky（Ruby gem） | 实验性 | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级） | ✅（按 argv 认，Ruby 托管） | 本机用 gem 自带 `ShellHookLoader` 加载生成的 hooks.yml 做过一轮端到端：`rm -rf /`、写 `~/.ssh/authorized_keys`、改 `~/.ssh/id_rsa` 都被拦，工具名/字段映射和终端交互输入（`session_id` + `input`）均通过。未在真实 agent 会话里跑过 |
+| OpenClacky（Ruby gem，贡献者 [@leezii](https://github.com/leezii)，PR #3） | 实验性 | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级） | ✅（按 argv 认，Ruby 托管） | 本机用 gem 自带 `ShellHookLoader` 加载生成的 hooks.yml 做过一轮端到端：`rm -rf /`、写 `~/.ssh/authorized_keys`、改 `~/.ssh/id_rsa` 都被拦，工具名/字段映射和终端交互输入（`session_id` + `input`）均通过。未在真实 agent 会话里跑过 |
 | Aider / 自研脚本 | 实验性 | ➖ 无 hook | ✅（`/proc` 扫描 / `run --`） | 进程识别与 `run --` 有单测 |
 
 ---

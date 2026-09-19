@@ -45,7 +45,7 @@ hook 协议适配和进程识别，并有单元测试覆盖，但**没有在真�
 | OpenCode | 🧪 实验性 | 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | 按 `comm` 认 | `python3 install.py --agent opencode` |
 | ZCode（Z.ai / GLM） | 🧪 实验性 | `~/.zcode/cli/config.json` 的 `hooks.events`（协议与 Claude Code 同构，`type: process`） | 桌面版按 argv 认内置运行时，`zcode` CLI 按 `comm` 认 | `python3 install.py --agent zcode` |
 | Grok CLI（superagent-ai） | 🧪 实验性 | `~/.grok/user-settings.json` 的 `hooks` 块（按其源码 `src/hooks/` 实现；退出码 2 阻断） | 按 `comm` 认 | `python3 install.py --agent grok-cli` |
-| OpenClacky | 🧪 实验性（按其 gem 源码 `shell_hook_loader.rb` 实现；本机用 gem 自带 loader 做过一轮端到端：rewrite 协议拦截、工具名与字段映射、终端交互输入均验证） | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级配置，没有项目级文件） | 按 argv 认（Ruby 托管，`comm` 是 `ruby`） | `python3 install.py --agent openclacky` |
+| OpenClacky | 🧪 实验性（贡献者 [@leezii](https://github.com/leezii)，PR #3）（按其 gem 源码 `shell_hook_loader.rb` 实现；本机用 gem 自带 loader 做过一轮端到端：rewrite 协议拦截、工具名与字段映射、终端交互输入均验证） | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级配置，没有项目级文件） | 按 argv 认（Ruby 托管，`comm` 是 `ruby`） | `python3 install.py --agent openclacky` |
 | Aider / 自研脚本 | 🧪 实验性 | ➖ 没有 hook | 扫 `/proc` 按 argv 认，或 `CC-Monitor run -- <命令>` 显式绑定 | 无需配置 |
 
 `python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents` 和
@@ -811,6 +811,9 @@ Web UI（`webui/`）构建在下面这些开源项目之上：
 - [sapics/ip-location-db](https://github.com/sapics/ip-location-db) —— 把 [DB-IP](https://db-ip.com/) Lite 数据（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议）转成现成的 `.mmdb` 文件，`install.sh` 默认下载的就是这份，用于网络流量页的 GeoIP 归属地查询
 - [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) —— 精度通常更高的备选 GeoIP 数据库，需要用户自己按 MaxMind 的许可条款注册获取
 - [Keep a Changelog](https://keepachangelog.com/) —— `CHANGELOG.md`/`CHANGELOG.en.md` 大致参考的格式规范
+
+**贡献者**
+- [@leezii](https://github.com/leezii) —— OpenClacky（Ruby gem）接入：rewrite / simple 双协议适配器、`install.py` 的 `hooks.yml` 生成、终端交互输入（`session_id` + `input`）的绕过路径处理，附真机验证（[PR #3](https://github.com/cn0xroot/CC-Monitor/pull/3)）
 
 **灵感来源**
 - [ccstatusline](https://github.com/sirmalloc/ccstatusline) —— CC-Monitor 的账号额度显示是独立实现的同一套 OAuth 凭证读取逻辑和 Anthropic 用量接口调用（不共享代码、不依赖它）；`install.sh` 也提供自动安装并接线它作为配套终端状态栏的选项
