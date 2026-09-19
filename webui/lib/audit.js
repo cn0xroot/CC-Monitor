@@ -879,8 +879,9 @@ function sessionRoots() {
     const has = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'`).get();
     if (!has) return new Map();
     const out = new Map();
-    for (const r of db.prepare(`SELECT agent, session_id, root_pid, root_start, cwd FROM sessions`).all()) {
-      out.set(r.session_id, { agent: r.agent, rootPid: r.root_pid, rootStart: r.root_start, cwd: r.cwd });
+    const hasModel = db.prepare(`PRAGMA table_info(sessions)`).all().some((c) => c.name === "model");
+    for (const r of db.prepare(`SELECT agent, session_id, root_pid, root_start, cwd${hasModel ? ", model" : ""} FROM sessions`).all()) {
+      out.set(r.session_id, { agent: r.agent, rootPid: r.root_pid, rootStart: r.root_start, cwd: r.cwd, model: r.model || null });
     }
     return out;
   }, new Map());

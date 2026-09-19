@@ -146,6 +146,10 @@ def _connect():
     CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_approvals(status, id);
     """)
     try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
         # evidence：root_pid 是怎么来的——hook_parent（hook 进程沿父链找到的，精确）/ cwd_recent
         # （探针启动时按 agent+cwd+最近活跃 反推的，可能错）/ run（CC-Monitor run 显式登记）。
         # 这张表是 dev 分支新建的，早几天建的库还没这一列。
@@ -295,7 +299,7 @@ def fetch_last(limit=200):
         conn.close()
 
 
-def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, transcript_path=None, evidence="hook_parent"):
+def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, transcript_path=None, evidence="hook_parent", model=None):
     """hook 每次调用顺手 UPSERT 一行：会话第一次出现就插入，之后只更新 last_seen 和拿到了的字段。
     root_pid 的覆盖规则：精确证据（hook_parent / run）可以覆盖猜的（cwd_recent），反过来不行。"""
     if not session_id:
@@ -306,8 +310,8 @@ def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, t
         now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         with conn:
             conn.execute(
-                "INSERT INTO sessions (agent, session_id, root_pid, root_start, cwd, transcript_path, first_seen, last_seen, evidence) "
-                "VALUES (?,?,?,?,?,?,?,?,?) "
+                "INSERT INTO sessions (agent, session_id, root_pid, root_start, cwd, transcript_path, first_seen, last_seen, evidence, model) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(agent, session_id) DO UPDATE SET "
                 "root_pid = CASE WHEN excluded.root_pid IS NULL THEN sessions.root_pid "
                 "                WHEN ? OR sessions.root_pid IS NULL OR sessions.evidence = 'cwd_recent' THEN excluded.root_pid "
@@ -320,9 +324,10 @@ def touch_session(agent, session_id, root_pid=None, root_start=None, cwd=None, t
                 "                ELSE sessions.evidence END, "
                 "cwd = COALESCE(excluded.cwd, sessions.cwd), "
                 "transcript_path = COALESCE(excluded.transcript_path, sessions.transcript_path), "
+                "model = COALESCE(excluded.model, sessions.model), "
                 "last_seen = MAX(excluded.last_seen, sessions.last_seen)",
                 (agent or DEFAULT_AGENT, session_id, root_pid, root_start, cwd or None, transcript_path or None, now, now,
-                 evidence if root_pid is not None else None, strong, strong, strong),
+                 evidence if root_pid is not None else None, model or None, strong, strong, strong),
             )
     finally:
         conn.close()
@@ -380,7 +385,7 @@ def list_sessions_with_roots(limit=500):
     conn = _connect()
     try:
         return conn.execute(
-            "SELECT agent, session_id, root_pid, root_start, cwd, last_seen, evidence FROM sessions ORDER BY last_seen DESC LIMIT ?",
+            "SELECT agent, session_id, root_pid, root_start, cwd, last_seen, evidence, model FROM sessions ORDER BY last_seen DESC LIMIT ?",
             (limit,)).fetchall()
     finally:
         conn.close()

@@ -219,6 +219,21 @@ class TestSessionAttribution(unittest.TestCase):
         else:
             self.assertEqual((root, start), (None, None))
 
+    def test_same_agent_helper_child_is_not_the_root(self):
+        # Antigravity：agy(1000) → agy 子进程(1001，跑 hook 用) → sh(1002) → hook(1003)：根应是 1000
+        procs = {1: (0, "init", ""), 10: (1, "zsh", "zsh"), 1000: (10, "agy", "agy"), 1001: (1000, "agy", "agy --hook"),
+                 1002: (1001, "sh", "sh -c hook"), 1003: (1002, "python3", "python3 CC-Monitor-hook pre")}
+        self.assertEqual(procscan.find_agent_ancestor(1003, registrations={}, procs=procs), (1000, None, "antigravity-cli"))
+        # 别家嵌套：claude(20) → zsh(21) → agy(22) → sh(23) → hook(24)：根是 agy(22)，不往上并到 claude
+        procs2 = {1: (0, "init", ""), 20: (1, "claude", "claude"), 21: (20, "zsh", "zsh"), 22: (21, "agy", "agy"),
+                  23: (22, "sh", "sh"), 24: (23, "python3", "python3 CC-Monitor-hook pre")}
+        self.assertEqual(procscan.find_agent_ancestor(24, registrations={}, procs=procs2), (22, None, "antigravity-cli"))
+        # /proc 扫描同样：同家的子进程不是根
+        snap = {1: {"ppid": 0, "comm": "init", "argv": "", "exe": ""}, 1000: {"ppid": 1, "comm": "agy", "argv": "agy", "exe": ""},
+                1001: {"ppid": 1000, "comm": "agy", "argv": "agy --hook", "exe": ""}, 1002: {"ppid": 1001, "comm": "sh", "argv": "sh", "exe": ""}}
+        self.assertEqual(procscan.find_roots(snap, registrations={}), {1000: "antigravity-cli"})
+        self.assertEqual(procscan.seed_map(snap, registrations={})[1002], (1000, "antigravity-cli"))
+
     def test_touch_session_and_lookup_by_root(self):
         storage.touch_session("codex", "sess-A", root_pid=424242, root_start=777, cwd="/p")
         storage.touch_session("codex", "sess-A", transcript_path="/t.jsonl")  # 第二次只补字段

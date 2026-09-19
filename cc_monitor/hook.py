@@ -285,8 +285,11 @@ def record_session(ev):
         if found_agent and found_agent != ev["agent"] and ev["agent"] != registry.DEFAULT_AGENT:
             # 命令行说是 codex、父链上认出来的却是别家——以命令行为准，但根 pid 仍然可信
             pass
+        # 有些 agent 的 transcript 里没有模型名（Antigravity），但 hook stdin 带（modelName）——记进
+        # sessions.model，Web UI 在 transcript 里找不到模型时用它。
         storage.touch_session(ev["agent"], ev["session_id"], root_pid=root_pid, root_start=root_start,
-                              cwd=ev.get("cwd"), transcript_path=ev.get("transcript_path"))
+                              cwd=ev.get("cwd"), transcript_path=ev.get("transcript_path"),
+                              model=(ev.get("extra") or {}).get("model"))
     except Exception:
         pass
 

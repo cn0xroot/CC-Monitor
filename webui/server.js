@@ -136,6 +136,22 @@ function sessionLivenessChecker(liveProcs, liveCwds, cwdCache) {
   };
 }
 
+// 会话的模型：先看 transcript（Claude Code 每条 assistant 都带），没有就用 hook 登记进 sessions 表的
+// （Antigravity 的 transcript 不带模型名，hook stdin 的 modelName 有）。
+let _sessionModelRoots = null;
+let _sessionModelRootsAt = 0;
+function sessionModel(sessionId, transcriptPath) {
+  const fromTranscript = transcriptPath ? transcript.getModel(transcriptPath) : null;
+  if (fromTranscript) return fromTranscript;
+  if (!sessionId) return null;
+  if (!_sessionModelRoots || Date.now() - _sessionModelRootsAt > 3000) {
+    _sessionModelRoots = audit.sessionRoots();
+    _sessionModelRootsAt = Date.now();
+  }
+  const r = _sessionModelRoots.get(sessionId);
+  return r && r.model ? r.model : null;
+}
+
 function vitalStatus(hasLiveProcess, lastTs) {
   if (!hasLiveProcess) return { status: "dead", agoMs: null };
   const agoMs = lastTs ? Date.now() - new Date(lastTs).getTime() : null;
@@ -180,7 +196,7 @@ app.get("/api/sessions", (req, res) => {
       bypassCount: match ? match.bypass_count : null,
       firstTs: match ? match.first_ts : null,
       lastTs: match ? match.last_ts : null,
-      model: match && match.transcript_path ? transcript.getModel(match.transcript_path) : null,
+      model: match ? sessionModel(match.session_id, match.transcript_path) : null,
       status: s.alive ? computeSessionStatus(s, match ? match.session_id : null, match ? match.last_ts : null, pendingSessionIds) : "dead",
       // 距上次活跃多久——前端的"生命体征"指示器靠它算心跳颜色深浅和波形摆动幅度。
       // 漏了这个字段的话 vitalHeat() 拿到 undefined 一律返回 0，不管多活跃都画成
@@ -301,7 +317,7 @@ app.get("/api/claude-processes", async (req, res) => {
       lastEventTs,
       status: v.status,
       statusAgoMs: v.agoMs,
-      model: sess && sess.transcript_path ? transcript.getModel(sess.transcript_path) : null,
+      model: sess ? sessionModel(sess.session_id, sess.transcript_path) : null,
       sessionId: sess ? sess.session_id : null,
       eventCount: sess ? sess.event_count : null,
     };
@@ -343,7 +359,7 @@ app.get("/api/geoip-status", async (req, res) => {
 app.get("/api/log-sessions", (req, res) => {
   const rows = audit.listSessions(200, { agent: req.query.agent || null }).map((r) => ({
     ...r,
-    model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
+    model: sessionModel(r.session_id, r.transcript_path),
     has_transcript: !!r.transcript_path,
   }));
   res.json(rows);
@@ -400,7 +416,7 @@ app.get("/api/transcript/all", (req, res) => {
   for (const s of sessions) {
     if (!fs.existsSync(s.transcript_path)) continue;
     const { entries } = transcript.readTailEntries(s.transcript_path, perSessionLimit);
-    const model = transcript.getModel(s.transcript_path);
+    const model = sessionModel(s.session_id, s.transcript_path);
     for (const e of entries) {
       merged.push({
         ...transcript.renderEntryHtml(e),
@@ -575,7 +591,7 @@ app.get("/api/drilldown/sessions", async (req, res) => {
     eventCount: r.event_count,
     blockedCount: r.blocked_count,
     bypassCount: r.bypass_count,
-    model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
+    model: sessionModel(r.session_id, r.transcript_path),
     // 模型的输入/输出/缓存 token 用量——从这个会话的 transcript 里算（跟"状态信息"页
     // 那张模型用量表同一个 getTokenStats），会话列表里直接能看到每个会话烧了多少。
     tokenStats: r.transcript_path ? transcript.getTokenStats(r.transcript_path) : null,
@@ -904,7 +920,7 @@ app.get("/api/status", async (req, res) => {
       bypassCount: r.bypass_count,
       gitBranch: g.branch,
       gitDirty: g.dirty,
-      model: r.transcript_path ? transcript.getModel(r.transcript_path) : null,
+      model: sessionModel(r.session_id, r.transcript_path),
       tokenStats,
       compactionStats: r.transcript_path ? transcript.getCompactionStats(r.transcript_path) : null,
       ...(() => {

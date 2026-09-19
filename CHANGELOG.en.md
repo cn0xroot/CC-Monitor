@@ -126,6 +126,13 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   `~/.gemini/antigravity-cli/antigravity-oauth-token` (the `id_token` email), not from Gemini CLI's
   `google_accounts.json` — the two can be signed into different Google accounts and were on the test
   machine; auth method, token expiry, configured model, trusted-workspace count and installation id added.
+- **Antigravity sessions shown as ended, no heartbeat, empty model**: agy forks a short-lived agy child for
+  every tool / hook run; the "nearest agent process" the hook found on its parent chain was that child, the
+  session was registered to it and declared dead as soon as it exited. The hook parent walk, the `/proc` scan
+  and the kernel probe now agree: a same-agent child is not a root, it belongs to the outermost ancestor of the
+  same agent (likewise Claude Code subagent `claude` processes); nested different agents (agy inside claude)
+  are still separate roots. Antigravity transcripts carry no model name, so the hook's `modelName` is now
+  stored in `sessions.model` and used by every model column when the transcript has none.
 - **No heartbeat for other agents' processes**: the process list matched processes to audit sessions by
   cwd only; another agent's hook cwd is often not the directory it was launched from (Antigravity reports
   the workspace root), so nothing matched, there was no "last activity" time and the vital sign stayed a

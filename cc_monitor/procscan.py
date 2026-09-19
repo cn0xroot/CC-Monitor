@@ -73,10 +73,30 @@ def find_roots(procs=None, registrations=None):
     if registrations is None:
         from . import run as _run
         registrations = _run.load_registrations()
-    roots = {}
+    candidates = {}
     for pid, p in procs.items():
         aid = registrations.get(pid) or registry.classify_process(p["comm"], p["argv"], p["exe"])
         if aid:
+            candidates[pid] = aid
+    # 同一家 agent 的"子 agent 进程"不是根：Antigravity 每跑一个工具/hook 会 fork 一个短命的 agy 子进程，
+    # Claude Code 的子代理也是 claude 进程——它们的事件要归到最外层那个同类祖先（真正的会话进程），
+    # 否则会话登记到一个几秒就退出的 pid 上，Web UI 立刻判成"已结束"、心跳拉直线。不同家的嵌套
+    # （在 claude 里跑 agy）仍然各是各的根。显式登记的 pid 永远是根。
+    roots = {}
+    for pid, aid in candidates.items():
+        if pid in registrations:
+            roots[pid] = aid
+            continue
+        anc = procs.get(pid, {}).get("ppid")
+        hops = 0
+        shadowed = False
+        while anc and anc > 1 and hops < 128:
+            if anc in candidates:
+                shadowed = candidates[anc] == aid
+                break
+            anc = procs.get(anc, {}).get("ppid")
+            hops += 1
+        if not shadowed:
             roots[pid] = aid
     return roots
 
@@ -160,7 +180,7 @@ def _ps_snapshot():
     return procs
 
 
-def find_agent_ancestor(pid, registrations=None, max_hops=32):
+def find_agent_ancestor(pid, registrations=None, max_hops=32, procs=None):
     """从 pid 往上找最近的 agent 根进程：返回 (root_pid, root_start, agent_id)，找不到 (None, None, None)。
     hook 进程调用时 pid 是它自己的父进程：Claude Code 的 hook 命令经 `sh -c` 起，父是 sh、祖父是
     claude；Antigravity 类似。显式登记（CC-Monitor run --）的 pid 优先。"""
@@ -170,7 +190,24 @@ def find_agent_ancestor(pid, registrations=None, max_hops=32):
             registrations = _run.load_registrations()
         except Exception:
             registrations = {}
-    if os.path.isdir(PROC):
+    # 找到最近的 agent 祖先后继续往上走：只要再往上还是同一家 agent，就用更上面的那个（Antigravity
+    # 每个工具调用 fork 一个短命 agy 子进程来跑 hook，Claude Code 的子代理也是 claude 进程——会话
+    # 的根是最外层那个）。碰到别家 agent 或者链断了就停。显式登记的 pid 直接算根。
+    found = None  # (pid, start, agent)
+
+    def consider(cur, start, aid):
+        nonlocal found
+        if cur in registrations:
+            found = (cur, start, registrations[cur])
+            return "stop"
+        if aid is None:
+            return "continue" if found is None else "continue"
+        if found is None or found[2] == aid:
+            found = (cur, start, aid)
+            return "continue"
+        return "stop"  # 别家 agent：到此为止
+
+    if procs is None and os.path.isdir(PROC):
         cur = pid
         for _ in range(max_hops):
             if not cur or cur <= 1:
@@ -180,11 +217,11 @@ def find_agent_ancestor(pid, registrations=None, max_hops=32):
                 break
             ppid, start, comm, argv, exe = info
             aid = registrations.get(cur) or registry.classify_process(comm, argv, exe)
-            if aid:
-                return cur, start, aid
+            if consider(cur, start, aid) == "stop":
+                break
             cur = ppid
-        return None, None, None
-    procs = _ps_snapshot()
+        return found if found else (None, None, None)
+    procs = procs if procs is not None else _ps_snapshot()
     cur = pid
     for _ in range(max_hops):
         info = procs.get(cur)
@@ -192,10 +229,10 @@ def find_agent_ancestor(pid, registrations=None, max_hops=32):
             break
         ppid, comm, argv = info
         aid = registrations.get(cur) or registry.classify_process(comm, argv, None)
-        if aid:
-            return cur, None, aid
+        if consider(cur, None, aid) == "stop":
+            break
         cur = ppid
-    return None, None, None
+    return found if found else (None, None, None)
 
 
 def proc_start(pid):
@@ -220,9 +257,12 @@ def comm_predicate():
     return " || ".join(parts) if parts else "0"
 
 
-def seed_block(seed):
-    """BEGIN 块里的播种语句。"""
+def seed_block(seed, root_comms=None):
+    """BEGIN 块里的播种语句。root_comms 是 {root_pid: comm}，给 @rcomm 用（同名子进程不再重新登记为根）。"""
     lines = []
     for pid, (root, _aid) in sorted(seed.items()):
         lines.append("    @watch[{}] = 1; @root[{}] = {};".format(pid, pid, root))
+    for root, comm in sorted((root_comms or {}).items()):
+        if _SAFE_COMM.match(comm or ""):
+            lines.append('    @rcomm[{}] = "{}";'.format(root, comm))
     return "\n".join(lines)

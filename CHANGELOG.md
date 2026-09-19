@@ -101,6 +101,11 @@
   ZCode 的 `provider_config.json`），文件不存在那一项就不显示。Antigravity CLI 的登录账号读它自己的
   `~/.gemini/antigravity-cli/antigravity-oauth-token`（`id_token` 里的 email），不是 Gemini CLI 的 `google_accounts.json`——
   两家可以登不同的 Google 账号，真机上就是不同的；另加认证方式、令牌到期、配置的模型、已信任工作区数、安装 ID。
+- **Antigravity 会话被判"已结束"、心跳不跳、模型为空**：agy 每跑一个工具 / hook 会 fork 一个几秒就退出的同名 agy
+  子进程，hook 沿父链找到的"最近的 agent 进程"是这个短命子进程，会话登记到它上面，它一退出会话就被判死。现在
+  hook 父链、`/proc` 扫描和内核探针三处口径一致：同一家 agent 的同名子进程不是根，归最外层那个同类祖先（Claude
+  Code 的子代理 claude 进程同理）；别家嵌套（claude 里跑 agy）仍各是各的根。Antigravity 的 transcript 不带模型名，
+  hook stdin 的 `modelName` 现在记进 `sessions.model`，Web UI 各处的模型列在 transcript 里找不到时用它。
 - **其它 agent 的进程心跳不跳**：进程列表以前只按 cwd 把进程和审计会话对上，别家 agent 的 hook cwd 常常不是进程
   的启动目录（Antigravity 报工作区根），对不上就没有"最近活动"时间、心跳永远灰直线。现在优先用 `sessions` 表里
   hook 登记的根进程 pid 精确对上，对不上再退回 cwd。Antigravity 适配器不再把 `run_command` 的 `Cwd` 当事件 cwd。

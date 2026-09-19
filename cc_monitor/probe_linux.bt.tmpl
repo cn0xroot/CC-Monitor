@@ -33,12 +33,18 @@ tracepoint:sched:sched_process_fork
 // 被启动时，这里认出它并把它自己登记为根。已经在别的 agent 树里（比如在 Claude Code 的终端
 // 里启动 agy）也重新登记成自己的根：它的 hook 事件是按自己的 --agent 记的，系统层事件归到它
 // 名下才对得上；没有这一步，交叉验证会拿外层 agent 的 hook 记录去解释它的命令，全是误报。
+// 但同一家 agent 派生的同名子进程（Antigravity 每个工具调用 fork 一个 agy 子进程、Claude Code 的
+// 子代理也是 claude）不算新根——它们的事件要归到外层那个会话进程。@rcomm[根] 记根的 comm，
+// 新 exec 的 comm 跟自己当前根的 comm 一样就不重新登记。
 tracepoint:sched:sched_process_exec
 {
     if (__CC_ROOT_COMM_PREDICATE__) {
-        @root[pid] = pid;
-        @watch[pid] = 1;
-        printf("ROOT\t%d\t%d\t%s\n", pid, uid, comm);
+        if (@watch[pid] == 0 || @rcomm[@root[pid]] != comm) {
+            @root[pid] = pid;
+            @rcomm[pid] = comm;
+            @watch[pid] = 1;
+            printf("ROOT\t%d\t%d\t%s\n", pid, uid, comm);
+        }
     }
 }
 
@@ -362,5 +368,6 @@ tracepoint:sched:sched_process_exit
 {
     delete(@watch[pid]);
     delete(@root[pid]);
+    delete(@rcomm[pid]);
     delete(@dns_query[pid]);
 }

@@ -622,9 +622,16 @@ def _handle_bytes_line(line):
 def render_script(seed=None, template_text=None):
     """把模板渲染成可执行的 bpftrace 脚本。seed 是 {pid: (root_pid, agent_id)}。"""
     text = template_text if template_text is not None else BT_TEMPLATE.read_text(encoding="utf-8")
+    root_comms = {}
+    for _pid, (root, _aid) in (seed or {}).items():
+        if root not in root_comms:
+            try:
+                root_comms[root] = open("/proc/{}/comm".format(root)).read().strip()
+            except OSError:
+                pass
     return (text
             .replace("__CC_ROOT_COMM_PREDICATE__", procscan.comm_predicate())
-            .replace("__CC_SEED__", procscan.seed_block(seed or {})))
+            .replace("__CC_SEED__", procscan.seed_block(seed or {}, root_comms)))
 
 
 def _backfill_sessions(seed):
