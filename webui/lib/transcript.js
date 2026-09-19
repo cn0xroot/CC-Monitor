@@ -259,9 +259,25 @@ function getCompactionStats(path) {
   return { count, autoCount, manualCount, cumulativeDroppedTokens };
 }
 
-// 找 session 里第一次出现的 assistant.message.model，给 UI 展示用。
-// 简单加一层按 (path,mtime) 的缓存，避免日志会话列表每次轮询都重新扫文件。
+// 会话当前在用的模型，给 UI 展示用：取 transcript 里**最近一次**带 model 的 assistant 轮次。
+// 以前取的是第一次出现的——用户中途 /model 切换后（比如 Sonnet 切 Opus），会话列表里
+// 显示的还是开头那个模型，怎么等都不更新。从文件尾部往前找就是"现在用的"；
+// 尾部那一段（500KB）里一条 assistant 都没有的极端情况再退回从头扫。
+// 缓存按 (path, mtime)，文件一变就重算，轮询里不会反复读整个文件。
 const modelCache = new Map(); // path -> {mtime, model}
+function modelFromLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  let obj;
+  try {
+    obj = JSON.parse(trimmed);
+  } catch (e) {
+    return null;
+  }
+  if (obj.type === "assistant" && obj.message && obj.message.model) return obj.message.model;
+  return null;
+}
+
 function getModel(path) {
   if (!path) return null;
   let mtimeMs;
@@ -275,21 +291,11 @@ function getModel(path) {
 
   let model = null;
   try {
-    const raw = fs.readFileSync(path, "utf8");
-    const lines = raw.split("\n");
-    for (let i = 0; i < lines.length && i < 400; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      let obj;
-      try {
-        obj = JSON.parse(line);
-      } catch (e) {
-        continue;
-      }
-      if (obj.type === "assistant" && obj.message && obj.message.model) {
-        model = obj.message.model;
-        break;
-      }
+    const tailLines = readTail(path, 500000).split("\n");
+    for (let i = tailLines.length - 1; i >= 0 && model === null; i--) model = modelFromLine(tailLines[i]);
+    if (model === null) {
+      const lines = fs.readFileSync(path, "utf8").split("\n");
+      for (let i = 0; i < lines.length && i < 400 && model === null; i++) model = modelFromLine(lines[i]);
     }
   } catch (e) {
     model = null;

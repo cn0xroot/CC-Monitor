@@ -7,6 +7,11 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **The model shown in the session list did not update after a mid-session `/model` switch**: `getModel()`
+  used to take the first assistant model in the transcript; it now takes the most recent one, scanning from
+  the tail (falling back to a head scan if the last 500 KB has no assistant line); the mtime cache still applies.
+
 ### Changed
 - **Account panel gains identifiers and local environment info**: from 9 rows to 17. Adds
   account UUID / organization UUID / user ID / machine ID (truncated to "first 8…last 4" with
