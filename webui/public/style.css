@@ -572,6 +572,8 @@ html, body {
 
 .home-account .account-main { display: flex; flex-direction: column; }
 .home-account .account-main > #anthropic-limits-box { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+/* 上面那条 display:flex 会压过 [hidden]：没有额度明细（别家 agent、没登录）时要真的藏起来 */
+.home-account .account-main > #anthropic-limits-box[hidden] { display: none; }
 .home-account .account-main > #anthropic-limits-box > #anthropic-limits-list { flex: 1 1 auto; }
 .home-account .account-main > #anthropic-limits-box > #anthropic-limits-list > table { height: 100%; }
 

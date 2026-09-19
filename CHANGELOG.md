@@ -103,6 +103,23 @@
   `CC_MONITOR_SESSION` 后 exec；hook 命令行没写 `--agent` 时从环境变量取 agent。给无 hook 的
   自研 agent 用。新增 `tests/test_probe_files.py`（16 个用例）。
 
+### 修复
+- **选了其它 agent 仍显示 Anthropic 账号与额度**：过滤器选中非 Claude Code 的 agent 时，"账号 & 额度"整块换成那家的
+  "账号 & 环境"面板（新接口 `/api/agent-account`：接入状态、可执行文件与版本、hook 配置文件与是否已接、登录账号 /
+  认证方式 / 凭证类型或 API Key 末四位、配置的模型、已监测会话数、最近活动、用过的模型；凭证本身不读），额度卡和状态页
+  额度板显示"该 agent 无额度接口"，"隐藏敏感信息"同样对账号行生效。各家线索按其公开文件布局取（Antigravity /
+  Gemini 的 `google_accounts.json`、Codex 的 `auth.json`、Grok 的 `user-settings.json`、OpenCode 的 `auth.json`、
+  ZCode 的 `provider_config.json`），文件不存在那一项就不显示。
+- **其它 agent 的进程心跳不跳**：进程列表以前只按 cwd 把进程和审计会话对上，别家 agent 的 hook cwd 常常不是进程
+  的启动目录（Antigravity 报工作区根），对不上就没有"最近活动"时间、心跳永远灰直线。现在优先用 `sessions` 表里
+  hook 登记的根进程 pid 精确对上，对不上再退回 cwd。Antigravity 适配器不再把 `run_command` 的 `Cwd` 当事件 cwd。
+- **切换 agent 过滤器后首页统计、下钻、审批台、状态页仍显示全量（Claude Code）数据**：以前只有 Log 审计和会话下拉
+  认 `?agent=`。现在数据层统一处理：`lib/agentScope.js` 用 AsyncLocalStorage 把请求的 agent 带进所有查询，
+  `FROM events` / `FROM pending_approvals` 自动改写成只含该 agent 的同名子查询，几十条 SQL 一条不改；
+  `GROUP BY agent` 的汇总（/api/agents）不改写。前端切换过滤器时立刻重拉首页 / 状态页 / 审批台 / Tap 合并视图。
+- **会话列表里的模型在中途 `/model` 切换后不更新**：`getModel()` 以前取 transcript 里第一次出现的 assistant
+  模型，现在从文件尾部往前取最近一次的（尾部 500KB 没有 assistant 行再退回从头扫），缓存仍按 mtime 失效。
+
 ### 变更
 - **账号面板新增标识符与本机环境信息**：从 9 行增到 17 行。新增账号 UUID / 组织 UUID /
   用户 ID / 机器 ID 四个标识符（截断成"头 8…尾 4"，完整值在悬停提示里，默认显示、跟着

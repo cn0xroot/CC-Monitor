@@ -129,6 +129,31 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   exit), sets `CC_MONITOR_AGENT` / `CC_MONITOR_SESSION` and execs; hooks fall back to the env var
   when `--agent` is absent. For hook-less custom agents. New `tests/test_probe_files.py` (16 cases).
 
+### Fixed
+- **Anthropic account and quota still shown after selecting another agent**: with a non-Claude-Code
+  agent selected, the "account & quota" block becomes that agent's "account & environment" panel (new
+  `/api/agent-account`: integration status, binary and version, hook config file and whether it is
+  installed, signed-in account / auth type / credential kind or API-key tail, configured model, sessions
+  monitored, last activity, models seen; credentials themselves are never read); the quota card and the
+  status-page usage board say "no quota API for this agent"; "hide sensitive info" masks the account rows
+  too. Hints follow each vendor's public file layout (Antigravity / Gemini `google_accounts.json`, Codex
+  `auth.json`, Grok `user-settings.json`, OpenCode `auth.json`, ZCode `provider_config.json`) and are
+  simply omitted when the file is absent.
+- **No heartbeat for other agents' processes**: the process list matched processes to audit sessions by
+  cwd only; another agent's hook cwd is often not the directory it was launched from (Antigravity reports
+  the workspace root), so nothing matched, there was no "last activity" time and the vital sign stayed a
+  flat grey line. It now matches by the root pid the hook recorded in `sessions` first and falls back to
+  cwd. The Antigravity adapter no longer uses `run_command`'s `Cwd` as the event cwd.
+- **Home stats, drilldowns, approval desk and status page kept showing all-agent (Claude Code) data after
+  switching the agent filter**: only the audit log and session dropdown honoured `?agent=`. The data layer
+  now handles it once: `lib/agentScope.js` carries the request's agent through AsyncLocalStorage and rewrites
+  `FROM events` / `FROM pending_approvals` into a same-named subquery filtered to that agent, so none of the
+  dozens of SQL statements change; `GROUP BY agent` summaries (/api/agents) are left alone. Switching the
+  filter re-fetches the home page / status page / approval desk / merged Tap view immediately.
+- **The model shown in the session list did not update after a mid-session `/model` switch**: `getModel()`
+  used to take the first assistant model in the transcript; it now takes the most recent one, scanning from
+  the tail (falling back to a head scan if the last 500 KB has no assistant line); the mtime cache still applies.
+
 ### Changed
 - **Account panel gains identifiers and local environment info**: from 9 rows to 17. Adds
   account UUID / organization UUID / user ID / machine ID (truncated to "first 8…last 4" with

@@ -48,6 +48,7 @@ function list() {
     envStripPrefixes: spec.env_strip_prefixes || [],
     exeBasenames: (spec.process && spec.process.exe_basename) || [],
     sessionsGlob: (spec.sessions && spec.sessions.glob) || null,
+    hooksConfigUserPath: (spec.hooks && spec.hooks.config && spec.hooks.config.user_path) || null,
     sessionsFormat: (spec.sessions && spec.sessions.format) || null,
     argvPatterns: ((spec.process && spec.process.argv_patterns) || [])
       .map((p) => {
