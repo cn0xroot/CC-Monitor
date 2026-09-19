@@ -70,22 +70,40 @@ function jwtPayload(token) {
 // 各家的凭证 / 账号线索。返回 {rows: [{key, value, sensitive}], quotaNote}
 const EXTRACTORS = {
   "antigravity-cli": () => {
+    // Antigravity CLI 有自己的凭证文件，登录账号从它的 id_token 里读；不能拿 ~/.gemini/google_accounts.json
+    // ——那是 Gemini CLI 的，两家可以登不同的 Google 账号（真机就是这样，之前显示错了）。
     const rows = [];
-    const acc = readJson(P(".gemini", "google_accounts.json"));
-    const active = acc && (acc.active || (Array.isArray(acc.accounts) && acc.accounts[0] && acc.accounts[0].email));
-    if (active) rows.push({ key: "account", value: String(active), sensitive: true });
-    const settings = readJson(P(".gemini", "settings.json"));
-    const auth = settings && settings.security && settings.security.auth && settings.security.auth.selectedType;
-    if (auth) rows.push({ key: "authType", value: auth });
-    if (exists(P(".gemini", "antigravity-cli", "antigravity-oauth-token"))) rows.push({ key: "credential", value: "oauth-token" });
+    const tok = readJson(P(".gemini", "antigravity-cli", "antigravity-oauth-token"));
+    const idt = tok && tok.id_token ? jwtPayload(tok.id_token) : null;
+    if (idt && idt.email) rows.push({ key: "account", value: idt.email, sensitive: true });
+    if (idt && idt.hd) rows.push({ key: "domain", value: idt.hd });
+    if (tok && tok.auth_method) rows.push({ key: "authType", value: tok.auth_method });
+    if (tok && tok.token) {
+      rows.push({ key: "credential", value: tok.token.refresh_token ? "google-oauth (refresh token)" : "google-oauth" });
+      if (tok.token.expiry) rows.push({ key: "tokenExpiry", value: String(tok.token.expiry).replace("T", " ").slice(0, 19) });
+    }
+    const settings = readJson(P(".gemini", "antigravity-cli", "settings.json"));
+    if (settings && settings.model) rows.push({ key: "configuredModel", value: String(settings.model) });
+    if (settings && Array.isArray(settings.trustedWorkspaces)) rows.push({ key: "trustedWorkspaces", value: String(settings.trustedWorkspaces.length) });
     const mcp = readJson(P(".gemini", "antigravity-cli", "mcp_config.json"));
     if (mcp && mcp.mcpServers) rows.push({ key: "mcpServers", value: String(Object.keys(mcp.mcpServers).length) });
+    const inst = (() => {
+      try {
+        return fs.readFileSync(P(".gemini", "antigravity-cli", "installation_id"), "utf8").trim();
+      } catch (e) {
+        return null;
+      }
+    })();
+    if (inst) rows.push({ key: "installationId", value: inst, sensitive: true });
     return { rows, quotaNote: "noQuotaApi" };
   },
   "gemini-cli": () => {
     const rows = [];
+    // Gemini CLI 自己的凭证是 ~/.gemini/oauth_creds.json（id_token 里有 email）；google_accounts.json 的 active 兜底
+    const creds = readJson(P(".gemini", "oauth_creds.json"));
+    const idt = creds && creds.id_token ? jwtPayload(creds.id_token) : null;
     const acc = readJson(P(".gemini", "google_accounts.json"));
-    const active = acc && (acc.active || (Array.isArray(acc.accounts) && acc.accounts[0] && acc.accounts[0].email));
+    const active = (idt && idt.email) || (acc && (acc.active || (Array.isArray(acc.accounts) && acc.accounts[0] && acc.accounts[0].email)));
     if (active) rows.push({ key: "account", value: String(active), sensitive: true });
     const settings = readJson(P(".gemini", "settings.json"));
     const auth = settings && settings.security && settings.security.auth && settings.security.auth.selectedType;

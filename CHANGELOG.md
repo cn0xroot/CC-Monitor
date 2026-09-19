@@ -98,7 +98,9 @@
   认证方式 / 凭证类型或 API Key 末四位、配置的模型、已监测会话数、最近活动、用过的模型；凭证本身不读），额度卡和状态页
   额度板显示"该 agent 无额度接口"，"隐藏敏感信息"同样对账号行生效。各家线索按其公开文件布局取（Antigravity /
   Gemini 的 `google_accounts.json`、Codex 的 `auth.json`、Grok 的 `user-settings.json`、OpenCode 的 `auth.json`、
-  ZCode 的 `provider_config.json`），文件不存在那一项就不显示。
+  ZCode 的 `provider_config.json`），文件不存在那一项就不显示。Antigravity CLI 的登录账号读它自己的
+  `~/.gemini/antigravity-cli/antigravity-oauth-token`（`id_token` 里的 email），不是 Gemini CLI 的 `google_accounts.json`——
+  两家可以登不同的 Google 账号，真机上就是不同的；另加认证方式、令牌到期、配置的模型、已信任工作区数、安装 ID。
 - **其它 agent 的进程心跳不跳**：进程列表以前只按 cwd 把进程和审计会话对上，别家 agent 的 hook cwd 常常不是进程
   的启动目录（Antigravity 报工作区根），对不上就没有"最近活动"时间、心跳永远灰直线。现在优先用 `sessions` 表里
   hook 登记的根进程 pid 精确对上，对不上再退回 cwd。Antigravity 适配器不再把 `run_command` 的 `Cwd` 当事件 cwd。

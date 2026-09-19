@@ -122,7 +122,10 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   status-page usage board say "no quota API for this agent"; "hide sensitive info" masks the account rows
   too. Hints follow each vendor's public file layout (Antigravity / Gemini `google_accounts.json`, Codex
   `auth.json`, Grok `user-settings.json`, OpenCode `auth.json`, ZCode `provider_config.json`) and are
-  simply omitted when the file is absent.
+  simply omitted when the file is absent. Antigravity CLI's signed-in account is read from its own
+  `~/.gemini/antigravity-cli/antigravity-oauth-token` (the `id_token` email), not from Gemini CLI's
+  `google_accounts.json` — the two can be signed into different Google accounts and were on the test
+  machine; auth method, token expiry, configured model, trusted-workspace count and installation id added.
 - **No heartbeat for other agents' processes**: the process list matched processes to audit sessions by
   cwd only; another agent's hook cwd is often not the directory it was launched from (Antigravity reports
   the workspace root), so nothing matched, there was no "last activity" time and the vital sign stayed a
