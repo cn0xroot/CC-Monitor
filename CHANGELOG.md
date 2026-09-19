@@ -104,6 +104,12 @@
   自研 agent 用。新增 `tests/test_probe_files.py`（16 个用例）。
 
 ### 修复
+- **切换到其它 agent 后点「隐藏敏感信息」，面板变回 Claude Code 的账号**：`toggleAccountMask()`
+  切换打码状态时不管当前选的是哪家 agent，一律拿 `accountInfoCache`（Claude Code 的 `/api/account`
+  数据，可能是切换 agent 之前遗留的旧缓存）重画账号面板，把正显示着的 Antigravity CLI 等「账号 &
+  环境」面板整个盖回 Claude 的姓名、邮箱、组织、套餐、账号 UUID 等信息。现在按 `agentFilter`
+  分流：选了别家 agent 时用该 agent 自己的 `agentAccountCache` 重画（`renderAgentAccountInto`
+  从 `refreshAgentAccountPanel` 里拆出来的公共渲染函数），选 Claude Code 时才用 `accountInfoCache`。
 - **OpenClacky 注册表正则多转义**（PR #3 合入时修）：`config_tamper_paths` / `history_paths` 写成 `\\\\.clacky`，解码后
   是"反斜杠 + 任意字符"，`agent_config_tamper` 对 `~/.clacky/hooks.yml` 不生效。改为单层转义，并加了一条对所有
   agent 的注册表正则做编译与转义检查的测试。

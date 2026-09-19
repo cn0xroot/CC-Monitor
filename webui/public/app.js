@@ -3042,7 +3042,15 @@ function toggleAccountMask() {
     // 存不下就只在本次会话生效
   }
   syncAccountMaskBtns();
-  // 用缓存里的账号信息就地重画，不用再打一次接口
+  // 就地重画，不用再打一次接口——但重画哪一份数据得看当前选的是哪家 agent：过滤器选了别家时，
+  // 这两个 DOM 节点装的是 refreshAgentAccountPanel() 画的"账号 & 环境"行，不是 accountInfoCache
+  // 里缓存的 Claude Code 账号；不分情况一律拿 accountInfoCache 去重画，会把别家的面板整个盖回
+  // Claude 的信息（哪怕本来就没打开过 Claude 面板，缓存也可能是上次切过来之前遗留的旧数据）。
+  if (agentFilter && agentFilter !== "claude-code") {
+    renderAgentAccountInto("anthropic-profile-box", "anthropic-profile-info", agentAccountCache);
+    renderAgentAccountInto("status-profile-box", "status-profile-info", agentAccountCache);
+    return;
+  }
   renderAccountProfileInto("anthropic-profile-box", "anthropic-profile-info", accountInfoCache);
   renderAccountProfileInto("status-profile-box", "status-profile-info", accountInfoCache);
 }
@@ -3204,8 +3212,31 @@ function renderStripUsage(bucket, note) {
 
 // 过滤器选了别家 agent：账号 & 额度这块换成那家的"账号 & 环境"面板（各家没有本地额度接口，
 // 给的是安装 / 版本 / 登录账号线索 / hook 接入状态 / 会话与模型），态势条右侧的额度卡显示"该 agent 无额度接口"。
+// 行数据缓存进 agentAccountCache，跟 accountInfoCache（Claude Code 那份）分开存——toggleAccountMask()
+// 切换打码时要能认出"现在装在这两个 DOM 节点里的是谁的数据"，两份缓存混一起会在切换 agent 后
+// 把上一家（或 Claude Code）的信息重新画回来，这正是"隐藏敏感信息"点了却显示别家账号的成因。
+let agentAccountCache = null;
+
+function renderAgentAccountInto(boxId, listId, cached) {
+  const box = document.getElementById(boxId);
+  const list = document.getElementById(listId);
+  if (!box || !list || !cached) return;
+  const rows = cached.rows || [];
+  list.innerHTML = rows
+    .map((r) => {
+      const label = t("home.agentAccount.row." + r.key);
+      const value = r.sensitive && accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(r.key === "status" ? t(r.value === "verified" ? "agents.status.verified" : "agents.status.experimental") : r.value);
+      return `<div class="bar-row"><span class="name">${escapeHtml(label)}</span><span>${value}</span></div>`;
+    })
+    .join("");
+  box.hidden = rows.length === 0;
+  const accountCol = document.querySelector(".home-account .account-col");
+  if (accountCol) accountCol.hidden = rows.length === 0;
+}
+
 async function refreshAgentAccountPanel(agentId) {
   const info = await api(`/api/agent-account?agent=${encodeURIComponent(agentId)}`);
+  agentAccountCache = info;
   document.querySelectorAll('[data-i18n="home.sec.account"]').forEach((el) => {
     el.textContent = t("home.sec.accountAgent", { agent: agentDisplay(agentId) });
   });
@@ -3220,23 +3251,8 @@ async function refreshAgentAccountPanel(agentId) {
   cardsEl.innerHTML = `<div class="empty-state">${t("home.agentAccount.noQuota", { agent: agentDisplay(agentId) })}</div>`;
   if (usageBoard) usageBoard.innerHTML = cardsEl.innerHTML;
   renderStripUsage(null, t("home.agentAccount.noQuotaShort"));
-  const rows = (info && info.rows) || [];
-  const html = rows
-    .map((r) => {
-      const label = t("home.agentAccount.row." + r.key);
-      const value = r.sensitive && accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(r.key === "status" ? t(r.value === "verified" ? "agents.status.verified" : "agents.status.experimental") : r.value);
-      return `<div class="bar-row"><span class="name">${escapeHtml(label)}</span><span>${value}</span></div>`;
-    })
-    .join("");
-  for (const [boxId, listId] of [["anthropic-profile-box", "anthropic-profile-info"], ["status-profile-box", "status-profile-info"]]) {
-    const box = document.getElementById(boxId);
-    const list = document.getElementById(listId);
-    if (!box || !list) continue;
-    box.hidden = rows.length === 0;
-    list.innerHTML = html;
-  }
-  const accountCol = document.querySelector(".home-account .account-col");
-  if (accountCol) accountCol.hidden = rows.length === 0;
+  renderAgentAccountInto("anthropic-profile-box", "anthropic-profile-info", agentAccountCache);
+  renderAgentAccountInto("status-profile-box", "status-profile-info", agentAccountCache);
 }
 
 async function refreshHomeAnthropicInfo() {

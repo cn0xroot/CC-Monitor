@@ -130,6 +130,14 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   when `--agent` is absent. For hook-less custom agents. New `tests/test_probe_files.py` (16 cases).
 
 ### Fixed
+- **Clicking "hide sensitive info" after switching to another agent showed Claude Code's account
+  again**: `toggleAccountMask()` always re-rendered the account panel from `accountInfoCache`
+  (Claude Code's `/api/account` data, possibly a stale value left over from before the agent was
+  switched) regardless of which agent was selected, overwriting the visible Antigravity CLI (or any
+  other agent's) "account & environment" panel with Claude's name, email, organization, plan and
+  account UUID. It now branches on `agentFilter`: a non-Claude-Code agent re-renders from that
+  agent's own `agentAccountCache` (via `renderAgentAccountInto`, factored out of
+  `refreshAgentAccountPanel`); Claude Code still uses `accountInfoCache`.
 - **OpenClacky registry regexes double-escaped** (fixed while merging PR #3): `config_tamper_paths` /
   `history_paths` were written as `\\\\.clacky`, which decodes to "a backslash then any char", so
   `agent_config_tamper` never matched `~/.clacky/hooks.yml`. Single-escaped now, plus a test that compiles
