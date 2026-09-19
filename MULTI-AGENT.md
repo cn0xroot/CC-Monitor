@@ -18,6 +18,7 @@
 7. [兼容性与升级](#7-兼容性与升级)
 8. [故障排查](#8-故障排查)
 9. [未完成事项](#9-未完成事项)
+10. [真机测试记录：Antigravity CLI](#10-真机测试记录antigravity-cliagy-126--127-2026-09-18)
 
 ---
 
@@ -715,3 +716,30 @@ cd webui && npm test                # 30 个用例
   消除重启窗口。
 - **小项**：`install.py --uninstall`；首页统计卡随 agent 过滤器变化；额度卡对非 Claude agent
   的提示文案；各家 hook 协议的真机验证（第 4 节各"待实测"）。
+
+## 10. 真机测试记录：Antigravity CLI（agy 1.2.6 / 1.2.7，2026-09-18）
+
+本机装了 Antigravity CLI，是除 Claude Code 外唯一跑过端到端的 agent。这里记下测出来的问题、根因和修法，
+后面接其它 agent 时大概率会再碰到同一类事。
+
+| # | 现象 | 根因 | 修法 | 提交 |
+|---|---|---|---|---|
+| 1 | 探针把 agy 的每条命令都报成"疑似绕过监测" | 在 Claude Code 的终端里启动 agy，旧口径把嵌套的 agent 归到外层 claude 名下，交叉验证拿 claude 的 hook 记录去解释 agy 的命令，全对不上 | 别家嵌套时内层是自己的根（内核 `sched_process_exec` 重新登记、`/proc` 扫描同口径） | dc636b2 |
+| 2 | 探针把 `~/.local/bin/.update_test*` 报成越界写入 | agy 启动时往安装目录写自更新探测文件 | 注册表 `process.file_ignore_globs` | dc636b2 |
+| 3 | Log 审计里刷出一堆空的"提交"事件 | `PreInvocation` 在每次模型调用前都触发（一轮里工具每跑一步一次），且没有 prompt 文本 | 只把 `invocationNum == 0` 记成 SessionStart，其余丢弃 | dc636b2 |
+| 4 | 会话 cwd 是 `~/.gemini/antigravity-cli/scratch` | 适配器把 `run_command` 的 `Cwd`（agy 默认在 scratch 目录跑命令）当成事件 cwd | 事件 cwd 用 `workspacePaths[0]`，`Cwd` 留在 `tool_input.cwd` | 979bde5 |
+| 5 | 进程列表里 agy 的心跳是灰直线 | 进程 ↔ 会话按 cwd 匹配，hook 报工作区根、进程在启动目录，对不上就没有"最近活动" | 优先按 `sessions.root_pid` 对进程 | 979bde5 |
+| 6 | "账号 & 额度"仍显示 Anthropic 的 | 这块只认 Anthropic | 选别家 agent 时换成该家的"账号 & 环境"面板（`/api/agent-account`） | 979bde5 |
+| 7 | 面板显示的登录账号是别人的 | 错拿 Gemini CLI 的 `~/.gemini/google_accounts.json`，两家共用 `~/.gemini` 但凭证独立、可以登不同账号 | 读 agy 自己的 `antigravity-oauth-token` 里 `id_token` 的 email | f1fb9bd |
+| 8 | 会话被判"已结束"、状态页心跳不跳 | agy 每个工具 / hook 调用 fork 一个几秒就退出的同名 agy 子进程，hook 父链找到的"最近 agent 进程"是它，会话登记到它上面，一退出就判死 | 同家同名子进程不算根，归最外层同类祖先：hook 父链、`/proc` 扫描、bpftrace `@rcomm` 三处一致 | a9dc36b |
+| 9 | 会话列表模型为空 | Antigravity 的 transcript 不带模型名 | hook stdin 的 `modelName` 记进 `sessions.model`，transcript 找不到时用它 | a9dc36b |
+| 10 | 改了服务端代码页面没变 | Node 不热加载 `lib/`，用户的 Web UI 是改动前起的 | 重启 `./start.sh`；不是 bug，但每次都要提醒 | — |
+
+验证通过的路径：`sudo pip install` 被拦（agy 回显 "tool call denied by pre-tool hook: [CC-Monitor] …"）；
+`crontab -l` 走审批台从网页放行后执行；探针把 `bash -c …` 归到 antigravity-cli 且与 hook 记录交叉验证吻合；
+AI Tap 解析 agy 的 transcript（`step_index/source/type` 格式）。
+
+仍未验证：`multi_replace_file_content`、`PostToolUse` 的 `error` 字段、`ask` 类决策、工作区级 `.agents/hooks.json`
+与全局的合并方式、token 用量（transcript 和 hook 都不给，这几列会一直是空）。
+
+Gemini CLI 也装了，但账号提示"该客户端已不再支持，请迁移到 Antigravity"，跑不起来，没有任何真机结论。
