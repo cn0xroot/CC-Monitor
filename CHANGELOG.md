@@ -72,6 +72,17 @@
   一轮端到端（拦截 / 审批台放行 / 探针归属与交叉验证）；Grok CLI 按其 `src/hooks/` 源码实现（退出码 2
   阻断），未运行过。所有非 Claude Code 的 agent 在注册表里标 `status: experimental`，`install.py --list`、
   `CC-Monitor agents`、install 输出和 Web UI 徽标（β 角标）都会标明"实验性、未真机验证"。
+- **OpenClacky 接入（实验性）**：读 `~/.clacky/hooks.yml`（只认用户级，没有项目级），同一个事件能挂多条
+  hook，而且两个事件的协议不一样：`before_tool_use` 走 rewrite 协议（`type: rewrite`），payload 是 Claude
+  Code PreToolUse 的形状、退出码 2 阻断且理由 stderr 优先于 stdout；`after_tool_use` 只能用 simple 协议，
+  payload 是 `{event, tool: {name, arguments}, result}`、`arguments` 是 JSON 字符串。适配器按
+  `hook_event_name` / `event` 自动分辨这两种形状。工具名是小写（`terminal` / `write` / `file_reader`…），
+  进规则引擎前过注册表映射，路径字段 `path` → `file_path`；terminal 的交互式输入（`session_id` + `input`，
+  也就是往已经开着的 shell 里写“下半条命令行”）也当 command 送规则，否则 `rm -rf /` 从这条路进来是盲区。
+  install.py 写 `~/.clacky/hooks.yml` 时用一对注释标记圈出自己那段（幂等、可整段删除），文件里已有同名键
+  就一个字都不动、只打印待粘贴的片段。本机用 gem 自带的 `ShellHookLoader` 加载生成的配置做过一轮端到端
+  （拦截 / 工具名与字段映射 / 交互输入均通过），未在真实会话里跑过。
+
 - **嵌套 agent 归属改为"内层是自己的根"**：在 Claude Code 终端里启动 agy，agy 及其子进程的系统层
   事件归 antigravity-cli 而不是 claude-code——它的 hook 事件按自己的 `--agent` 记，交叉验证才对得上
   （旧口径下真机实测每条命令都被误报为绕过）。注册表新增 `process.file_ignore_globs`（agy 的

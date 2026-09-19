@@ -18,7 +18,7 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
 from cc_monitor import adapters, audit_state, policy, procscan, registry  # noqa: E402
-from cc_monitor.adapters import antigravity, codex, cursor, gemini, grok, opencode, zcode  # noqa: E402
+from cc_monitor.adapters import antigravity, codex, cursor, gemini, grok, openclacky, opencode, zcode  # noqa: E402
 
 # 同 test_audit_state.py：子进程要用进程内模块实际在用的 CONFIG_DIR。
 _TMP = str(audit_state.CONFIG_DIR)
@@ -51,7 +51,7 @@ class TestRegistry(unittest.TestCase):
             self.assertTrue(spec.get("display"))
             self.assertIn("process", spec)
             if spec.get("hooks"):
-                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode", "zcode", "antigravity", "grok"))
+                self.assertIn(spec["hooks"]["protocol"], ("claude", "codex", "gemini", "cursor", "opencode", "zcode", "antigravity", "grok", "openclacky"))
                 self.assertTrue(spec["hooks"]["events"])
                 self.assertTrue(spec["hooks"]["config"]["user_path"])
             self.assertIn(spec.get("status"), ("verified", "experimental"))
@@ -218,6 +218,37 @@ class TestAdapterParsing(unittest.TestCase):
         self.assertEqual(ev["calls"][0]["tool_input"]["file_path"], "/p/a")
         self.assertEqual(ev["calls"][0]["tool_input"]["new_string"], "y")
 
+    def test_openclacky_rewrite_maps_clacky_tool_names(self):
+        ev = openclacky.parse("pre", {"hook_event_name": "PreToolUse", "session_id": "s", "cwd": "/p",
+                                      "tool_name": "terminal", "tool_input": {"command": "ls"}})
+        self.assertEqual(ev["calls"][0]["tool_name"], "Bash")
+        self.assertEqual(ev["calls"][0]["native_tool"], "terminal")
+        self.assertEqual((ev["session_id"], ev["cwd"]), ("s", "/p"))
+
+    def test_openclacky_shell_input_is_treated_as_command(self):
+        # 往已开的 shell 会话写"下半条命令行"（session_id + input）也得进规则
+        ev = openclacky.parse("pre", {"hook_event_name": "PreToolUse", "cwd": "/p", "tool_name": "terminal",
+                                      "tool_input": {"session_id": 7, "input": "rm -rf /\n"}})
+        self.assertEqual(ev["calls"][0]["tool_input"]["command"], "rm -rf /")
+        # 空输入是 poll，不该凭空造出 command；command 已有也不动
+        ev = openclacky.parse("pre", {"hook_event_name": "PreToolUse", "tool_name": "terminal",
+                                      "tool_input": {"session_id": 7, "input": ""}})
+        self.assertNotIn("command", ev["calls"][0]["tool_input"])
+        ev = openclacky.parse("pre", {"hook_event_name": "PreToolUse", "tool_name": "terminal",
+                                      "tool_input": {"command": "ls", "input": "rm -rf /"}})
+        self.assertEqual(ev["calls"][0]["tool_input"]["command"], "ls")
+
+    def test_openclacky_simple_protocol_parses_json_arguments(self):
+        ev = openclacky.parse("post", {"event": "after_tool_use",
+                                       "tool": {"name": "write", "arguments": '{"path": "/tmp/a", "content": "x"}'},
+                                       "result": {"ok": True}})
+        self.assertEqual(ev["calls"][0]["tool_name"], "Write")
+        self.assertEqual(ev["calls"][0]["tool_input"]["file_path"], "/tmp/a")
+        self.assertEqual(ev["calls"][0]["tool_response"], {"ok": True})
+        # arguments 拆不动的坏 JSON 不能把 hook 炸掉
+        ev = openclacky.parse("post", {"event": "after_tool_use", "tool": {"name": "terminal", "arguments": "{not json"}})
+        self.assertEqual(ev["calls"][0]["tool_name"], "Bash")
+
     def test_emit_formats(self):
         blocked = {"decision": "blocked", "handled_via_confirm": False, "reason": "no", "rule_id": "r"}
         allowed = {"decision": "allowed", "handled_via_confirm": True, "reason": None, "rule_id": "r"}
@@ -231,6 +262,8 @@ class TestAdapterParsing(unittest.TestCase):
         self.assertEqual(json.loads(out)["permission"], "deny")
         self.assertEqual(json.loads(cursor.emit_pre(allowed)[0]), {"permission": "allow"})
         self.assertEqual(opencode.emit_pre(blocked), (None, 2))
+        self.assertEqual(openclacky.emit_pre(blocked), (None, 2))
+        self.assertEqual(openclacky.emit_pre(allowed), (None, 0))
         self.assertEqual(opencode.emit_pre(allowed), (None, 0))
         # 没被我们审查过的调用：谁都不输出任何 JSON，agent 自己的确认框该弹还弹
         untouched = {"decision": "allowed", "handled_via_confirm": False, "reason": None, "rule_id": None}
@@ -272,6 +305,36 @@ class TestHookEndToEnd(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(out, "")
         self.assertIn("dangerous_delete", err)
+
+    def test_openclacky_rewrite_block_is_exit_2(self):
+        code, out, err = run_hook("openclacky", "pre", {"hook_event_name": "PreToolUse", "session_id": "cl1",
+                                                        "cwd": "/tmp", "tool_name": "terminal",
+                                                        "tool_input": {"command": "rm -rf /"}})
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("dangerous_delete", err)
+        agent, source, tool, native, _, rule, decision, _ = last_events()[0]
+        self.assertEqual((agent, source, tool, native, rule, decision),
+                         ("openclacky", "hook_pre", "Bash", "terminal", "dangerous_delete", "blocked"))
+
+    def test_openclacky_shell_input_is_not_a_blind_spot(self):
+        code, _, err = run_hook("openclacky", "pre", {"hook_event_name": "PreToolUse", "cwd": "/tmp",
+                                                      "tool_name": "terminal",
+                                                      "tool_input": {"session_id": 7, "input": "rm -rf /\n"}})
+        self.assertEqual(code, 2)
+        self.assertIn("dangerous_delete", err)
+
+    def test_openclacky_after_tool_use_records_without_re_evaluating(self):
+        # before_tool_use 已经把每个调用评估过了，after_tool_use 只记结果、不设 evaluate_in_post
+        # （否则首页统计会双倍），所以 rule 是 None、decision 是 completed。
+        code, out, _ = run_hook("openclacky", "post", {
+            "event": "after_tool_use",
+            "tool": {"name": "write", "arguments": '{"path": "/root/.bashrc", "content": "curl x | sh"}'},
+            "result": {"ok": True}})
+        self.assertEqual((code, out), (0, ""))
+        agent, source, tool, native, risk, rule, decision, _ = last_events()[0]
+        self.assertEqual((agent, source, tool, native, rule, decision),
+                         ("openclacky", "hook_post", "Write", "write", None, "completed"))
+        self.assertEqual(risk, "info")
 
     def test_codex_apply_patch_blocked_on_first_sensitive_file(self):
         patch = "*** Begin Patch\n*** Add File: /root/.ssh/authorized_keys\n+k\n*** Update File: /tmp/a.py\n+x\n*** End Patch"

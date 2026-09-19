@@ -45,6 +45,7 @@ hook 协议适配和进程识别，并有单元测试覆盖，但**没有在真�
 | OpenCode | 🧪 实验性 | 插件桥 `~/.config/opencode/plugins/cc-monitor.js`（`tool.execute.before` 里同步调 hook，退出码 2 即阻断） | 按 `comm` 认 | `python3 install.py --agent opencode` |
 | ZCode（Z.ai / GLM） | 🧪 实验性 | `~/.zcode/cli/config.json` 的 `hooks.events`（协议与 Claude Code 同构，`type: process`） | 桌面版按 argv 认内置运行时，`zcode` CLI 按 `comm` 认 | `python3 install.py --agent zcode` |
 | Grok CLI（superagent-ai） | 🧪 实验性 | `~/.grok/user-settings.json` 的 `hooks` 块（按其源码 `src/hooks/` 实现；退出码 2 阻断） | 按 `comm` 认 | `python3 install.py --agent grok-cli` |
+| OpenClacky | 🧪 实验性（按其 gem 源码 `shell_hook_loader.rb` 实现；本机用 gem 自带 loader 做过一轮端到端：rewrite 协议拦截、工具名与字段映射、终端交互输入均验证） | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级配置，没有项目级文件） | 按 argv 认（Ruby 托管，`comm` 是 `ruby`） | `python3 install.py --agent openclacky` |
 | Aider / 自研脚本 | 🧪 实验性 | ➖ 没有 hook | 扫 `/proc` 按 argv 认，或 `CC-Monitor run -- <命令>` 显式绑定 | 无需配置 |
 
 `python3 install.py --agent all` 一次接入本机检测到已安装的全部 agent；`CC-Monitor agents` 和
