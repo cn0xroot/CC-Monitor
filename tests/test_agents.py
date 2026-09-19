@@ -177,7 +177,9 @@ class TestAdapterParsing(unittest.TestCase):
                                        "transcriptPath": "/w/.system_generated/logs/transcript.jsonl", "stepIdx": 3,
                                        "toolCall": {"name": "run_command", "args": {"CommandLine": "ls -la", "Cwd": "/w/sub", "WaitMsBeforeAsync": 5000}}})
         c = ev["calls"][0]
-        self.assertEqual((c["tool_name"], c["tool_input"]["command"], ev["cwd"], ev["session_id"]), ("Bash", "ls -la", "/w/sub", "c1"))
+        # 事件 cwd 是工作区根（会话 cwd 要稳定），run_command 自带的 Cwd 留在 tool_input.cwd
+        self.assertEqual((c["tool_name"], c["tool_input"]["command"], ev["cwd"], ev["session_id"]), ("Bash", "ls -la", "/w", "c1"))
+        self.assertEqual(c["tool_input"]["cwd"], "/w/sub")
         self.assertEqual(ev["extra"]["model"], "gemini-3.8-flash-high")
         ev = antigravity.parse("pre", {"conversationId": "c1", "workspacePaths": ["/w"],
                                        "toolCall": {"name": "write_to_file", "args": {"TargetFile": "/w/a.py", "CodeContent": "x", "Overwrite": True}}})

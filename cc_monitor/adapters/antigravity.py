@@ -40,9 +40,9 @@ def parse(mode, data, agent=AGENT):
         native_input = tc.get("args") if isinstance(tc.get("args"), dict) else (data.get("tool_input") or {})
         c = base.call(agent, native_tool, native_input,
                       tool_response={"error": data["error"]} if data.get("error") else None)
-        # run_command 自带 Cwd，比工作区根更准
-        if c["tool_name"] == "Bash" and isinstance(c["tool_input"].get("cwd"), str) and c["tool_input"]["cwd"]:
-            common["cwd"] = c["tool_input"]["cwd"]
+        # run_command 自带的 Cwd（agy 默认是 ~/.gemini/antigravity-cli/scratch）留在 tool_input.cwd 里，
+        # 事件的 cwd 仍用工作区根：会话的 cwd 要稳定，Web UI 靠它把会话和进程、目录对上；
+        # 越界规则按工作区根算也更合理（scratch 目录本身就在项目外）。
         # multi_replace_file_content 的 ReplacementChunks 拼成一段 new_string，content 类规则才看得到
         chunks = c["tool_input"].get("ReplacementChunks")
         if isinstance(chunks, list):

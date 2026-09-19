@@ -114,6 +114,20 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   when `--agent` is absent. For hook-less custom agents. New `tests/test_probe_files.py` (16 cases).
 
 ### Fixed
+- **Anthropic account and quota still shown after selecting another agent**: with a non-Claude-Code
+  agent selected, the "account & quota" block becomes that agent's "account & environment" panel (new
+  `/api/agent-account`: integration status, binary and version, hook config file and whether it is
+  installed, signed-in account / auth type / credential kind or API-key tail, configured model, sessions
+  monitored, last activity, models seen; credentials themselves are never read); the quota card and the
+  status-page usage board say "no quota API for this agent"; "hide sensitive info" masks the account rows
+  too. Hints follow each vendor's public file layout (Antigravity / Gemini `google_accounts.json`, Codex
+  `auth.json`, Grok `user-settings.json`, OpenCode `auth.json`, ZCode `provider_config.json`) and are
+  simply omitted when the file is absent.
+- **No heartbeat for other agents' processes**: the process list matched processes to audit sessions by
+  cwd only; another agent's hook cwd is often not the directory it was launched from (Antigravity reports
+  the workspace root), so nothing matched, there was no "last activity" time and the vital sign stayed a
+  flat grey line. It now matches by the root pid the hook recorded in `sessions` first and falls back to
+  cwd. The Antigravity adapter no longer uses `run_command`'s `Cwd` as the event cwd.
 - **Home stats, drilldowns, approval desk and status page kept showing all-agent (Claude Code) data after
   switching the agent filter**: only the audit log and session dropdown honoured `?agent=`. The data layer
   now handles it once: `lib/agentScope.js` carries the request's agent through AsyncLocalStorage and rewrites

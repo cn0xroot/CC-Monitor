@@ -1096,7 +1096,7 @@ function setAgentFilter(id) {
   pollLogs();
   // 数据层按 ?agent= 过滤（lib/agentScope.js），首页统计 / 状态页 / 审批台 / Tap 合并视图都要立刻重拉，
   // 不然要等各自的轮询周期（最长 30 秒）才换过来，看起来像"切了没反应"。
-  for (const fn of [refreshOverview, refreshStatusBoard, refreshApprovals, refreshApprovalHistory, refreshIdentityCard, refreshModelUsage]) {
+  for (const fn of [refreshOverview, refreshStatusBoard, refreshApprovals, refreshApprovalHistory, refreshIdentityCard, refreshModelUsage, refreshHomeAnthropicInfo, refreshUsageBoard]) {
     try {
       const r = fn();
       if (r && typeof r.catch === "function") r.catch(() => {});
@@ -2921,8 +2921,13 @@ function usageCard(label, bucket, windowMs, optional = false) {
 }
 
 async function refreshUsageBoard() {
-  const result = await api("/api/usage");
   const el = document.getElementById("usage-board");
+  if (agentFilter && agentFilter !== "claude-code") {
+    // 别家 agent 没有额度接口；状态页这块由 refreshAgentAccountPanel 统一写
+    el.innerHTML = `<div class="empty-state">${t("home.agentAccount.noQuota", { agent: agentDisplay(agentFilter) })}</div>`;
+    return;
+  }
+  const result = await api("/api/usage");
   if (!result) return;
   if (result.error) {
     el.innerHTML = `<div class="empty-state">${t("status.usageError", { msg: escapeHtml(result.error) })}</div>`;
@@ -3174,12 +3179,12 @@ function renderLimitsInto(box, list, limits) {
 
 // 首页态势摘要条最右一张卡：单次额度剩余百分比 + 迷你 neon 条 + 重置倒计时。
 // 跟下面账号区里那张大卡是同一份数据、同一套 conky 分段配色，只是尺寸缩小。
-function renderStripUsage(bucket) {
+function renderStripUsage(bucket, note) {
   const el = document.getElementById("strip-usage");
   if (!el) return;
   const title = `<div class="strip-title">${t("home.strip.sessionQuota")}</div>`;
   if (!bucket || bucket.utilization === null) {
-    el.innerHTML = `<div class="strip-num" style="color:var(--text-dim)">-</div><div class="strip-body">${title}<div class="strip-cap">${t("home.strip.quotaUnavailable")}</div></div>`;
+    el.innerHTML = `<div class="strip-num" style="color:var(--text-dim)">-</div><div class="strip-body">${title}<div class="strip-cap">${escapeHtml(note || t("home.strip.quotaUnavailable"))}</div></div>`;
     return;
   }
   const windowExpired = bucket.resetsAt && new Date(bucket.resetsAt).getTime() < Date.now();
@@ -3197,7 +3202,54 @@ function renderStripUsage(bucket) {
     </div>`;
 }
 
+// 过滤器选了别家 agent：账号 & 额度这块换成那家的"账号 & 环境"面板（各家没有本地额度接口，
+// 给的是安装 / 版本 / 登录账号线索 / hook 接入状态 / 会话与模型），态势条右侧的额度卡显示"该 agent 无额度接口"。
+async function refreshAgentAccountPanel(agentId) {
+  const info = await api(`/api/agent-account?agent=${encodeURIComponent(agentId)}`);
+  document.querySelectorAll('[data-i18n="home.sec.account"]').forEach((el) => {
+    el.textContent = t("home.sec.accountAgent", { agent: agentDisplay(agentId) });
+  });
+  const cardsEl = document.getElementById("anthropic-usage-cards");
+  const limitsBox = document.getElementById("anthropic-limits-box");
+  const spendBox = document.getElementById("anthropic-spend-box");
+  limitsBox.hidden = true;
+  spendBox.hidden = true;
+  const statusLimits = document.getElementById("status-limits-box");
+  if (statusLimits) statusLimits.hidden = true;
+  const usageBoard = document.getElementById("usage-board");
+  cardsEl.innerHTML = `<div class="empty-state">${t("home.agentAccount.noQuota", { agent: agentDisplay(agentId) })}</div>`;
+  if (usageBoard) usageBoard.innerHTML = cardsEl.innerHTML;
+  renderStripUsage(null, t("home.agentAccount.noQuotaShort"));
+  const rows = (info && info.rows) || [];
+  const html = rows
+    .map((r) => {
+      const label = t("home.agentAccount.row." + r.key);
+      const value = r.sensitive && accountMasked ? ACCOUNT_MASK_TEXT : escapeHtml(r.key === "status" ? t(r.value === "verified" ? "agents.status.verified" : "agents.status.experimental") : r.value);
+      return `<div class="bar-row"><span class="name">${escapeHtml(label)}</span><span>${value}</span></div>`;
+    })
+    .join("");
+  for (const [boxId, listId] of [["anthropic-profile-box", "anthropic-profile-info"], ["status-profile-box", "status-profile-info"]]) {
+    const box = document.getElementById(boxId);
+    const list = document.getElementById(listId);
+    if (!box || !list) continue;
+    box.hidden = rows.length === 0;
+    list.innerHTML = html;
+  }
+  const accountCol = document.querySelector(".home-account .account-col");
+  if (accountCol) accountCol.hidden = rows.length === 0;
+}
+
 async function refreshHomeAnthropicInfo() {
+  if (agentFilter && agentFilter !== "claude-code") {
+    await refreshAgentAccountPanel(agentFilter);
+    return;
+  }
+  {
+    // 切回 Claude Code：标题恢复
+    document.querySelectorAll('[data-i18n="home.sec.account"]').forEach((el) => {
+      el.textContent = t("home.sec.account");
+    });
+  }
   await refreshAccountProfile();
   const result = await api("/api/usage");
   const cardsEl = document.getElementById("anthropic-usage-cards");

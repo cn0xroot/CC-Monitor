@@ -12,6 +12,7 @@ const { SessionManager } = require("./lib/sessions");
 const audit = require("./lib/audit");
 const agentsRegistry = require("./lib/agents");
 const agentScope = require("./lib/agentScope");
+const agentAccount = require("./lib/agentAccount");
 const fmt = require("./lib/format");
 const status = require("./lib/status");
 const transcript = require("./lib/transcript");
@@ -276,9 +277,22 @@ app.get("/api/claude-processes", async (req, res) => {
     const key = normCwd(r.cwd, cwdCache);
     if (!sessionByCwd.has(key)) sessionByCwd.set(key, r);
   }
+  // 优先用 sessions 表里 hook 登记的"会话 ↔ 根进程 pid"精确对上（其它 agent 的 hook cwd 和进程
+  // cwd 经常不是同一个目录——Antigravity 的 hook 报工作区根、进程却在启动它的目录——按 cwd
+  // 猜就对不上，进程列表里的心跳永远是灰直线）。对不上的再退回按 cwd 猜。
+  const auditById = new Map(auditRows.map((r) => [r.session_id, r]));
+  const sessionByRootPid = new Map();
+  for (const [sid, root] of audit.sessionRoots()) {
+    if (!root.rootPid) continue;
+    const row = auditById.get(sid);
+    if (!row) continue;
+    const prev = sessionByRootPid.get(root.rootPid);
+    if (!prev || row.last_ts > prev.last_ts) sessionByRootPid.set(root.rootPid, row);
+  }
   const enriched = procs.map((p) => {
-    const lastEventTs = p.cwd ? lastEventByCwd.get(normCwd(p.cwd, cwdCache)) || null : null;
-    const sess = p.cwd ? sessionByCwd.get(normCwd(p.cwd, cwdCache)) : null;
+    const byRoot = sessionByRootPid.get(p.pid) || null;
+    const lastEventTs = byRoot ? byRoot.last_ts : p.cwd ? lastEventByCwd.get(normCwd(p.cwd, cwdCache)) || null : null;
+    const sess = byRoot || (p.cwd ? sessionByCwd.get(normCwd(p.cwd, cwdCache)) : null);
     // 这里永远不会是 "dead"——能进这个列表就说明进程这一刻真的在跑，vitalStatus() 的
     // 第一个参数写死 true，只用它来区分 working（最近有审计事件）还是 idle（挂着但没动静）。
     const v = vitalStatus(true, lastEventTs);
@@ -450,6 +464,14 @@ app.get("/api/logs", (req, res) => {
     };
   });
   res.json({ events, dbPath: audit.dbPath() });
+});
+
+// 其它 agent 的"账号 & 环境"面板（各家没有本地额度接口，给的是安装 / 版本 / 账号线索 / hook 状态 / 会话与模型）
+app.get("/api/agent-account", (req, res) => {
+  const id = String(req.query.agent || "");
+  const data = agentAccount.info(id);
+  if (!data) return res.status(404).json({ error: "unknown agent" });
+  res.json(data);
 });
 
 // ---- REST API: 多 agent ----
