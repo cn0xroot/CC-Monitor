@@ -1094,6 +1094,21 @@ function setAgentFilter(id) {
   document.getElementById("log-list-full").innerHTML = "";
   refreshLogSessionOptions();
   pollLogs();
+  // 数据层按 ?agent= 过滤（lib/agentScope.js），首页统计 / 状态页 / 审批台 / Tap 合并视图都要立刻重拉，
+  // 不然要等各自的轮询周期（最长 30 秒）才换过来，看起来像"切了没反应"。
+  for (const fn of [refreshOverview, refreshStatusBoard, refreshApprovals, refreshApprovalHistory, refreshIdentityCard, refreshModelUsage]) {
+    try {
+      const r = fn();
+      if (r && typeof r.catch === "function") r.catch(() => {});
+    } catch (e) {
+      // 某个刷新函数还没定义（页面初始化顺序）就跳过，轮询会补上
+    }
+  }
+  if (tapSelect.value === TAP_ALL_SESSIONS) {
+    tapNextLine = 0;
+    document.getElementById("tap-list").innerHTML = "";
+    pollTap();
+  }
 }
 
 agentFilterSelect.addEventListener("change", () => setAgentFilter(agentFilterSelect.value));

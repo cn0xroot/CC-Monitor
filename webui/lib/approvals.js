@@ -1,6 +1,7 @@
 "use strict";
 const Database = require("better-sqlite3");
 const { dbPath } = require("./audit");
+const agentScope = require("./agentScope");
 
 // action=confirm 的操作在 hook 那边（cc_monitor/notify.py）会一直等着——同时开两条路：
 // 触发它的那个终端里可以直接按 y/N，这里的"待批准"页面也能点。这个模块只负责读/写
@@ -10,6 +11,7 @@ function withDb(fn, fallback) {
   let db;
   try {
     db = new Database(dbPath(), { fileMustExist: true, timeout: 5000 });
+    agentScope.scope(db, dbPath()); // 待批准列表 / 审批历史也跟着 ?agent= 过滤；resolve 按 id 走，不受影响
     return fn(db);
   } catch (e) {
     return fallback;

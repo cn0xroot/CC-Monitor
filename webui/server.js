@@ -11,6 +11,7 @@ const { WebSocketServer } = require("ws");
 const { SessionManager } = require("./lib/sessions");
 const audit = require("./lib/audit");
 const agentsRegistry = require("./lib/agents");
+const agentScope = require("./lib/agentScope");
 const fmt = require("./lib/format");
 const status = require("./lib/status");
 const transcript = require("./lib/transcript");
@@ -48,6 +49,8 @@ const HOST = process.env.CC_MONITOR_WEBUI_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.CC_MONITOR_WEBUI_PORT || "9999", 10);
 
 const app = express();
+// 多 agent：?agent=<id> 进入 AsyncLocalStorage，数据层所有 FROM events 自动只查那一家（见 lib/agentScope.js）
+app.use(agentScope.middleware);
 app.use(express.json());
 
 // 访问控制闸门：不是本机来源、且"允许远程访问"开关没打开的请求，一律 403，碰不到

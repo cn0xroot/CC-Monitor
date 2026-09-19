@@ -2,6 +2,7 @@
 const os = require("os");
 const path = require("path");
 const Database = require("better-sqlite3");
+const agentScope = require("./agentScope");
 
 function dbPath() {
   const home = process.env.CC_MONITOR_HOME || path.join(os.homedir(), ".cc-monitor");
@@ -761,6 +762,7 @@ function withDb(fn, fallback) {
   let db;
   try {
     db = new Database(dbPath(), { readonly: true, fileMustExist: true });
+    agentScope.scope(db, dbPath()); // 请求带 ?agent= 时，下面所有 FROM events 自动只看那一家
     db.function("cc_is_delete", isDeleteEvent);
     db.function("cc_github_op", githubOpType);
     db.function("cc_is_screenshot", isScreenCaptureEvent);
