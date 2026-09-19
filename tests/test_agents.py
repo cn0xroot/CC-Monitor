@@ -101,6 +101,25 @@ class TestRulesUseRegistry(unittest.TestCase):
             rule, _ = policy.evaluate("Write", {"file_path": path}, rules=rules)
             self.assertEqual(rule["id"] if rule else None, expected, path)
 
+    def test_registry_regexes_are_not_double_escaped(self):
+        """注册表 JSON 里的正则写 "\\." 解码后才是 "\."；写成 "\\\\." 会变成"一个反斜杠 + 任意字符"，
+        规则静默失效（PR #3 的 openclacky.json 就踩过）。每家的 config_tamper_paths / history_paths 都得
+        能编译、且不含字面反斜杠。"""
+        import re as _re
+        for aid in registry.ids():
+            spec = registry.get(aid)
+            for key in ("config_tamper_paths", "history_paths"):
+                for pat in spec.get(key) or []:
+                    _re.compile(pat)
+                    self.assertNotIn("\\\\", pat, "{}.{}: 正则多转义了一层: {}".format(aid, key, pat))
+
+    def test_openclacky_config_and_history_paths_hit_rules(self):
+        rules = policy.load_rules()
+        rule, _ = policy.evaluate("Write", {"file_path": "/home/u/.clacky/hooks.yml"}, rules=rules)
+        self.assertEqual(rule["id"], "agent_config_tamper")
+        rule, _ = policy.evaluate("Read", {"file_path": "/home/u/.clacky/sessions/a.json"}, rules=rules)
+        self.assertEqual(rule["id"], "history_file_read")
+
     def test_history_rule_covers_other_agents_transcripts(self):
         rules = policy.load_rules()
         rule, _ = policy.evaluate("Read", {"file_path": "/home/u/.codex/history.jsonl"}, rules=rules)

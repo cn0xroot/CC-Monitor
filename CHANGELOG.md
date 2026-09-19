@@ -104,6 +104,9 @@
   自研 agent 用。新增 `tests/test_probe_files.py`（16 个用例）。
 
 ### 修复
+- **OpenClacky 注册表正则多转义**（PR #3 合入时修）：`config_tamper_paths` / `history_paths` 写成 `\\\\.clacky`，解码后
+  是"反斜杠 + 任意字符"，`agent_config_tamper` 对 `~/.clacky/hooks.yml` 不生效。改为单层转义，并加了一条对所有
+  agent 的注册表正则做编译与转义检查的测试。
 - **选了其它 agent 仍显示 Anthropic 账号与额度**：过滤器选中非 Claude Code 的 agent 时，"账号 & 额度"整块换成那家的
   "账号 & 环境"面板（新接口 `/api/agent-account`：接入状态、可执行文件与版本、hook 配置文件与是否已接、登录账号 /
   认证方式 / 凭证类型或 API Key 末四位、配置的模型、已监测会话数、最近活动、用过的模型；凭证本身不读），额度卡和状态页

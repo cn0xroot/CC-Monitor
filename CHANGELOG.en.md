@@ -130,6 +130,10 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   when `--agent` is absent. For hook-less custom agents. New `tests/test_probe_files.py` (16 cases).
 
 ### Fixed
+- **OpenClacky registry regexes double-escaped** (fixed while merging PR #3): `config_tamper_paths` /
+  `history_paths` were written as `\\\\.clacky`, which decodes to "a backslash then any char", so
+  `agent_config_tamper` never matched `~/.clacky/hooks.yml`. Single-escaped now, plus a test that compiles
+  and checks every agent's registry regexes.
 - **Anthropic account and quota still shown after selecting another agent**: with a non-Claude-Code
   agent selected, the "account & quota" block becomes that agent's "account & environment" panel (new
   `/api/agent-account`: integration status, binary and version, hook config file and whether it is

@@ -75,10 +75,10 @@
     ".clacky"
   ],
   "config_tamper_paths": [
-    "(^|/)\\\\.clacky/hooks\\\\.yml$"
+    "(^|/)\\.clacky/hooks\\.yml$"
   ],
   "history_paths": [
-    "\\\\.clacky/sessions/"
+    "\\.clacky/sessions/"
   ],
   "launch_command": "openclacky",
   "env_strip_prefixes": [
