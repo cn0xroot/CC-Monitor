@@ -9,6 +9,7 @@
     python3 install.py --agent zcode          # ZCode：~/.zcode/cli/config.json 的 hooks.events 块
     python3 install.py --agent antigravity-cli # Antigravity CLI：~/.gemini/config/hooks.json 的 "cc-monitor" 组
     python3 install.py --agent grok-cli       # Grok CLI：~/.grok/user-settings.json 的 hooks 块
+    python3 install.py --agent openclacky     # OpenClacky：~/.clacky/hooks.yml（YAML；before_tool_use 走 rewrite 协议）
 
 除 Claude Code 外的接入都是实验性的（按官方文档/源码实现，尚未真机验证），--list 里有标注。
     python3 install.py --agent all            # 上面全部（只装本机检测到已安装的那些，--force-all 不做检测）
@@ -31,6 +32,17 @@ sys.path.insert(0, str(REPO_ROOT))
 from cc_monitor import adapters, registry  # noqa: E402
 
 HOOK_BIN = REPO_ROOT / "bin" / "CC-Monitor-hook"
+
+# Clacky 的 hooks.yml 是 YAML，而本项目不带第三方依赖（不引 yaml 库），所以用一对固定标记包住
+# 我们生成的那段：重跑时整段替换（幂等），用户自己写的条目一律不碰；用户已有的、没有这对标记的
+# hooks.yml 则一个字都不改，只打印要粘的内容——YAML 顶层同名键不能出现两次，瞎合并会把用户
+# 的配置搞坏。
+CLACKY_MARKER_BEGIN = "# --- CC-Monitor hooks: begin (auto-generated, 重跑 install.py 会替换这一段) ---"
+CLACKY_MARKER_END = "# --- CC-Monitor hooks: end ---"
+# confirm 规则最长等 90s（cc_monitor/notify.py 的默认 timeout），Clacky 的 rewrite 默认超时只有
+# 60s、simple 默认 10s——不给够时间，Clacky 会把 hook 杀掉并按超时处理，而超时等于放行。
+CLACKY_PRE_TIMEOUT = 120
+CLACKY_POST_TIMEOUT = 30
 
 
 # ---- 通用合并 ----
@@ -174,6 +186,10 @@ def install_agent(agent_id, args):
         print("重启 opencode 后生效（插件目录里的文件会被自动加载）。")
         return
 
+    if kind == "clacky-hooks":
+        install_clacky_hooks(target, agent_id, spec, args)
+        return
+
     settings = _read_json(target)
     if kind == "cursor-hooks":
         settings.setdefault("version", 1)
@@ -238,6 +254,74 @@ def _check_codex_feature_flag(config_toml):
         print("注意: {} 里 hooks 被显式关掉了（[features] hooks = false），改成 true 才会触发。".format(config_toml))
     elif "hooks = true" not in text and "codex_hooks = true" not in text:
         print("提示: 如果 hook 没触发，在 {} 加上:\n  [features]\n  hooks = true".format(config_toml))
+
+
+def _clacky_cmd(hook_bin, mode, agent_id):
+    return '"{}" {} --agent {}'.format(hook_bin, mode, agent_id)
+
+
+def _yaml_quote(text):
+    """整串再套一层 YAML 单引号。命令自己带双引号（路径可能有空格），裸写会让 YAML 在
+    `command: "/path" pre --agent x` 这行直接报 "did not find expected key"。"""
+    return "'{}'".format(text.replace("'", "''"))
+
+
+def clacky_hooks_block(hook_bin, agent_id, events):
+    """生成 hooks.yml 里 CC-Monitor 那一段。before_tool_use 必须用 rewrite 协议：只有它带
+    tool_name/tool_input 的完整 payload，且 exit 2 时理由读 stderr（CC-Monitor 就写 stderr）。
+    after_tool_use 只能用 simple 协议，payload 形状不同，适配器两边都认。"""
+    lines = [CLACKY_MARKER_BEGIN, "hooks:"]
+    for native, mode in events.items():
+        if native == "before_tool_use":
+            lines += [
+                "  before_tool_use:",
+                "    - type: rewrite",
+                '      matcher: "*"',
+                "      name: cc-monitor-pre",
+                "      command: {}".format(_yaml_quote(_clacky_cmd(hook_bin, mode, agent_id))),
+                "      timeout: {}".format(CLACKY_PRE_TIMEOUT),
+            ]
+        elif native == "after_tool_use":
+            lines += [
+                "  after_tool_use:",
+                "    - name: cc-monitor-post",
+                "      command: {}".format(_yaml_quote(_clacky_cmd(hook_bin, mode, agent_id))),
+                "      timeout: {}".format(CLACKY_POST_TIMEOUT),
+            ]
+    lines.append(CLACKY_MARKER_END)
+    return "\n".join(lines) + "\n"
+
+
+def install_clacky_hooks(target, agent_id, spec, args):
+    block = clacky_hooks_block(str(HOOK_BIN), agent_id, spec["hooks"]["events"])
+    if target.exists():
+        try:
+            text = target.read_text(encoding="utf-8")
+        except OSError as e:
+            print("读不了 {}: {}".format(target, e), file=sys.stderr)
+            return
+        if CLACKY_MARKER_BEGIN in text and CLACKY_MARKER_END in text:
+            head, rest = text.split(CLACKY_MARKER_BEGIN, 1)
+            _, tail = rest.split(CLACKY_MARKER_END, 1)
+            target.write_text(head + block.rstrip("\n") + tail, encoding="utf-8")
+            print("[{}] 已更新: {}".format(spec["display"], target))
+        else:
+            print("{} 已存在且不是 CC-Monitor 生成的，一个字都没动——YAML 顶层同名键不能出现两次，"
+                  "自动合并会弄坏你已有的配置。".format(target))
+            print("把下面这段并进去：已经有 hooks: 就把这两个事件追加到它下面。")
+            print()
+            print(block)
+            return
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(block, encoding="utf-8")
+        print("[{}] 已写入: {}".format(spec["display"], target))
+    print("重启 OpenClacky 后生效（hooks.yml 只在启动时加载一次）。")
+    print("before_tool_use 的 timeout 是 {}s：CC-Monitor 的确认规则最长等 90s，而 Clacky 把超时"
+          "当放行处理，调小等于让确认框失效。".format(CLACKY_PRE_TIMEOUT))
+    if args.project:
+        print("注意: OpenClacky 只读 ~/.clacky/hooks.yml，不读项目级 .clacky/hooks.yml"
+              "（lib/clacky/shell_hook_loader.rb 的 DEFAULT_PATH 是写死的），--project 写进去也不会生效。")
 
 
 def col_warn(text):

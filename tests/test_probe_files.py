@@ -16,7 +16,7 @@ os.environ["CC_MONITOR_HOME"] = _TMP
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
-from cc_monitor import probe, procscan, run, storage  # noqa: E402
+from cc_monitor import probe, procscan, registry, run, storage  # noqa: E402
 
 
 class _Capture(object):
@@ -211,11 +211,11 @@ class TestSessionAttribution(unittest.TestCase):
     """hook 沿父链登记 会话↔根进程，探针按根 pid 反查会话；基础设施噪音不落库。"""
 
     def test_find_agent_ancestor_finds_running_agent_or_none(self):
-        # 在 Claude Code 里跑测试时能找到 claude 根；在裸终端里找不到——两种都合法，但返回形状要对
+        # 理论上只可能返回注册表里的 id 或兜底 generic，所以别写死一份名单——加 agent 不用改这里
         root, start, agent = procscan.find_agent_ancestor(os.getpid())
         if agent:
             self.assertIsInstance(root, int)
-            self.assertIn(agent, ("claude-code", "antigravity-cli", "codex", "gemini-cli", "opencode", "zcode", "grok-cli", "cursor", "aider", "generic"))
+            self.assertIn(agent, tuple(registry.ids()) + ("generic",))
         else:
             self.assertEqual((root, start), (None, None))
 

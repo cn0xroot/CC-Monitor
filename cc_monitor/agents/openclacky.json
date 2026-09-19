@@ -1,0 +1,87 @@
+{
+  "id": "openclacky",
+  "display": "OpenClacky",
+  "status": "experimental",
+  "process": {
+    "comm": [
+      "OpenClacky",
+      "openclacky",
+      "clacky"
+    ],
+    "comm_prefix": [],
+    "exe_basename": [
+      "OpenClacky",
+      "openclacky",
+      "clacky"
+    ],
+    "argv_patterns": [
+      "OpenClacky\\.app/Contents/MacOS/OpenClacky",
+      "(^|/)openclacky( |$)",
+      "(^|/)clacky( |$)",
+      "gems/openclacky-[0-9]"
+    ],
+    "shell_comms": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh"
+    ],
+    "infra_noise": [
+      "CC-Monitor-hook",
+      "^git (rev-parse|status|diff|log|ls-files)"
+    ]
+  },
+  "hooks": {
+    "protocol": "openclacky",
+    "config": {
+      "kind": "clacky-hooks",
+      "user_path": "~/.clacky/hooks.yml",
+      "project_path": ".clacky/hooks.yml"
+    },
+    "events": {
+      "before_tool_use": "pre",
+      "after_tool_use": "post"
+    }
+  },
+  "tools": {
+    "terminal": "Bash",
+    "file_reader": "Read",
+    "write": "Write",
+    "edit": "Edit",
+    "glob": "Glob",
+    "grep": "Grep",
+    "web_fetch": "WebFetch",
+    "web_search": "WebSearch",
+    "todo_manager": "TodoWrite",
+    "ask_user": "AskUserQuestion",
+    "invoke_skill": "Task",
+    "browser": "WebFetch"
+  },
+  "field_aliases": {
+    "path": "file_path"
+  },
+  "sessions": {
+    "glob": "~/.clacky/sessions/*.json",
+    "format": "clacky_sessions"
+  },
+  "home_ignore": [
+    ".clacky"
+  ],
+  "state_dirs": [
+    ".clacky"
+  ],
+  "project_markers": [
+    ".clacky"
+  ],
+  "config_tamper_paths": [
+    "(^|/)\\\\.clacky/hooks\\\\.yml$"
+  ],
+  "history_paths": [
+    "\\\\.clacky/sessions/"
+  ],
+  "launch_command": "openclacky",
+  "env_strip_prefixes": [
+    "CLACKY_"
+  ]
+}

@@ -52,6 +52,7 @@
 | OpenCode | 实验性 | JS 插件桥 | ✅ | ❌ 未装 |
 | ZCode（Z.ai，GLM 模型） | 实验性 | config.json hooks.events | ✅（桌面版按 argv，CLI 按 comm） | ❌ 未装 |
 | Grok CLI（superagent-ai，Bun） | 实验性 | user-settings.json hooks（按源码实现） | ✅ | ❌ 未装 |
+| OpenClacky（Ruby gem） | 实验性 | `~/.clacky/hooks.yml`（`before_tool_use` 走 rewrite 协议、退出码 2 阻断，`after_tool_use` 走 simple 协议、只记不拦；只读用户级） | ✅（按 argv 认，Ruby 托管） | 本机用 gem 自带 `ShellHookLoader` 加载生成的 hooks.yml 做过一轮端到端：`rm -rf /`、写 `~/.ssh/authorized_keys`、改 `~/.ssh/id_rsa` 都被拦，工具名/字段映射和终端交互输入（`session_id` + `input`）均通过。未在真实 agent 会话里跑过 |
 | Aider / 自研脚本 | 实验性 | ➖ 无 hook | ✅（`/proc` 扫描 / `run --`） | 进程识别与 `run --` 有单测 |
 
 ---
@@ -77,6 +78,7 @@ python3 install.py --agent opencode       # 复制插件到 ~/.config/opencode/p
 python3 install.py --agent zcode          # 写 ~/.zcode/cli/config.json 的 hooks.events 块并置 hooks.enabled=true
 python3 install.py --agent antigravity-cli # 写 ~/.gemini/config/hooks.json 的 "cc-monitor" 组
 python3 install.py --agent grok-cli       # 写 ~/.grok/user-settings.json 的 hooks 块
+python3 install.py --agent openclacky     # 写 ~/.clacky/hooks.yml 的 CC-Monitor 段（只读用户级）
 python3 install.py --agent all            # 本机检测到已安装的全部；--force-all 跳过检测全写
 ./install.sh --agent all                  # install.sh 把参数原样透传给 install.py
 ```
@@ -258,7 +260,9 @@ bin/CC-Monitor run -- python3 my_agent.py        # 不带 --agent：按注册表
 ### 2.11 卸载某家的 hook
 
 手动从对应配置文件里删掉 `command` 含 `CC-Monitor-hook` 的条目；OpenCode 删掉
-`~/.config/opencode/plugins/cc-monitor.js`。库里已有的记录保留。分支目前没有 `--uninstall`。
+`~/.config/opencode/plugins/cc-monitor.js`；OpenClacky 删掉 `~/.clacky/hooks.yml` 里
+`# --- CC-Monitor hooks: begin ---` 到 `# --- CC-Monitor hooks: end ---` 之间那一段。
+库里已有的记录保留。分支目前没有 `--uninstall`。
 
 ---
 
@@ -295,7 +299,7 @@ flowchart LR
 | `cc_monitor/registry.py` | 读注册表（内置 + `~/.cc-monitor/agents/` 覆盖）；`classify_process()`、`map_tool()`、`map_fields()`、给探针/规则/越界检测用的汇总函数 |
 | `cc_monitor/adapters/__init__.py` | 按 agent 的 `hooks.protocol` 选适配器模块；不认识的退回 Claude 协议 |
 | `cc_monitor/adapters/base.py` | 规范事件/规范调用的构造器；`apply_patch` 解析与拆分 |
-| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode,zcode,antigravity,grok}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
+| `cc_monitor/adapters/{claude,codex,gemini,cursor,opencode,zcode,antigravity,grok,openclacky}.py` | 各协议的 `parse()` / `emit_pre()` / `emit_permission()` / `hook_config_entries()` |
 | `cc_monitor/adapters/opencode_plugin.js` | OpenCode 插件模板，install 时替换 hook 路径后复制过去 |
 | `cc_monitor/hook.py` | 重写：`parse_args` → 适配器 parse → `handle_*` → 适配器 emit；判定逻辑 `decide_call()` 与 master 的 `handle_pre` 中段等价 |
 | `cc_monitor/procscan.py` | `/proc` 扫描：`find_roots()`（每个认得出的 agent 进程都是根）、`seed_map()`（后代归最近的 agent 祖先）、`comm_predicate()`、`seed_block()` |

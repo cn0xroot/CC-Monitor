@@ -89,6 +89,22 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
   2 blocks) and has never been run. Every non-Claude-Code agent now carries `status: experimental`
   in the registry; `install.py --list`, `CC-Monitor agents`, the install output and the Web UI badge
   (β mark) all say "experimental, not verified on a real install".
+- **OpenClacky integration (experimental)**: reads `~/.clacky/hooks.yml` (user-level only, there is no
+  project file); one event may carry several hooks and the two events do not share a protocol —
+  `before_tool_use` uses the rewrite protocol (`type: rewrite`), whose payload is Claude Code's
+  PreToolUse shape, where exit code 2 blocks and the reason is read from stderr before stdout;
+  `after_tool_use` can only use the simple protocol, whose payload is
+  `{event, tool: {name, arguments}, result}` with `arguments` as a JSON string. The adapter tells the
+  two shapes apart by `hook_event_name` vs `event`. Tool names are lowercase (`terminal` / `write` /
+  `file_reader`…), so they go through the registry mapping before reaching the rule engine, and the
+  path argument is mapped `path` → `file_path`; terminal's interactive input (`session_id` + `input`,
+  i.e. writing “the rest of the command line” into an already-open shell) is also fed to the rules as
+  `command`, otherwise `rm -rf /` via that route is a blind spot. install.py wraps its own section of
+  `~/.clacky/hooks.yml` in a pair of comment markers (idempotent, removable as a block) and, if the
+  file already defines the same top-level keys, leaves it untouched and prints the snippet to paste.
+  Exercised end-to-end here through the gem's own `ShellHookLoader` (blocking / tool and field mapping
+  / interactive input all pass), never run in a real session.
+
 - **Nested agents are now their own roots**: launching agy from a Claude Code terminal attributes agy
   and its children to antigravity-cli rather than claude-code — its hook events are recorded under
   its own `--agent`, so cross-checking only lines up this way (under the old rule every command was

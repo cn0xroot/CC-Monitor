@@ -73,6 +73,7 @@ could be installed on the development machine). After enabling one, run the chec
 | OpenCode | 🧪 experimental | plugin bridge `~/.config/opencode/plugins/cc-monitor.js` (`tool.execute.before` calls the hook synchronously; exit 2 blocks) | by `comm` | `python3 install.py --agent opencode` |
 | ZCode (Z.ai / GLM) | 🧪 experimental | `hooks.events` in `~/.zcode/cli/config.json` (protocol mirrors Claude Code's; `type: process`) | desktop runtime by argv, `zcode` CLI by `comm` | `python3 install.py --agent zcode` |
 | Grok CLI (superagent-ai) | 🧪 experimental | `hooks` block in `~/.grok/user-settings.json` (implemented from its `src/hooks/` source; exit 2 blocks) | by `comm` | `python3 install.py --agent grok-cli` |
+| OpenClacky | 🧪 experimental (implemented from its gem's `shell_hook_loader.rb`; one end-to-end round here through the gem's own loader: rewrite-protocol blocking, tool/field mapping and shell-input handling all verified) | `~/.clacky/hooks.yml` (`before_tool_use` uses the rewrite protocol, exit 2 blocks; `after_tool_use` uses the simple protocol and is log-only; user-level only, there is no project file) | by argv (Ruby-hosted, `comm` is `ruby`) | `python3 install.py --agent openclacky` |
 | Aider / custom scripts | 🧪 experimental | ➖ no hooks | `/proc` scan by argv, or explicit `CC-Monitor run -- <cmd>` | nothing to configure |
 
 `python3 install.py --agent all` enables every agent detected on this machine; `CC-Monitor agents`
