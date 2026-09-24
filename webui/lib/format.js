@@ -57,10 +57,31 @@ function collapse(text, limit = MAX_SUMMARY_LEN) {
 const SHELL_TOKEN_RE =
   /(?<comment>#[^⏎]*)|(?<dstring>"(?:[^"\\]|\\.)*")|(?<sstring>'[^']*')|(?<var>\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@#?*!$-])|(?<op>\|\||&&|;;|>>|<<|[|;&<>])|(?<flag>(?<!\S)--?[A-Za-z][\w-]*)|(?<glyph>⏎)|(?<word>[^\s|;&<>$'"#]+)|(?<space>\s+)|(?<other>.)/g;
 
-function highlightBashHtml(text) {
+// 裸参数"长得像不像文件名"的粗略判断——只给 boldFiles 模式用（目前只有"文件发送
+// 操作"下钻列表开着），不追求精确定位"这条命令里具体是哪个参数被发送了"（比如
+// `scp -i key.pem file.txt user@host:/path` 会把 key.pem、file.txt、
+// user@host:/path 全部标出来，不去猜哪个是身份文件哪个是真正发送的文件，够用即可）。
+// 两种情况算"像文件"：带路径分隔符 `/`；或者以字母开头/含字母的扩展名结尾——扩展名
+// 要求至少含一个字母是为了不把 IP（127.0.0.1）、端口号、版本号（v1.2.3）的最后一段
+// 数字误判成扩展名。
+const FILE_EXT_RE = /\.([A-Za-z0-9]{1,8})$/;
+function looksLikeFileArg(word) {
+  if (!word || word.startsWith("-")) return false;
+  if (word.includes("/")) return true;
+  const m = FILE_EXT_RE.exec(word);
+  return Boolean(m && /[A-Za-z]/.test(m[1]));
+}
+
+function highlightBashHtml(text, opts = {}) {
   if (!text) return "";
+  const boldFiles = Boolean(opts.boldFiles);
   const out = [];
   let expectCommand = true;
+  // cd 的参数是切换的工作目录，不是"发送的文件"——但 Claude Code 几乎每条 Bash
+  // 命令都会自动拼接 `cd <cwd>` 开头，这个目录路径带 `/` 天然会撞上 looksLikeFileArg()
+  // 的启发式规则，不排掉的话每一条记录都会把工作目录整段加粗，把真正想强调的文件
+  // 淹没掉。只跳过紧跟在 cd 后面的第一个参数，跳过一次后立刻复位。
+  let skipNextArgBold = false;
   const re = new RegExp(SHELL_TOKEN_RE);
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -72,13 +93,21 @@ function highlightBashHtml(text) {
     else if (g.op) {
       out.push(`<span class="tok-op">${esc}</span>`);
       expectCommand = true;
+      skipNextArgBold = false;
     } else if (g.flag) out.push(`<span class="tok-flag">${esc}</span>`);
     else if (g.glyph) out.push(`<span class="tok-glyph">${esc}</span>`);
     else if (g.word) {
       if (expectCommand) {
         out.push(`<span class="tok-cmd">${esc}</span>`);
         expectCommand = false;
-      } else out.push(esc);
+        skipNextArgBold = m[0] === "cd";
+      } else if (boldFiles && !skipNextArgBold && looksLikeFileArg(m[0])) {
+        out.push(`<strong class="tok-file">${esc}</strong>`);
+        skipNextArgBold = false;
+      } else {
+        out.push(esc);
+        skipNextArgBold = false;
+      }
     } else out.push(esc);
     if (m.index === re.lastIndex) re.lastIndex += 1; // 防止零宽匹配死循环
   }
@@ -174,7 +203,14 @@ function describeOsListen(comm, detail) {
   return { label: `系统层观测: 开始监听端口 (${escapeHtml(comm)})`, summaryHtml: escapeHtml(`${detail.ip || ""}:${detail.port || ""}`), extra };
 }
 
-function describe(toolName, source, detail) {
+function genericFieldSummary(toolInput) {
+  for (const [k, v] of Object.entries(toolInput)) {
+    if (v) return escapeHtml(`${k}=${collapse(v)}`);
+  }
+  return "";
+}
+
+function describe(toolName, source, detail, opts = {}) {
   if (source === "os_exec") return describeOsExec(toolName, detail);
   if (source === "os_net") return describeOsNet(toolName, detail);
   if (source === "os_file") return describeOsFile(toolName, detail);
@@ -186,7 +222,7 @@ function describe(toolName, source, detail) {
   const extra = [];
 
   if (toolName === "Bash") {
-    summaryHtml = highlightBashHtml(collapse(toolInput.command || ""));
+    summaryHtml = highlightBashHtml(collapse(toolInput.command || ""), opts);
     if (response) {
       const stderr = (response.stderr || "").trim();
       const interrupted = !!response.interrupted;
@@ -227,13 +263,19 @@ function describe(toolName, source, detail) {
     }
   } else if (toolName === "Stop" || toolName === "SubagentStop") {
     summaryHtml = escapeHtml(`stop_hook_active: ${!!toolInput.stop_hook_active}`);
-  } else {
-    for (const [k, v] of Object.entries(toolInput)) {
-      if (v) {
-        summaryHtml = escapeHtml(`${k}=${collapse(v)}`);
-        break;
-      }
+  } else if (toolName === "Artifact" && opts.boldFiles) {
+    // Artifact 工具默认走下面的兜底（挑第一个非空字段原样显示），"文件发送操作"
+    // 下钻列表里希望具体标出发的是哪个文件，单独给这个视图挑 file_path/file_paths
+    // 出来加粗，不影响其它地方（比如 MCP 调用列表）里 Artifact 事件的默认展示。
+    const f = toolInput.file_path || (Array.isArray(toolInput.file_paths) && toolInput.file_paths[0]) || "";
+    if (f) {
+      const wrapped = `<strong class="tok-file">${escapeHtml(f)}</strong>`;
+      summaryHtml = toolInput.asset === true ? `asset 上传: ${wrapped}` : `file_path=${wrapped}`;
+    } else {
+      summaryHtml = genericFieldSummary(toolInput);
     }
+  } else {
+    summaryHtml = genericFieldSummary(toolInput);
   }
   return { label, summaryHtml, extra };
 }

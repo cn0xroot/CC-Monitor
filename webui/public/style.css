@@ -946,6 +946,7 @@ html, body {
 .tok-warn { color: var(--yellow); }
 .tok-ok { color: var(--green); }
 .tok-path { color: var(--cyan); }
+.tok-file { font-weight: 700; background: color-mix(in srgb, var(--yellow) 22%, transparent); padding: 0 2px; border-radius: 3px; }
 
 /* ---------- 状态信息 ---------- */
 .status-board { display: flex; flex-direction: column; gap: 8px; }

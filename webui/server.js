@@ -548,6 +548,7 @@ app.get("/api/overview", async (req, res) => {
     githubOpsTotal: sumN(audit.githubOpsBreakdown()),
     sshOpsTotal: sumN(audit.sshOpsBreakdown()),
     downloadOpsTotal: sumN(audit.downloadOpsBreakdown()),
+    fileSendOpsTotal: sumN(audit.fileSendOpsBreakdown()),
     dockerOpsTotal: sumN(audit.dockerOpsBreakdown()),
     archiveOpsTotal: sumN(audit.archiveOpsBreakdown()),
     netdiagOpsTotal: sumN(audit.netdiagOpsBreakdown()),
@@ -662,7 +663,7 @@ app.get("/api/drilldown/file-op/:type", (req, res) => {
 // GitHub/SSH/下载/Docker/压缩/网络诊断/进程管理这七组，首页现在都是"一张汇总卡片，
 // 点开看分类小计 + 事件明细"，接口形状也完全一样（跟 mcp-calls/skill-calls 那几个
 // 已有接口是同一个套路），抽成一个通用处理函数。
-function opsDrilldownHandler(breakdownFn, eventsFn) {
+function opsDrilldownHandler(breakdownFn, eventsFn, describeOpts = {}) {
   return (req, res) => {
     const breakdown = breakdownFn();
     const events = eventsFn().map((row) => {
@@ -672,7 +673,7 @@ function opsDrilldownHandler(breakdownFn, eventsFn) {
       } catch (e) {
         detail = {};
       }
-      const { label, summaryHtml, extra } = fmt.describe(row.tool_name, row.source || "hook_pre", detail);
+      const { label, summaryHtml, extra } = fmt.describe(row.tool_name, row.source || "hook_pre", detail, describeOpts);
       return {
         id: row.id,
         ts: row.ts,
@@ -695,6 +696,10 @@ app.get("/api/drilldown/github-ops", opsDrilldownHandler(audit.githubOpsBreakdow
 app.get("/api/drilldown/kernel-ops", opsDrilldownHandler(audit.kernelOpsBreakdown, audit.kernelOpsEvents));
 app.get("/api/drilldown/ssh-ops", opsDrilldownHandler(audit.sshOpsBreakdown, audit.sshOpsEvents));
 app.get("/api/drilldown/download-ops", opsDrilldownHandler(audit.downloadOpsBreakdown, audit.downloadOpsEvents));
+// 文件发送操作单独传 { boldFiles: true }——下钻列表里希望一眼看出发的是哪个文件，
+// 命令文本里长得像文件名的参数、Artifact 事件的 file_path 都加粗高亮；其它分组卡片
+// （SSH/下载/Docker 等）不需要这个视觉强调，保持默认不传。
+app.get("/api/drilldown/file-send-ops", opsDrilldownHandler(audit.fileSendOpsBreakdown, audit.fileSendOpsEvents, { boldFiles: true }));
 app.get("/api/drilldown/docker-ops", opsDrilldownHandler(audit.dockerOpsBreakdown, audit.dockerOpsEvents));
 app.get("/api/drilldown/archive-ops", opsDrilldownHandler(audit.archiveOpsBreakdown, audit.archiveOpsEvents));
 app.get("/api/drilldown/netdiag-ops", opsDrilldownHandler(audit.netdiagOpsBreakdown, audit.netdiagOpsEvents));
