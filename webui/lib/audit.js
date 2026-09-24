@@ -23,7 +23,12 @@ function dbPath() {
 // 单/双引号、在不在 heredoc 正文里，只有真正在"顶层"（不在引号/heredoc 内部）的
 // ; & | 换行才当分隔符。不追求 100% 还原 bash 语法（比如反引号/嵌套 $() 里的换行
 // 没特殊处理），但已经覆盖了实际观测到的两种误判来源。
-function splitShellSegments(cmd) {
+// 第二个参数 seps 可选——默认按 ; & | 换行 四种都切开（原来的行为，绝大多数分类器
+// 都要的"只看子命令开头"）；但个别场景（比如判断 `cat file | nc host port` 这种
+// 管道发送）需要保留 `|` 两边的关联，不能把管道也当独立分隔符切开，这时候传
+// `";&\n"` 只切 ; & 换行，把 `|` 连起来的几段留在同一个字符串里，之后再按需要
+// 自己用 `splitShellSegments(group, "|")` 二次切分。
+function splitShellSegments(cmd, seps = ";&|\n") {
   const segments = [];
   let cur = "";
   let i = 0;
@@ -73,7 +78,7 @@ function splitShellSegments(cmd) {
         continue;
       }
     }
-    if (ch === ";" || ch === "&" || ch === "|" || ch === "\n") {
+    if (seps.indexOf(ch) !== -1) {
       segments.push(cur);
       cur = "";
       i++;
@@ -205,6 +210,134 @@ function downloadOpType(detailJson) {
   try {
     const detail = detailJson ? JSON.parse(detailJson) : {};
     return classifyDownloadOp(detail.command || "");
+  } catch (e) {
+    return null;
+  }
+}
+
+// 文件发送/外传行为分类——跟上面几个分类器不一样的地方在于要判断"方向"：ssh-ops
+// 那张卡片只回答"用没用过 scp/sftp"，这张卡片回答的是"有没有把本地文件真的推到了
+// 外面"，同一条 scp 命令可能在两张卡片里都算数，这是故意的（两张卡回答的问题不同，
+// 不是重复统计）。方向判断只看"最后一个参数长得像不像远程目标"（user@host:path /
+// host:path / scheme://bucket/path / rclone 的 remote:path 这几种写法），不去完整
+// 解析参数列表——`scp host:a host:b local/` 这种目的地其实是本地路径的下载场景，
+// 因为最后一个参数不匹配远程目标的写法，不会被计入，宁可漏判也不要把下载误判成
+// 发送（跟本文件其它分类器一个原则）。
+const REMOTE_DEST_TAIL_RE = /(?:^|\s)((?:[\w.-]+@)?[a-zA-Z0-9][\w.-]*:(?:\/\/)?\S+)\s*$/;
+// curl/wget 的"上传"参数——只认明确会把本地文件内容当请求体发出去的写法
+// （-T/--upload-file 整个文件、-F/--form 里带 @file 的分片、--data(-binary) 带 @file、
+// wget --post-file），裸的 -d/--data（没有 @file）大概率是普通 API 调用的请求体，
+// 不当成"发送文件"，避免把所有 POST 请求都算进来。
+const CURL_UPLOAD_FLAG_RE = /(^|\s)(-T\s|--upload-file(\s|=)|-F\s|--form(\s|=)|--data(-binary)?(\s+|=)@|-d\s+@)/;
+const WGET_UPLOAD_FLAG_RE = /--post-file(\s|=)/;
+// 云存储 CLI 的写入类子命令——cp/sync/copy/upload/put/mv 这几个词，跟上面的
+// REMOTE_DEST_TAIL_RE 搭配用：子命令是写入类 且 目的地（最后一个参数）长得像远程
+// bucket/remote，才算发送；子命令是 ls/cat 之类的只读操作，或者目的地是本地路径
+// （比如 `aws s3 cp s3://bucket/file ./local` 这种下载），都不计入。
+const CLOUD_WRITE_VERB_RE = /\b(cp|sync|copy|upload|put|mv)\b/;
+// nc/ncat/netcat 的"管道灌进去发送"写法——实测线上数据里 `cat file | nc -w 10 host port`
+// 这种管道形式比下面 `nc host port < file` 的显式重定向写法常见得多，之前只认重定向
+// 写法会把这类真实的"发送文件到远程设备"操作完全漏掉。管道写法没法在按 ; & | 换行 都切开的 segments
+// 里判断——`|` 一旦被当分隔符切开，"nc 这一段前面是不是接了别的命令的输出"这个信息
+// 就丢了，所以这里单独用 splitShellSegments(cmd, ";&\n") 保留 `|` 关联，只在真正
+// 含 `|` 的"管道组"内部再按 `|` 二次切分，看最后一节是不是 nc/ncat/netcat 加
+// "host + port"这种客户端连出去的写法（不是 `-l` 监听模式——监听是等别人连进来，
+// 语义相反，且已经由 policy.py 的反弹 shell 规则单独覆盖，这里不重复计入）。不管
+// 管道前面具体是 cat 还是别的什么在产生数据，"喂给 nc 发送出去"这个动作本身就算数。
+const NC_LISTEN_OR_SCAN_FLAG_RE = /(^|\s)-[a-zA-Z]*[lz][a-zA-Z]*(\s|$)/;
+const NC_HOST_PORT_TAIL_RE = /\S+\s+\d{1,5}\s*$/;
+function classifyNetcatPipeSend(cmd) {
+  const groups = splitShellSegments(cmd, ";&\n");
+  for (const group of groups) {
+    if (!group.includes("|")) continue;
+    const stages = splitShellSegments(group, "|").map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+    const last = stages[stages.length - 1];
+    if (!last || !/^(nc|ncat|netcat)(\s|$)/.test(last)) continue;
+    if (NC_LISTEN_OR_SCAN_FLAG_RE.test(last)) continue;
+    if (NC_HOST_PORT_TAIL_RE.test(last)) return true;
+  }
+  return false;
+}
+
+const FILE_SEND_OP_ORDER = ["scp", "rsync", "sftp", "curlUpload", "cloudSync", "netcatSend", "other"];
+function classifyFileSendOp(cmd) {
+  if (!cmd) return null;
+  const segments = splitShellSegments(cmd).map((raw) => raw.trim().replace(/^sudo\s+/, ""));
+  const found = new Set();
+  if (classifyNetcatPipeSend(cmd)) found.add("netcatSend");
+  for (const seg of segments) {
+    if (/^scp(\s|$)/.test(seg)) {
+      if (REMOTE_DEST_TAIL_RE.test(seg)) found.add("scp");
+    } else if (/^rsync(\s|$)/.test(seg)) {
+      if (REMOTE_DEST_TAIL_RE.test(seg)) found.add("rsync");
+    } else if (/^sftp(\s|$)/.test(seg)) {
+      // sftp 是交互式协议，真正的上传动作是里面的 `put` 子命令（区别于 `get`），
+      // 只在命令行文本里能直接看到 put 时才算（比如 -b 批处理脚本或者 heredoc 里写的）。
+      if (/\bput\b/.test(seg)) found.add("sftp");
+    } else if (/^curl(\s|$)/.test(seg) && CURL_UPLOAD_FLAG_RE.test(seg)) {
+      found.add("curlUpload");
+    } else if (/^wget2?(\s|$)/.test(seg) && WGET_UPLOAD_FLAG_RE.test(seg)) {
+      found.add("other");
+    } else if (/^(aws\s+s3|gsutil|az\s+storage|azcopy|ossutil|rclone|b2)(\s|$)/.test(seg)) {
+      if (CLOUD_WRITE_VERB_RE.test(seg) && REMOTE_DEST_TAIL_RE.test(seg)) found.add("cloudSync");
+    } else if (/^(nc|ncat|netcat)(\s|$)/.test(seg)) {
+      // 管道写法（`cat file | nc host port`）已经在上面用 classifyNetcatPipeSend()
+      // 单独判断过了，这里只再认 `nc host port < file` 这种显式输入重定向的写法。
+      if (/<\s*\S/.test(seg)) found.add("netcatSend");
+    } else if (/^(wormhole\s+send|croc\s+send|magic-wormhole\s+send)(\s|$)/.test(seg)) {
+      found.add("other");
+    }
+  }
+  for (const kind of FILE_SEND_OP_ORDER) {
+    if (found.has(kind)) return kind;
+  }
+  return null;
+}
+
+// 上面这套全是"Bash 命令文本"路径——Claude 也可能完全不走 shell，直接调用自己的
+// 原生工具/MCP 工具把本地文件送出去，这条路子 Bash 正则天生看不到，得按 tool_name
+// 单独识别（跟 screenshotKind() 对 Bash/Read/MCP 三路分别判断截图是同一个思路）：
+//   1. Artifact 工具的 asset 上传——`asset: true` 时会把 file_path/file_paths 指向
+//      的本地文件原样传到 claude.ai 的 artifact 资源库，这是内置工具里最直接的
+//      "把本地文件发到外部服务"路径。`files`/`root` 发布整页内容技术上也会把本地
+//      文件内容送到 claude.ai，但那是"发布一个页面"这个更常见、几乎每次用 Artifact
+//      工具都会触发的动作，不加区分地全算成"发送文件"会把这张卡片刷屏刷成噪音；
+//      只挑 asset:true 这条界限清楚、语义就是"上传一个文件"的路径。
+// 2. MCP 工具名里带明显的"上传/发送文件"字样——不特地维护一份 MCP server 名单，
+//      按工具名字面意思识别（Slack/GDrive/邮件附件这类 MCP server 暴露出来的写入类
+//      工具，名字基本都带 upload/send_file/attach/put_object 这几个词之一）。
+// 3. 内置/MCP 工具参数里同时出现"远程 URL 目标"和"本地文件路径/附件"字段的兜底——
+//      目前已知的内置工具（WebFetch 等）文档上都不支持把本地文件当请求体发出去，
+//      这条先按"万一哪天冒出这种参数形状"写成防御性检测，宁可漏判也不要把正常的
+//      只读 fetch 调用误记成发送文件。
+const MCP_FILE_SEND_NAME_RE = /(upload|send_?file|attach(_?file)?|put_?object|share_?file)/i;
+const URL_FIELD_RE = /^https?:\/\//i;
+function isArtifactAssetUpload(detail) {
+  return Boolean(detail && detail.asset === true && (detail.file_path || detail.file_paths));
+}
+function hasRemoteFileBodyShape(detail) {
+  if (!detail || typeof detail !== "object") return false;
+  const url = detail.url || detail.uri || "";
+  if (!URL_FIELD_RE.test(url)) return false;
+  return Boolean(detail.file_path || detail.file_paths || detail.attachment || detail.body_file);
+}
+function classifyNativeFileSendOp(toolName, detail) {
+  // Artifact 工具单独判断到这里为止就返回，不落到下面的通用兜底——它正常的
+  // "更新已发布的 artifact" 用法本来就是 url（要更新的现有 artifact）+ file_path
+  // （本地页面文件）同时出现，跟 hasRemoteFileBodyShape() 想抓的"远程目标 + 本地
+  // 文件"参数形状长得一模一样，实测线上数据已经证实了这个撞车（一堆正常的页面
+  // 发布/更新调用被通用兜底误判成了"发送文件"），必须先在这里挡住。
+  if (toolName === "Artifact") return isArtifactAssetUpload(detail) ? "artifactUpload" : null;
+  if (toolName && toolName.startsWith("mcp__") && MCP_FILE_SEND_NAME_RE.test(toolName)) return "mcpFileSend";
+  if (toolName && toolName !== "Bash" && hasRemoteFileBodyShape(detail)) return "toolFileBody";
+  return null;
+}
+
+function fileSendOpType(toolName, detailJson) {
+  try {
+    const detail = detailJson ? JSON.parse(detailJson) : {};
+    if (toolName === "Bash") return classifyFileSendOp(detail.command || "");
+    return classifyNativeFileSendOp(toolName, detail);
   } catch (e) {
     return null;
   }
@@ -767,6 +900,7 @@ function withDb(fn, fallback) {
     db.function("cc_screenshot_kind", screenshotKind);
     db.function("cc_ssh_op", sshOpType);
     db.function("cc_download_op", downloadOpType);
+    db.function("cc_filesend_op", fileSendOpType);
     db.function("cc_docker_op", dockerOpType);
     db.function("cc_archive_op", archiveOpType);
     db.function("cc_netdiag_op", netdiagOpType);
@@ -1021,6 +1155,33 @@ function downloadOpsBreakdown() {
 }
 function downloadOpsEvents(limit = 300) {
   return opsEvents("cc_download_op", limit);
+}
+// 文件发送统计单独写，不复用上面的通用 opsBreakdown()/opsEvents()——那两个通用
+// 函数固定按 tool_name = 'Bash' 过滤，但这一类现在横跨 Bash 命令文本、Artifact
+// 工具的 asset 上传、MCP 文件发送类工具三种来源（见 fileSendOpType() 上面的注释），
+// 查询形状改成跟 sensitiveOpsBreakdown/sensitiveOpsEvents 一样，靠 cc_filesend_op()
+// 自己按 tool_name 分流、不匹配就返回 null 来过滤，不在 SQL WHERE 里限定单一工具名。
+function fileSendOpsBreakdown() {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT cc_filesend_op(tool_name, detail) AS kind, COUNT(*) AS n FROM events
+         WHERE source = 'hook_pre' AND cc_filesend_op(tool_name, detail) IS NOT NULL
+         GROUP BY kind ORDER BY n DESC`
+      )
+      .all();
+  }, []);
+}
+function fileSendOpsEvents(limit = 300) {
+  return withDb((db) => {
+    return db
+      .prepare(
+        `SELECT id, ts, session_id, cwd, tool_name, matched_rule, detail, cc_filesend_op(tool_name, detail) AS kind FROM events
+         WHERE source = 'hook_pre' AND cc_filesend_op(tool_name, detail) IS NOT NULL
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(limit);
+  }, []);
 }
 function dockerOpsBreakdown() {
   return opsBreakdown("cc_docker_op");
@@ -1519,6 +1680,8 @@ module.exports = {
   sshOpsEvents,
   downloadOpsBreakdown,
   downloadOpsEvents,
+  fileSendOpsBreakdown,
+  fileSendOpsEvents,
   dockerOpsBreakdown,
   dockerOpsEvents,
   archiveOpsBreakdown,

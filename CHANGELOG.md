@@ -7,7 +7,30 @@
 
 ## [未发布]
 
+### 新增
+- **首页"文件发送操作"卡**：按 Bash 命令文本识别把本地文件送出去的操作——scp/rsync（目的地是
+  远程主机）、sftp put、curl/wget 上传（`-T`/`-F`/`--upload-file`/`--data-binary @file`/
+  `--post-file`）、云存储 CLI 写入（`aws s3`/`gsutil`/`azcopy`/`ossutil`/`rclone` 等，要求子命令是
+  cp/sync/copy/upload/put/mv 且目的地明确写成远程/云端）、`nc host port < file`、
+  wormhole/croc send。只认目的地明确是远程/云端目标的写法，方向不明的（比如用同一条 scp 命令
+  下载）不计入；跟"SSH 操作"卡不是一回事——那张卡回答"用没用过 scp"，这张卡回答"有没有把本地
+  文件推出去"，同一条命令可能在两张卡里都算数。跟 GitHub/SSH/下载/Docker 等命令类操作同一套
+  分组卡片交互（点开看分类小计 + 命令明细）。
+- **"文件发送操作"卡新增识别 Claude 自身工具调用，不再只看 Bash 命令文本**：Artifact 工具的
+  `asset:true` 上传（本地文件原样传到 claude.ai 资源库，跟正常的页面发布/更新调用——同样会带
+  `url`+`file_path`——严格区分开，避免把常规 republish 误判成发送文件）；MCP 工具里名字带
+  upload/send_file/attach/put_object 字样的文件发送类调用；内置/MCP 工具参数里同时出现远程
+  URL 目标和本地文件路径/附件字段的兜底识别。三类来源均按 tool_name 分流，查询上不再限定
+  `tool_name = 'Bash'`。
+
 ### 修复
+- **"文件发送操作"漏判 `cat file | nc host port` 管道发送**：真实数据证实了这个漏洞——
+  `classifyFileSendOp` 原来按 `; & | 换行` 把命令切成子命令分别看开头，`|`
+  被当独立分隔符切开后，"nc 这段前面是不是有别的命令在灌数据"这个信息就丢了，只认得出
+  `nc host port < file` 这种少见的显式重定向写法。给 `splitShellSegments()` 加了可选的分隔符
+  参数，新增 `classifyNetcatPipeSend()` 专门在保留 `|` 关联的"管道组"里判断最后一节是不是
+  nc/ncat/netcat 客户端连出去的写法（排除 `-l`/`-z` 监听/扫描模式），不管管道前面具体是 cat
+  还是别的命令在产生数据。
 - **会话列表里的模型在中途 `/model` 切换后不更新**：`getModel()` 以前取 transcript 里第一次出现的 assistant
   模型，现在从文件尾部往前取最近一次的（尾部 500KB 没有 assistant 行再退回从头扫），缓存仍按 mtime 失效。
 

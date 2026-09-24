@@ -1017,6 +1017,7 @@ async function refreshOverview() {
   document.getElementById("stat-github-total").textContent = s.githubOpsTotal;
   document.getElementById("stat-ssh-total").textContent = s.sshOpsTotal;
   document.getElementById("stat-download-total").textContent = s.downloadOpsTotal;
+  document.getElementById("stat-filesend-total").textContent = s.fileSendOpsTotal;
   document.getElementById("stat-docker-total").textContent = s.dockerOpsTotal;
   document.getElementById("stat-archive-total").textContent = s.archiveOpsTotal;
   document.getElementById("stat-netdiag-total").textContent = s.netdiagOpsTotal;
@@ -2021,6 +2022,7 @@ async function openDrilldownInner(kind) {
     "github-ops": { titleKey: "home.githubOps.title", labels: { push: "home.githubOps.push", clone: "home.githubOps.clone", commit: "home.githubOps.commit", pullFetch: "home.githubOps.pullFetch", ghCli: "home.githubOps.ghCli", otherGit: "home.githubOps.otherGit" } },
     "ssh-ops": { titleKey: "home.sshOps.title", labels: { ssh: "home.sshOps.ssh", scp: "home.sshOps.scp", sftp: "home.sshOps.sftp", keyManagement: "home.sshOps.keyManagement", other: "home.sshOps.other" } },
     "download-ops": { titleKey: "home.downloadOps.title", labels: { wget: "home.downloadOps.wget", curl: "home.downloadOps.curl", aria2: "home.downloadOps.aria2", other: "home.downloadOps.other" } },
+    "file-send-ops": { titleKey: "home.fileSendOps.title", labels: { scp: "home.fileSendOps.scp", rsync: "home.fileSendOps.rsync", sftp: "home.fileSendOps.sftp", curlUpload: "home.fileSendOps.curlUpload", cloudSync: "home.fileSendOps.cloudSync", netcatSend: "home.fileSendOps.netcatSend", artifactUpload: "home.fileSendOps.artifactUpload", mcpFileSend: "home.fileSendOps.mcpFileSend", toolFileBody: "home.fileSendOps.toolFileBody", other: "home.fileSendOps.other" } },
     "docker-ops": { titleKey: "home.dockerOps.title", labels: { run: "home.dockerOps.run", build: "home.dockerOps.build", exec: "home.dockerOps.exec", compose: "home.dockerOps.compose", other: "home.dockerOps.other" } },
     "archive-ops": { titleKey: "home.archiveOps.title", labels: { tar: "home.archiveOps.tar", zip: "home.archiveOps.zip", sevenZip: "home.archiveOps.sevenZip", gzip: "home.archiveOps.gzip", other: "home.archiveOps.other" } },
     "netdiag-ops": { titleKey: "home.netdiagOps.title", labels: { nc: "home.netdiagOps.nc", nmap: "home.netdiagOps.nmap", telnet: "home.netdiagOps.telnet", other: "home.netdiagOps.other" } },

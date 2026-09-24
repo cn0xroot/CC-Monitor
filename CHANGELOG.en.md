@@ -7,7 +7,37 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Home page "file-send operations" card**: identifies, from Bash command text, operations that
+  push a local file out — scp/rsync (remote destination), sftp put, curl/wget uploads (`-T`/`-F`/
+  `--upload-file`/`--data-binary @file`/`--post-file`), cloud-storage CLI writes (`aws s3`/
+  `gsutil`/`azcopy`/`ossutil`/`rclone`, requiring a write-ish subcommand — cp/sync/copy/upload/
+  put/mv — with an explicit remote/cloud destination), `nc host port < file`, and wormhole/croc
+  send. Only counts commands whose destination is unambiguously remote/cloud; direction left
+  unclear (e.g. the same scp syntax used to download) is not counted. This is distinct from the
+  "SSH operations" card — that one answers "was scp used at all", this one answers "was a local
+  file actually pushed out" — so the same command can legitimately count on both cards. Uses the
+  same grouped-card interaction as GitHub/SSH/Downloads/Docker etc. (click through for a breakdown
+  table plus command detail).
+- **"File-send operations" card now also detects Claude's own tool calls, not just Bash command
+  text**: the Artifact tool's `asset:true` upload (a local file sent as-is to claude.ai's asset
+  store — kept strictly separate from an ordinary page publish/update call, which legitimately
+  carries both `url` and `file_path` too, to avoid misclassifying routine republishes as file
+  sends); MCP tools whose name contains upload/send_file/attach/put_object; and a fallback for
+  built-in/MCP tool calls whose parameters carry both a remote URL target and a local file path
+  or attachment field. All three sources are dispatched by `tool_name`, so the underlying query no
+  longer restricts to `tool_name = 'Bash'`.
+
 ### Fixed
+- **"File-send operations" missed the `cat file | nc host port` pipe form**: confirmed by real
+  data. `classifyFileSendOp` split commands on `; & | newline` and looked only at each
+  sub-command's own start, so once `|` was
+  treated as an independent separator, the information "is something upstream feeding data into
+  this nc call" was already lost — it only recognized the rarer explicit-redirect form `nc host
+  port < file`. Gave `splitShellSegments()` an optional separator argument and added
+  `classifyNetcatPipeSend()`, which keeps `|`-joined "pipeline groups" intact and checks whether
+  the last stage is an nc/ncat/netcat client connecting out (excluding `-l`/`-z` listen/scan
+  modes), regardless of whether `cat` or something else produced the piped data.
 - **The model shown in the session list did not update after a mid-session `/model` switch**: `getModel()`
   used to take the first assistant model in the transcript; it now takes the most recent one, scanning from
   the tail (falling back to a head scan if the last 500 KB has no assistant line); the mtime cache still applies.
