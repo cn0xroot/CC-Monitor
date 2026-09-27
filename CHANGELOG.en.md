@@ -8,6 +8,39 @@ This file records what shipped in each version of CC-Monitor. Loosely follows
 ## [Unreleased]
 
 ### Added
+- **Web UI "Timeline" page: session activity visualization** — a more direct way than scrolling the
+  log to see which session did what, when, and whether it worked.
+  - **Overview (swimlanes)**: one lane per session on a shared time axis (last 1h / 6h / 24h / 7d,
+    bucketed at 1 min / 5 min / 15 min / 2 h). Bar color is the highest risk level in the bucket (a
+    single high-risk event turns the whole bar red instead of being averaged away), bar height is
+    normalized to that session's busiest bucket, and buckets containing a blocked operation get a red
+    outline. Hover shows the time slot, operation count, per-risk breakdown and model. New endpoint
+    `GET /api/timeline`.
+  - **Detail (operation flow graph)**: click a lane to open that session's flow graph, or click a bar
+    to jump to and highlight the operations in that slot. Laid out top to bottom in time order: one
+    card per user prompt (prompt text, time span, per-turn success/failure/blocked counts) followed by
+    that turn's operation cards (outcome, time, duration, tool, command/file, risk stripe, matched
+    rule). Spawned subagents branch off to the right with dashed edges, and runs of similar low-risk
+    operations collapse into an expandable "×N" card. Clicking a card opens a side panel with the full
+    command, output tail, rule description, the reason for the outcome and event IDs. Drag to pan,
+    Ctrl/⌘ + wheel to zoom, minimap navigation; live sessions refresh every 15 s. New endpoint
+    `GET /api/session-flow`; assembly logic lives in `webui/lib/sessionFlow.js`.
+  - **Per-operation outcome**: the pre/post hook records of one tool call are paired by "same tool +
+    identical input, most recent first" (hooks carry no tool_use_id; when a failed call is retried
+    verbatim, the result goes to the retry). Claude Code only fires PostToolUse when a tool succeeds,
+    so an operation with no completion record counts as failed (errored / denied / interrupted), or as
+    running if its turn hasn't ended and the session is still active. Completed calls are further
+    checked for interruption, timeout, HTTP error codes, `success:false`, background execution and
+    stderr output. Outcomes: success / stderr output / failed / blocked / running / background.
+  - Zero dependencies: both views are hand-written Canvas / DOM + SVG modules (`session-timeline.js`,
+    `session-flow.js`) reading theme CSS variables, redrawn instantly on theme or language switch.
+  - Known limits: hooks don't record subagent identity, so operations run inside subagents appear
+    interleaved on the main trunk (noted on the page); hook timestamps have 1-second resolution, so
+    durations are shown in whole seconds; very long sessions show only the latest 3000 events.
+  - Time bucketing uses JS `Date`: `events.ts` is written by Python `strftime("%z")` with a
+    colon-less UTC offset, which SQLite's date functions parse as NULL.
+  - New tests `webui/test/session-flow.test.js` (pairing, outcome rules, retry after block, parallel
+    calls, grouping, turns); `smoke.test.js` covers both new endpoints.
 - **Multi-agent support (dev branch)**: the detection surface grows from "Claude Code only" to
   Codex CLI, Gemini CLI, Cursor, OpenCode and ZCode (application-layer hooks / plugin +
   system-layer probe) and Aider (system layer only).

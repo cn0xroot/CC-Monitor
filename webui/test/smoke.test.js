@@ -179,6 +179,54 @@ test("audit endpoints reflect seeded events with correct formatting", async () =
   assert.ok(status.body.auditSessions.some((s) => s.sessionId === "test-session-1"));
 });
 
+// 时间线分桶在 JS 里按 new Date(ts) 做（SQLite 解析不了 Python %z 写出的无冒号偏移），
+// 这里用 Python 真实写入的 ts 验证分桶没有因为时间解析失败而全部丢掉。
+test("timeline endpoint buckets seeded events per session", async () => {
+  const { status, body } = await fetchJson("/api/timeline?range_minutes=60");
+  assert.equal(status, 200);
+  assert.equal(body.bucketMs, 60 * 1000);
+  const lane1 = body.lanes.find((l) => l.sessionId === "test-session-1");
+  const lane2 = body.lanes.find((l) => l.sessionId === "test-session-2");
+  assert.ok(lane1 && lane2, "each seeded session should get its own lane");
+
+  const sum = (lane, k) => lane.buckets.reduce((acc, b) => acc + b[k], 0);
+  assert.equal(sum(lane1, "n"), 2, "both test-session-1 events should land in buckets");
+  assert.equal(sum(lane1, "nHigh"), 1);
+  assert.equal(sum(lane1, "nBlocked"), 1);
+  assert.equal(sum(lane2, "n"), 1);
+  assert.equal(sum(lane2, "nBlocked"), 0);
+  for (const b of lane1.buckets) assert.equal(b.startMs % body.bucketMs, 0, "bucket starts must be aligned");
+
+  const wide = await fetchJson("/api/timeline?range_minutes=10080");
+  assert.equal(wide.body.bucketMs, 2 * 60 * 60 * 1000);
+});
+
+test("session-flow endpoint pairs and classifies the seeded events", async () => {
+  const { status, body } = await fetchJson("/api/session-flow?session_id=test-session-1");
+  assert.equal(status, 200);
+  const nodes = body.turns.flatMap((t) => t.nodes);
+  const blocked = nodes.find((n) => n.status === "blocked");
+  assert.ok(blocked, "the rm -rf / pre event should become a blocked node");
+  assert.equal(blocked.risk, "high");
+  assert.match(blocked.summaryHtml, /tok-cmd/);
+  const done = nodes.find((n) => n.status === "ok");
+  assert.ok(done, "the orphan post (echo hello) should still become a successful node");
+  const bad = await fetchJson("/api/session-flow");
+  assert.equal(bad.status, 400);
+});
+
+test("index.html has the timeline tab and its script", async () => {
+  const html = await (await fetch(BASE + "/")).text();
+  assert.match(html, /data-tab="timeline"/);
+  assert.match(html, /id="view-timeline"/);
+  assert.match(html, /src="\/session-timeline\.js"/);
+  for (const p of ["/session-timeline.js", "/session-flow.js"]) {
+    assert.match(html, new RegExp(`src="${p.replace(".", "\\.")}"`));
+    assert.equal((await fetch(BASE + p)).status, 200);
+  }
+  assert.match(html, /id="flow-viewport"/);
+});
+
 test("HTML escaping: a malicious command does not break out of its span", async () => {
   const script = `
 import os

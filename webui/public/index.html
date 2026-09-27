@@ -32,6 +32,7 @@
       <button class="tab-btn" data-tab="terminal" data-i18n="nav.terminal">终端会话</button>
       <button class="tab-btn" data-tab="approvals"><span data-i18n="nav.approvals">AI 审批台</span><span id="approvals-badge" class="nav-badge" hidden>0</span></button>
       <button class="tab-btn" data-tab="logs" data-i18n="nav.logs">Log 审计</button>
+      <button class="tab-btn" data-tab="timeline" data-i18n="nav.timeline">操作时间线</button>
       <button class="tab-btn" data-tab="tap" data-i18n="nav.tap">AI Tap</button>
       <button class="tab-btn" data-tab="archives" data-i18n="nav.archives">历史数据</button>
       <a class="tab-btn nav-external-link" href="https://github.com/cn0xroot/CC-Monitor" target="_blank" rel="noopener noreferrer" title="GitHub">GitHub ↗</a>
@@ -424,6 +425,51 @@
       <div id="network-table-wrap" class="home-box table-wrap"></div>
     </section>
 
+    <!-- 操作时间线：每个会话一条泳道，按时间分桶显示操作密度与风险 -->
+    <section id="view-timeline" class="view">
+      <div class="page-head">
+        <span class="sec-title" data-i18n="timeline.title">会话操作时间线</span>
+        <span class="info-tip" data-i18n-tip="timeline.hint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
+        <span class="sec-rule"></span>
+        <select id="timeline-range" class="pill-select">
+          <option value="60" data-i18n="timeline.range.1h">最近 1 小时</option>
+          <option value="360" data-i18n="timeline.range.6h">最近 6 小时</option>
+          <option value="1440" selected data-i18n="timeline.range.24h">最近 24 小时</option>
+          <option value="10080" data-i18n="timeline.range.7d">最近 7 天</option>
+        </select>
+      </div>
+      <div class="timeline-legend sec-note">
+        <span class="tl-swatch" style="background:var(--red)"></span><span data-i18n="risk.high">高</span>
+        <span class="tl-swatch" style="background:var(--yellow)"></span><span data-i18n="risk.medium">中</span>
+        <span class="tl-swatch" style="background:var(--green)"></span><span data-i18n="risk.low">低</span>
+        <span class="tl-swatch" style="background:var(--cyan)"></span><span data-i18n="risk.info">信息</span>
+        <span class="tl-swatch tl-swatch-blocked"></span><span data-i18n="timeline.legendBlocked">含被拦截操作</span>
+        <span class="tl-axis-note" id="timeline-axis-note"></span>
+      </div>
+      <div id="timeline-wrap">
+        <canvas id="timeline-canvas"></canvas>
+        <div id="timeline-empty" class="empty-state" hidden></div>
+      </div>
+      <div id="timeline-tooltip" class="timeline-tooltip" hidden></div>
+
+      <!-- 单个会话的操作流程图：点上面某条泳道/某根柱子打开 -->
+      <div id="flow-section" hidden>
+        <div class="sec flow-head">
+          <span class="sec-title" data-i18n="flow.title">会话操作流程</span>
+          <span class="info-tip" data-i18n-tip="flow.hint" tabindex="0"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 7v4.2M8 4.6v.2"></path></svg></span>
+          <span id="flow-session-label" class="flow-session-label"></span>
+          <span class="sec-rule"></span>
+          <button type="button" id="flow-open-logs" class="btn-secondary sec-btn" data-i18n="flow.openLogs">在 Log 审计中查看</button>
+          <button type="button" id="flow-close" class="btn-secondary sec-btn" data-i18n="flow.close">关闭</button>
+        </div>
+        <div id="flow-note" class="sec-note" hidden></div>
+        <div class="flow-layout">
+          <div id="flow-viewport"></div>
+          <aside id="flow-detail"><div class="empty-state" data-i18n="flow.detailEmpty">点击任意操作卡片查看详情</div></aside>
+        </div>
+      </div>
+    </section>
+
     <!-- 历史数据：之前归档过的事件数据快照列表 -->
     <section id="view-archives" class="view">
       <div class="page-head">
@@ -547,6 +593,8 @@
 <script src="/vendor/xterm-addon-fit/xterm-addon-fit.js"></script>
 <script src="/vendor/xterm-addon-webgl/xterm-addon-webgl.js"></script>
 <script src="/network-map.js"></script>
+<script src="/session-timeline.js"></script>
+<script src="/session-flow.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

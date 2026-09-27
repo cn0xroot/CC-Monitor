@@ -14,6 +14,7 @@ const agentsRegistry = require("./lib/agents");
 const agentScope = require("./lib/agentScope");
 const agentAccount = require("./lib/agentAccount");
 const fmt = require("./lib/format");
+const sessionFlow = require("./lib/sessionFlow");
 const status = require("./lib/status");
 const transcript = require("./lib/transcript");
 const usage = require("./lib/usage");
@@ -363,6 +364,91 @@ app.get("/api/log-sessions", (req, res) => {
     has_transcript: !!r.transcript_path,
   }));
   res.json(rows);
+});
+
+// 时间线视图：一次请求 = 最近 lanes 个会话 × 最近 range_minutes 分钟内的操作，
+// 每个会话一条泳道，按时间分桶聚合成"这个桶里有几条、风险构成、有没有被拦截"，
+// 前端拿去画 session-timeline.js 那张画布。分桶大小按窗口长短固定几档（1h/6h/24h/7d），
+// 不做成用户自由输入，避免桶数过多/过少画出没法看的图。
+function bucketSizeFor(rangeMinutes) {
+  if (rangeMinutes <= 60) return 60 * 1000; // 1 分钟
+  if (rangeMinutes <= 6 * 60) return 5 * 60 * 1000; // 5 分钟
+  if (rangeMinutes <= 24 * 60) return 15 * 60 * 1000; // 15 分钟
+  return 2 * 60 * 60 * 1000; // 2 小时
+}
+
+app.get("/api/timeline", (req, res) => {
+  const rangeMinutes = Math.min(parseInt(req.query.range_minutes || "1440", 10), 7 * 24 * 60);
+  const laneLimit = Math.min(parseInt(req.query.lanes || "50", 10), 100);
+  const agentQ = req.query.agent || null;
+  const sessions = audit.listSessions(laneLimit, { agent: agentQ });
+  const sinceMs = Date.now() - rangeMinutes * 60 * 1000;
+  const bucketMs = bucketSizeFor(rangeMinutes);
+
+  const sessionIds = sessions.map((s) => s.session_id);
+  const rows = audit.timelineEvents({ sessionIds, agent: agentQ });
+
+  // 按 session 分组，同时记录是否命中了 perSessionLimit（说明这个会话更早的事件
+  // 被截断了，没有真的都拉出来分桶）——目前 perSessionLimit 用的是 timelineEvents()
+  // 的默认值 800，这里只需要知道"这个会话本条查询返回了多少行"来判断。
+  const perSession = new Map(sessionIds.map((id) => [id, []]));
+  for (const r of rows) {
+    const ms = new Date(r.ts).getTime();
+    if (Number.isNaN(ms) || ms < sinceMs) continue;
+    const list = perSession.get(r.session_id);
+    if (list) list.push({ ...r, ms });
+  }
+
+  const lanes = sessions.map((s) => {
+    const evs = perSession.get(s.session_id) || [];
+    const buckets = new Map(); // bucketStartMs -> {n, nHigh, nMedium, nLow, nInfo, nBlocked}
+    for (const e of evs) {
+      const b = Math.floor(e.ms / bucketMs) * bucketMs;
+      if (!buckets.has(b)) buckets.set(b, { n: 0, nHigh: 0, nMedium: 0, nLow: 0, nInfo: 0, nBlocked: 0 });
+      const bucket = buckets.get(b);
+      bucket.n++;
+      if (e.risk === "high") bucket.nHigh++;
+      else if (e.risk === "medium") bucket.nMedium++;
+      else if (e.risk === "low") bucket.nLow++;
+      else bucket.nInfo++;
+      if (e.decision === "blocked") bucket.nBlocked++;
+    }
+    return {
+      sessionId: s.session_id,
+      cwd: s.cwd,
+      agent: s.agent,
+      model: sessionModel(s.session_id, s.transcript_path),
+      eventCount: s.event_count,
+      blockedCount: s.blocked_count,
+      bypassCount: s.bypass_count,
+      firstTs: s.first_ts,
+      lastTs: s.last_ts,
+      buckets: [...buckets.entries()]
+        .map(([startMs, v]) => ({ startMs, ...v }))
+        .sort((a, b) => a.startMs - b.startMs),
+    };
+  });
+
+  res.json({ rangeMinutes, bucketMs, now: Date.now(), lanes });
+});
+
+// 单个会话的操作流程图：按用户提问分轮，每轮是配对好前后事件、判定了成败的操作节点。
+const SESSION_FLOW_LIMIT = 3000;
+app.get("/api/session-flow", (req, res) => {
+  const sessionId = req.query.session_id;
+  if (!sessionId) return res.status(400).json({ error: "session_id required" });
+  const rows = audit.sessionEventsTail(sessionId, SESSION_FLOW_LIMIT);
+  const meta = audit.listSessions(500, { agent: req.query.agent || null }).find((s) => s.session_id === sessionId) || null;
+  const flow = sessionFlow.buildSessionFlow(rows);
+  res.json({
+    sessionId,
+    cwd: meta ? meta.cwd : rows.length ? rows[rows.length - 1].cwd : null,
+    agent: meta ? meta.agent : null,
+    model: sessionModel(sessionId, meta ? meta.transcript_path : null),
+    eventCount: meta ? meta.event_count : rows.length,
+    truncated: rows.length >= SESSION_FLOW_LIMIT,
+    ...flow,
+  });
 });
 
 // ---- REST API: AI Tap（发给/收到模型的完整对话内容） ----

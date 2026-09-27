@@ -267,6 +267,8 @@ document.querySelectorAll(".tab-btn:not(.nav-external-link)").forEach((btn) => {
       ensureNetworkMap();
       refreshNetworkTraffic();
     }
+    // 画布同理：隐藏状态下量不出宽度，第一次切进来才创建
+    if (btn.dataset.tab === "timeline") refreshTimeline();
   });
 });
 
@@ -1424,6 +1426,7 @@ document.getElementById("clear-data-btn").addEventListener("click", async () => 
   tapNextLine = 0;
   document.getElementById("tap-list").innerHTML = "";
   refreshEverythingNow();
+  document.getElementById("flow-close").click();
 });
 
 document.getElementById("sync-update-btn").addEventListener("click", async () => {
@@ -3458,6 +3461,251 @@ async function refreshNetworkTraffic() {
   }
 }
 
+// ---------- 操作时间线 ----------
+let sessionTimeline = null;
+function ensureSessionTimeline() {
+  if (sessionTimeline || !window.SessionTimeline) return;
+  sessionTimeline = new SessionTimeline(document.getElementById("timeline-canvas"), document.getElementById("timeline-tooltip"));
+  // 点泳道 = 看这个会话的完整操作序列：直接复用 Log 审计页现成的按会话过滤，
+  // 不另外造一个逐条事件的渲染（fmt.describe() 的摘要/高亮都在那边）。
+  sessionTimeline.onLaneClick = (sessionId, range) => {
+    document.getElementById("timeline-tooltip").hidden = true;
+    openSessionFlow(sessionId, range);
+  };
+  sessionTimeline.tooltipHtml = (lane, bucket, bucketMs) => {
+    const agentTag = multiAgent && lane.agent ? `[${escapeHtml(agentDisplay(lane.agent))}] ` : "";
+    const head = `<div class="tt-title">${agentTag}${escapeHtml(folderName(lane.cwd) || lane.sessionId)}</div>
+      <div class="hint">${escapeHtml(lane.sessionId.slice(0, 8))}…${lane.model ? " · " + escapeHtml(modelShort(lane.model)) : ""}</div>`;
+    if (!bucket) {
+      return `${head}<div>${t("timeline.tt.total", { n: lane.eventCount })}${lane.blockedCount ? " · " + t("timeline.tt.blocked", { n: lane.blockedCount }) : ""}</div>
+        <div class="hint">${t("timeline.tt.clickHint")}</div>`;
+    }
+    const s = new Date(bucket.startMs);
+    const e = new Date(bucket.startMs + bucketMs);
+    const risks = ["high", "medium", "low", "info"]
+      .map((r) => ({ r, n: bucket["n" + r[0].toUpperCase() + r.slice(1)] }))
+      .filter((x) => x.n > 0)
+      .map((x) => `<span style="color:${RISK_COLOR[x.r]}">●</span> ${riskLabel(x.r)} ${x.n}`)
+      .join("&nbsp;&nbsp;");
+    return `${head}
+      <div>${fmtTime24(s)} – ${fmtTime24(e)}</div>
+      <div>${t("timeline.tt.events", { n: bucket.n })}${bucket.nBlocked ? ` · <span style="color:var(--red)">${t("timeline.tt.blocked", { n: bucket.nBlocked })}</span>` : ""}</div>
+      <div>${risks}</div>
+      <div class="hint">${t("timeline.tt.clickHint")}</div>`;
+  };
+}
+
+function timelineBucketLabel(bucketMs) {
+  const zh = currentLang === "zh";
+  if (bucketMs < 60 * 60 * 1000) return `${bucketMs / 60000} ${zh ? "分钟" : "min"}`;
+  return `${bucketMs / 3600000} ${zh ? "小时" : "h"}`;
+}
+
+// 只在时间线页可见时才真正去拉数据——这个接口要把最近几十个会话的事件都捞一遍
+// 分桶，比其它轮询重，切到别的页时没必要每 15 秒白算一次。
+async function refreshTimeline() {
+  if (!document.getElementById("view-timeline").classList.contains("active")) return;
+  ensureSessionTimeline();
+  if (!sessionTimeline) return;
+  const range = document.getElementById("timeline-range").value;
+  const data = await api(`/api/timeline?range_minutes=${encodeURIComponent(range)}&lanes=50`);
+  if (!data) return;
+  // 只保留窗口内真的有操作的会话——listSessions 按最后活跃排序取的前 N 个里，
+  // 可能有几个最后一次操作早于窗口起点，画出来就是一条空泳道，只会占地方。
+  data.lanes = data.lanes.filter((l) => l.buckets.length > 0);
+  const empty = document.getElementById("timeline-empty");
+  empty.hidden = data.lanes.length > 0;
+  if (!data.lanes.length) empty.textContent = t("timeline.empty");
+  document.getElementById("timeline-axis-note").textContent = t("timeline.axisNote", { bucket: timelineBucketLabel(data.bucketMs) });
+  sessionTimeline.setData(data);
+}
+
+document.getElementById("timeline-range").addEventListener("change", refreshTimeline);
+
+// 两张画布（时间线、流程图小地图）的颜色是渲染时从 CSS 变量现读的，切主题后要重画一次，
+// 不然还是上一套主题的颜色（暗色主题下深色文字直接看不见）
+new MutationObserver(() => {
+  if (sessionTimeline) sessionTimeline.render();
+  if (sessionFlowGraph) sessionFlowGraph._drawMinimap();
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// ---------- 会话操作流程图 ----------
+let sessionFlowGraph = null;
+let flowSessionId = null;
+let flowLive = false;
+let flowData = null;
+let flowDetailState = null; // {node, turn}：切语言时按当前语言重画详情面板
+
+function openLogsForSession(sessionId) {
+  document.querySelector('.tab-btn[data-tab="logs"]').click();
+  if (![...logFilter.options].some((o) => o.value === sessionId)) {
+    const opt = document.createElement("option");
+    opt.value = sessionId;
+    opt.textContent = sessionId.slice(0, 8) + "…";
+    logFilter.appendChild(opt);
+  }
+  logFilter.value = sessionId;
+  logFilter.dispatchEvent(new Event("change"));
+}
+
+function flowToolLabel(node) {
+  if (node.type === "observe") return node.label;
+  return KNOWN_TOOLS.has(node.tool) ? t("tool." + node.tool) : node.tool || node.label;
+}
+
+function ensureSessionFlow() {
+  if (sessionFlowGraph || !window.SessionFlowGraph) return;
+  sessionFlowGraph = new SessionFlowGraph(document.getElementById("flow-viewport"), {
+    text: t,
+    toolLabel: flowToolLabel,
+    onNodeClick: (node, turn) => renderFlowDetail(node, turn),
+  });
+}
+
+function flowReasonText(n) {
+  if (n.reason) return t("flow.reason." + n.reason, { d: n.detail || "" });
+  if (["blocked", "running", "background"].includes(n.status)) return t("flow.reason." + n.status);
+  return "";
+}
+
+function fdRow(k, vHtml) {
+  return vHtml ? `<div class="fd-row"><span class="k">${escapeHtml(k)}</span><span class="v">${vHtml}</span></div>` : "";
+}
+
+function flowDurationText(msv) {
+  if (msv === null || msv === undefined) return "";
+  // hook 时间戳只精确到秒
+  if (msv < 1000) return "< 1 s";
+  return Math.round(msv / 1000) + " s";
+}
+
+function renderFlowDetail(node, turn) {
+  const box = document.getElementById("flow-detail");
+  flowDetailState = { node, turn };
+  if (!node && !turn) {
+    box.innerHTML = `<div class="empty-state">${escapeHtml(t("flow.detailEmpty"))}</div>`;
+    return;
+  }
+  if (!node) {
+    const s = turn.stats || {};
+    const span = turn.startTs ? fmtDateTime24(new Date(turn.startTs)) + (turn.endTs ? " → " + fmtTime24(new Date(turn.endTs)) : "") : "";
+    const stats = ["ok", "warn", "fail", "blocked", "running", "background"]
+      .filter((k) => s[k])
+      .map((k) => `<span class="fc-chip fc-st-${k}">${t("flow.status." + k)} ${s[k]}</span>`)
+      .join(" · ");
+    box.innerHTML = `
+      <div class="fd-title">${escapeHtml(turn.prompt ? t("flow.d.prompt") : t("flow.turn.start"))}</div>
+      ${fdRow(t("flow.d.time"), escapeHtml(span))}
+      ${fdRow(t("flow.d.stats"), stats || escapeHtml(t("flow.turn.noOps")))}
+      ${turn.subagentStops ? fdRow("", escapeHtml(t("flow.d.subagents", { n: turn.subagentStops }))) : ""}
+      ${turn.prompt ? `<div class="fd-block"><div class="fd-pre">${escapeHtml(turn.prompt.text)}</div></div>` : ""}`;
+    return;
+  }
+  const statusHtml = `<span class="fc-status fc-st-${escapeHtml(node.status)}">${escapeHtml(t("flow.status." + node.status))}</span>`;
+  const reason = flowReasonText(node);
+  const timeHtml = escapeHtml(fmtDateTime24(new Date(node.startTs)) + (node.endTs && node.endTs !== node.startTs ? " → " + fmtTime24(new Date(node.endTs)) : ""));
+  const ruleHtml = node.matchedRule
+    ? `${escapeHtml(ruleTitle(node.matchedRule) || node.matchedRule)}<br><span class="hint dd-mono">${escapeHtml(node.matchedRule)}</span>${ruleDesc(node.matchedRule) ? `<br><span class="hint">${escapeHtml(ruleDesc(node.matchedRule))}</span>` : ""}`
+    : "";
+  const extras = (node.extra || [])
+    .map((e) => `<div class="fd-block">${e.label ? `<div class="k">${escapeHtml(translateExtraLabel(e.label))}</div>` : ""}<div class="fd-pre">${e.html}</div></div>`)
+    .join("");
+  let items = "";
+  if (node.type === "group") {
+    items = `<div class="fd-block"><div class="k">${escapeHtml(t("flow.d.items", { n: node.count }))}</div><ul class="fd-items">${node.items
+      .map((it, i) => `<li data-item="${i}"><span class="t">${escapeHtml(fmtTime24(new Date(it.startTs)))}</span>${it.summaryHtml}</li>`)
+      .join("")}</ul></div>`;
+  }
+  box.innerHTML = `
+    <div class="fd-title">${escapeHtml(flowToolLabel(node))}${node.type === "group" ? " ×" + node.count : ""}</div>
+    ${fdRow(t("flow.d.status"), statusHtml)}
+    ${fdRow(t("flow.d.why"), escapeHtml(reason))}
+    ${fdRow(t("flow.d.time"), timeHtml)}
+    ${fdRow(t("flow.d.duration"), escapeHtml(flowDurationText(node.durationMs)))}
+    ${fdRow(t("flow.d.tool"), escapeHtml(node.tool || ""))}
+    ${node.risk && node.risk !== "-" ? fdRow(t("flow.d.risk"), `<span style="color:${RISK_COLOR[node.risk] || "inherit"}">● </span>${escapeHtml(riskLabel(node.risk))}`) : ""}
+    ${node.decision ? fdRow(t("flow.d.decision"), escapeHtml(decisionLabel(node.decision))) : ""}
+    ${fdRow(t("flow.d.rule"), ruleHtml)}
+    ${node.type !== "group" ? `<div class="fd-block"><div class="k">${escapeHtml(t("flow.d.content"))}</div><div class="fd-pre">${node.summaryHtml || "-"}</div></div>` : ""}
+    ${extras}
+    ${items}
+    ${node.eventIds ? fdRow(t("flow.d.events"), `<span class="dd-mono">${node.eventIds.map((x) => "#" + x).join(" ")}</span>`) : ""}`;
+  if (node.type === "group") {
+    box.querySelectorAll(".fd-items li").forEach((li) => {
+      li.addEventListener("click", () => renderFlowDetail(node.items[Number(li.dataset.item)], turn));
+    });
+  }
+}
+
+// 标题栏会话名 + 提示条：跟流程图本体分开，切语言时不用重新请求就能重画
+function renderFlowChrome(data) {
+  const label = [folderName(data.cwd), modelShort(data.model), data.sessionId.slice(0, 8) + "…"].filter(Boolean).join(" · ");
+  document.getElementById("flow-session-label").textContent = label;
+  document.getElementById("flow-session-label").title = `${data.cwd || ""}\nID: ${data.sessionId}`;
+  const notes = [];
+  if (data.truncated) notes.push(t("flow.truncated", { n: 3000 }));
+  if (data.turns.some((tt) => tt.nodes.some((n) => n.branch))) notes.push(t("flow.subagentNote"));
+  if (!data.turns.length) notes.push(t("flow.empty"));
+  const noteEl = document.getElementById("flow-note");
+  noteEl.hidden = !notes.length;
+  noteEl.textContent = notes.join(" ");
+}
+
+async function loadSessionFlow({ keepView }) {
+  const data = await api(`/api/session-flow?session_id=${encodeURIComponent(flowSessionId)}`);
+  if (!data || data.sessionId !== flowSessionId) return null;
+  flowLive = !!data.live;
+  flowData = data;
+  renderFlowChrome(data);
+  sessionFlowGraph.setData(data, { keepView });
+  return data;
+}
+
+// 切语言：用手上的数据按新语言重画，不重新请求（切语言会触发一轮全量刷新，
+// 流程图请求排在后面要等好一会儿，这段时间里卡片还是旧语言）
+function rerenderSessionFlowText() {
+  if (!flowData || !sessionFlowGraph || document.getElementById("flow-section").hidden) return;
+  renderFlowChrome(flowData);
+  sessionFlowGraph.setData(flowData, { keepView: true });
+  if (flowDetailState) renderFlowDetail(flowDetailState.node, flowDetailState.turn);
+}
+
+async function openSessionFlow(sessionId, range) {
+  ensureSessionFlow();
+  if (!sessionFlowGraph) return;
+  const section = document.getElementById("flow-section");
+  section.hidden = false;
+  const switching = flowSessionId !== sessionId;
+  flowSessionId = sessionId;
+  if (switching) {
+    renderFlowDetail(null, null);
+    const noteEl = document.getElementById("flow-note");
+    noteEl.hidden = false;
+    noteEl.textContent = t("flow.loading");
+  }
+  if (Object.keys(ruleMetaCache).length === 0) refreshRuleMeta();
+  section.scrollIntoView({ behavior: "smooth", block: "start" });
+  const data = await loadSessionFlow({ keepView: !switching });
+  if (data && range) sessionFlowGraph.focusRange(range.startMs, range.endMs);
+}
+
+// 进行中的会话跟着时间线一起每 15 秒刷新；已经结束的会话不用反复拉
+async function refreshSessionFlow() {
+  if (!flowSessionId || !flowLive || document.getElementById("flow-section").hidden) return;
+  if (!document.getElementById("view-timeline").classList.contains("active")) return;
+  await loadSessionFlow({ keepView: true });
+}
+
+document.getElementById("flow-close").addEventListener("click", () => {
+  document.getElementById("flow-section").hidden = true;
+  flowSessionId = null;
+  flowData = null;
+  flowDetailState = null;
+});
+document.getElementById("flow-open-logs").addEventListener("click", () => {
+  if (flowSessionId) openLogsForSession(flowSessionId);
+});
+
 // ---------- 启动 ----------
 function refreshEverythingNow() {
   refreshSessionList();
@@ -3476,6 +3724,7 @@ function refreshEverythingNow() {
   refreshApprovalHistory();
   refreshIdentityCard();
   refreshNetworkTraffic();
+  refreshTimeline();
 }
 
 // 浏览器会把后台标签页的 setInterval 大幅节流（甚至几分钟才跑一次）来省电，
@@ -3536,6 +3785,7 @@ document.getElementById("lang-toggle-btn").addEventListener("click", () => {
   tapNextLine = 0;
   document.getElementById("tap-list").innerHTML = "";
   refreshEverythingNow();
+  rerenderSessionFlowText();
 });
 
 async function bootstrap() {
@@ -3586,5 +3836,7 @@ async function bootstrap() {
   setInterval(refreshIdentityCard, 15000); // 进程身份也不会频繁变，跟远程访问开关一个节奏
   setInterval(refreshApprovals, 2000); // 这几个是卡着等结果的，轮询间隔比其它都短
   setInterval(refreshNetworkTraffic, 10000);
+  setInterval(refreshTimeline, 15000);
+  setInterval(refreshSessionFlow, 15000);
 }
 bootstrap();
