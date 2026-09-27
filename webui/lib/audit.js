@@ -1625,6 +1625,46 @@ function networkConnectEvents(limit = 300) {
     .slice(0, limit);
 }
 
+// 时间线视图的数据源：给定一批 session_id（首页最近会话列表，通常几十个），每个会话
+// 各自按 id 倒序取最近 perSessionLimit 条事件，用窗口函数一次查完（不对每个 session_id
+// 单独发一条 SQL）。真正的"落进哪个时间桶"完全在调用方（server.js 的 /api/timeline
+// 路由）用 JS 的 Date 来算，这里不碰 strftime()/datetime()——events.ts 是 Python
+// time.strftime("%Y-%m-%dT%H:%M:%S%z") 写的本地时间，%z 出来的偏移量没有冒号
+// （比如 "+0800" 不是 "+08:00"），SQLite 的日期函数只认带冒号的 ISO8601 偏移量，
+// 喂这种格式进去会静默解析失败返回 NULL（已用 sqlite_version 3.53.4 验证）。JS 的
+// Date 构造函数对这个格式是宽容的，所以按时间分桶只能在 JS 层做。
+function timelineEvents({ sessionIds = [], perSessionLimit = 800 } = {}) {
+  if (!sessionIds.length) return [];
+  return withDb((db) => {
+    const placeholders = sessionIds.map(() => "?").join(",");
+    const sql = `
+      SELECT id, ts, session_id, risk, decision, source, tool_name, matched_rule
+      FROM (
+        SELECT id, ts, session_id, risk, decision, source, tool_name, matched_rule,
+               ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id DESC) AS rn
+        FROM events
+        WHERE session_id IN (${placeholders})
+      )
+      WHERE rn <= ?
+      ORDER BY id ASC`;
+    return db.prepare(sql).all(...sessionIds, perSessionLimit);
+  }, []);
+}
+
+// 单个会话最近 limit 条完整事件（按时间正序），流程图视图用。queryEvents() 带 limit
+// 取的是最早的那几条，长会话要看的是最近的操作，所以这里倒序取完再翻回来。
+function sessionEventsTail(sessionId, limit = 3000) {
+  return withDb((db) => {
+    const rows = db
+      .prepare(
+        `SELECT id, ts, source, tool_name, cwd, risk, matched_rule, decision, detail
+         FROM events WHERE session_id = ? ORDER BY id DESC LIMIT ?`
+      )
+      .all(sessionId, limit);
+    return rows.reverse();
+  }, []);
+}
+
 // "审计事件总数"下钻：按 工具/来源 分组，并且列出每个分组具体是哪些 session 产生的。
 function eventTypeBreakdown(limit = 500) {
   return withDb((db) => {
@@ -1724,4 +1764,6 @@ module.exports = {
   networkConnectEvents,
   eventTypeBreakdown,
   blockedDetails,
+  timelineEvents,
+  sessionEventsTail,
 };
